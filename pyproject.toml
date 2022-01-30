@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "spot-vrl"
+version = "0.1.0"
+description = ""
+authors = ["Elvin Yang <eyang@cs.utexas.edu>"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+bosdyn-api = "=3.0.3"
+bosdyn-client = "=3.0.3"
+bosdyn-core = "=3.0.3"
+requests = "^2.27.1"
+
+[tool.poetry.dev-dependencies]
+flake8 = "^4.0.1"
+mypy = "^0.931"
+black = "^22.1.0"
+types-protobuf = "^3.19.7"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+disallow_any_generics = true
+disallow_untyped_defs = true
+warn_redundant_casts = true
+disallow_untyped_calls = true
+warn_return_any = true

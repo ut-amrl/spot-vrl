@@ -1,0 +1,3 @@
+[flake8]
+# Defer to Black formatter's line length decisions
+max-line-length = 999
