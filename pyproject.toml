@@ -10,6 +10,7 @@ bosdyn-api = "=3.0.3"
 bosdyn-client = "=3.0.3"
 bosdyn-core = "=3.0.3"
 requests = "^2.27.1"
+matplotlib = "^3.5.1"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.1"
