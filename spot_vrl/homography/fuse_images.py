@@ -16,52 +16,10 @@ from bosdyn.api.image_pb2 import (
     ImageResponse,
     ImageSource,
 )
-from bosdyn.api.geometry_pb2 import FrameTreeSnapshot
 
-from spot_vrl import homography as homography
-import spot_vrl.homography.transform  # noqa: F401
+from spot_vrl.homography import proto_to_numpy
+
 from scipy.spatial.transform import Rotation
-
-
-def get_body_tform_camera(
-    tree: FrameTreeSnapshot, camera_frame: str
-) -> npt.NDArray[np.float64]:
-    assert camera_frame in tree.child_to_parent_edge_map
-    assert "body" in tree.child_to_parent_edge_map
-
-    root_tform_camera = np.eye(4)
-
-    # move root of subtree up until it is the body frame
-    #
-    # assumes body is the true root of the tree
-    # body -> head -> ... -> camera_frame
-    # body and head should be identity transforms
-    frame = camera_frame
-    while frame in tree.child_to_parent_edge_map:
-        edge = tree.child_to_parent_edge_map[frame]
-        q = edge.parent_tform_child.rotation
-        tx = edge.parent_tform_child.position
-
-        parent_tform_child = homography.transform.affine_3d(
-            [q.x, q.y, q.z, q.w], [tx.x, tx.y, tx.z]
-        )
-
-        root_tform_camera = parent_tform_child @ root_tform_camera
-
-        frame = edge.parent_frame_name
-
-    return root_tform_camera
-
-
-def get_camera_matrix(img_source: ImageSource) -> npt.NDArray[np.float64]:
-    assert img_source.HasField("pinhole")
-
-    bddf_intrinsics = img_source.pinhole.intrinsics
-    f = bddf_intrinsics.focal_length
-    p = bddf_intrinsics.principal_point
-    s = bddf_intrinsics.skew
-
-    return np.array([[f.x, s.x, p.x], [s.y, f.y, p.y], [0, 0, 1]])
 
 
 def fuse_images(filename: str) -> None:
@@ -89,7 +47,7 @@ def fuse_images(filename: str) -> None:
             img_source = image_response.source
             assert img_source.image_type == ImageSource.ImageType.IMAGE_TYPE_VISUAL
 
-            body_tform_camera = get_body_tform_camera(
+            body_tform_camera = proto_to_numpy.body_tform_frame(
                 img_capture.transforms_snapshot, img_capture.frame_name_image_sensor
             )
             rotmat = body_tform_camera[:3, :3]
@@ -98,7 +56,7 @@ def fuse_images(filename: str) -> None:
             translation = body_tform_camera[:3, 3]
             print(translation)
 
-            camera_matrix = get_camera_matrix(img_source)
+            camera_matrix = proto_to_numpy.camera_intrinsic_matrix(img_source)
             print(camera_matrix)
 
             print()
