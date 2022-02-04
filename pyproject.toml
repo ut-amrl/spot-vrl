@@ -5,12 +5,14 @@ description = ""
 authors = ["Elvin Yang <eyang@cs.utexas.edu>"]
 
 [tool.poetry.dependencies]
-python = "^3.8"
+python = ">=3.8,<3.10"
 bosdyn-api = "=3.0.3"
 bosdyn-client = "=3.0.3"
 bosdyn-core = "=3.0.3"
 requests = "^2.27.1"
 matplotlib = "^3.5.1"
+seaborn = "^0.11.2"
+scipy = "^1.7.3"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.1"
@@ -28,3 +30,4 @@ disallow_untyped_defs = true
 warn_redundant_casts = true
 disallow_untyped_calls = true
 warn_return_any = true
+allow_redefinition = true
