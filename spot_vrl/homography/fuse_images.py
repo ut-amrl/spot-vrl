@@ -53,6 +53,17 @@ def get_body_tform_camera(
     return root_tform_camera
 
 
+def get_camera_matrix(img_source: ImageSource) -> npt.NDArray[np.float64]:
+    assert img_source.HasField("pinhole")
+
+    bddf_intrinsics = img_source.pinhole.intrinsics
+    f = bddf_intrinsics.focal_length
+    p = bddf_intrinsics.principal_point
+    s = bddf_intrinsics.skew
+
+    return np.array([[f.x, s.x, p.x], [s.y, f.y, p.y], [0, 0, 1]])
+
+
 def fuse_images(filename: str) -> None:
     data_reader = bosdyn.bddf.DataReader(None, filename)
     proto_reader = bosdyn.bddf.ProtobufReader(data_reader)
@@ -86,6 +97,10 @@ def fuse_images(filename: str) -> None:
 
             translation = body_tform_camera[:3, 3]
             print(translation)
+
+            camera_matrix = get_camera_matrix(img_source)
+            print(camera_matrix)
+
             print()
 
 
