@@ -54,3 +54,39 @@ def pixel_direction(
 
     assert vec.shape == (3,)
     return vec
+
+
+def image_to_ground(
+    image_points: npt.NDArray[np.float64],
+    ground_tform_camera: npt.NDArray[np.float64],
+    camera_matrix: npt.NDArray[np.float64],
+) -> npt.NDArray[np.float64]:
+
+    assert image_points.shape[0] == 2
+
+    if image_points.ndim == 1:
+        n_points = 1
+    else:
+        assert image_points.ndim == 2
+        n_points = image_points.shape[1]
+
+    camera_loc = ground_tform_camera[:3, 3]
+    homogeneous_points = np.empty((3, n_points))
+    homogeneous_points[:2, :] = image_points
+    homogeneous_points[2, :] = 1
+
+    ground_rot_camera = ground_tform_camera[:3, :3]
+
+    rays = ground_rot_camera @ np.linalg.inv(camera_matrix) @ homogeneous_points
+
+    ground_intersections = np.empty((3, n_points))
+    for i in range(n_points):
+        ray = rays[:, i]
+
+        if ray[2] >= 1e-6:
+            ground_intersections[:, i] = np.NaN
+        else:
+            k = -camera_loc[2] / ray[2]
+            ground_intersections[:, i] = camera_loc + k * ray
+
+    return ground_intersections
