@@ -47,8 +47,8 @@ def body_tform_frame(
         frame (str): The name of the target frame in the tree.
 
     Returns:
-        npt.NDArray[np.float64]: The frame-to-body transform expressed
-            as a 4x4 3D affine transformation matrix.
+        npt.NDArray[np.float64]: The frame-to-body transform as a 4x4 3D affine
+            transformation matrix.
     """
     assert frame in tree.child_to_parent_edge_map
     assert "body" in tree.child_to_parent_edge_map

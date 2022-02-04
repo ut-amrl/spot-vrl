@@ -1,19 +1,22 @@
 """This module provides functions to compute homography transforms."""
 
-from typing import Tuple, Literal
 import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 
-def affine_3d(
+def affine3d(
     quat: npt.ArrayLike, translation: npt.ArrayLike
 ) -> npt.NDArray[np.float64]:
-    """Returns a 3D affine transformation matrix.
+    """Constructs a 3D affine transformation matrix.
 
-    [R T]
-    [0 1]
+    Args:
+        quat (npt.ArrayLike): A XYZW-order quaternion.
+        translation (npt.ArrayLike): A 3D vector.
 
+    Returns:
+        npt.NDArray[np.float64]: The equivalent 4x4 3D affine transformation
+            matrix.
     """
     quat = np.asarray(quat)
     translation = np.asarray(translation)
@@ -28,65 +31,90 @@ def affine_3d(
     return tform
 
 
-def pixel_direction(
-    pixel: npt.ArrayLike,
+def as_homogeneous(coords: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    """Turns column vectors into homogeneous coordinates.
+
+    Args:
+        coords (npt.NDArray[np.float64]): A matrix of column vectors.
+
+    Returns:
+        npt.NDArray[np.float64]: The input matrix with an additional
+            row of ones.
+    """
+    if coords.ndim == 1:
+        coords = coords.reshape(coords.shape[0], 1)
+
+    assert coords.ndim == 2
+    _, cols = coords.shape
+    return np.vstack((coords, np.ones(cols, dtype=np.float64)))
+
+
+def camera_rays(
+    image_coords: npt.ArrayLike,
     world_tform_camera: npt.NDArray[np.float64],
     camera_matrix: npt.NDArray[np.float64],
 ) -> npt.NDArray[np.float64]:
-    """Returns the direction vector originating from a camera, expressed in
-    world coordinates, that points to a pixel in an image taken by the
-    camera.
+    """Calculates the rays originating from a camera in the world frame that
+        point to pixels in the camera's image.
 
-    The returned vector has a magnitude of 1.
+    Args:
+        image_coords (npt.ArrayLike): A 2xN matrix of image coordinates.
+        world_tform_camera (npt.NDArray[np.float64]): The camera-to-world affine
+            transform matrix.
+        camera_matrix (npt.NDArray[np.float64]): The camera intrinsic matrix.
 
+    Returns:
+        npt.NDArray[np.float64]: A 3xN matrix of normalized rays.
     """
-    pixel = np.asarray(pixel, dtype=np.uint)
-
-    assert pixel.shape == (2,)
-    assert world_tform_camera.shape == (4, 4)
-    assert camera_matrix.shape == (3, 4)
+    image_coords = np.asarray(image_coords, dtype=np.float64)
+    assert image_coords.shape[0] == 2
 
     tform_rot = world_tform_camera[:3, :3]
-    vec = np.append(pixel, 1)
-    vec /= np.linalg.norm(vec)
+    rays = tform_rot @ np.linalg.inv(camera_matrix) @ as_homogeneous(image_coords)
+    rays /= np.linalg.norm(rays, axis=0)
 
-    vec: npt.NDArray[np.float64] = tform_rot @ np.linalg.inv(camera_matrix) @ vec
-
-    assert vec.shape == (3,)
-    return vec
+    return rays
 
 
 def image_to_ground(
-    image_points: npt.NDArray[np.float64],
+    image_coords: npt.NDArray[np.float64],
     ground_tform_camera: npt.NDArray[np.float64],
     camera_matrix: npt.NDArray[np.float64],
 ) -> npt.NDArray[np.float64]:
+    """Calculates the ground plane coordinates corresponding to image
+    coordinates.
 
-    assert image_points.shape[0] == 2
+    Args:
+        image_coords (npt.NDArray[np.float64]): A 2xN matrix of image coordinates.
+        ground_tform_camera (npt.NDArray[np.float64]): The camera-to-ground-plane
+            affine transform matrix.
+        camera_matrix (npt.NDArray[np.float64]): The camera intrinsic matrix.
 
-    if image_points.ndim == 1:
+    Returns:
+        npt.NDArray[np.float64]: A 3xN matrix of ground plane coordinates. The z
+            value of each coordinate is zero, unless the corresponding image
+            pixel was not on the ground plane (i.e. at or above the horizon), in
+            which case the entire column is set to NaN.
+    """
+    assert image_coords.shape[0] == 2
+
+    if image_coords.ndim == 1:
         n_points = 1
     else:
-        assert image_points.ndim == 2
-        n_points = image_points.shape[1]
+        assert image_coords.ndim == 2
+        n_points = image_coords.shape[1]
 
     camera_loc = ground_tform_camera[:3, 3]
-    homogeneous_points = np.empty((3, n_points))
-    homogeneous_points[:2, :] = image_points
-    homogeneous_points[2, :] = 1
+    rays = camera_rays(image_coords, ground_tform_camera, camera_matrix)
 
-    ground_rot_camera = ground_tform_camera[:3, :3]
-
-    rays = ground_rot_camera @ np.linalg.inv(camera_matrix) @ homogeneous_points
-
-    ground_intersections = np.empty((3, n_points))
+    # extend camera rays to the ground plane (z=0)
     for i in range(n_points):
         ray = rays[:, i]
 
         if ray[2] >= 1e-6:
-            ground_intersections[:, i] = np.NaN
+            rays[:, i] = np.NaN
         else:
             k = -camera_loc[2] / ray[2]
-            ground_intersections[:, i] = camera_loc + k * ray
+            rays[:, i] = camera_loc + k * ray
 
-    return ground_intersections
+    return rays
