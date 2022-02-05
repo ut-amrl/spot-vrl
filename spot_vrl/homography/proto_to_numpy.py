@@ -3,12 +3,15 @@ This module provides helper functions to convert bosdyn.api proto structs to
 numpy matrices.
 """
 
+import cv2
 import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 import bosdyn.api.geometry_pb2 as geometry_pb2
 import bosdyn.api.image_pb2 as image_pb2
+
+from spot_vrl.homography import transform as camera_transform
 
 
 def se3pose_to_affine(pose: geometry_pb2.SE3Pose) -> npt.NDArray[np.float64]:
@@ -110,4 +113,41 @@ class SpotImage:
         self.camera_matrix = camera_intrinsic_matrix(image_source)
         self.width = image.cols
         self.height = image.rows
-        self.picture = image.data
+        self.imgbuf: npt.NDArray[np.uint8] = np.frombuffer(image.data, dtype=np.uint8)
+
+    def decoded_image(self) -> npt.NDArray[np.uint8]:
+        """"""
+        img: npt.NDArray[np.uint8] = cv2.imdecode(self.imgbuf, cv2.IMREAD_GRAYSCALE)
+        assert img.shape == (self.height, self.width)
+        return img
+
+    def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
+        """"""
+        img = self.decoded_image()
+        img: npt.NDArray[np.uint8] = cv2.cvtColor(img, cv2.COLOR_GRAY2RGBA)
+
+        # want to avoid slow python for-loops as much as possible, push as much
+        # computation to numpy as possible at the cost of memory complexity
+
+        # Generate a 2xN matrix of all integer image coordinates
+        image_coords = np.indices((self.width, self.height))
+        image_coords = np.moveaxis(image_coords, 0, -1)
+        image_coords = image_coords.reshape(self.width * self.height, 2)
+        image_coords = image_coords.transpose()
+
+        rays = camera_transform.camera_rays(
+            image_coords, self.body_tform_camera, self.camera_matrix
+        )
+
+        # Find the indices of the rays that point above the horizon
+        above_horizon: npt.NDArray[np.bool_] = (rays[2] >= 0)
+
+        # Reshape the matrix to avoid manual computation of (x,y) indices, which
+        # was slow in testing.
+        above_horizon = above_horizon.reshape(self.width, self.height)
+
+        for x, y in zip(*above_horizon.nonzero()):
+            # [0, 0, 0, 0] is a fully transparent black pixel
+            img[y, x] = 0
+
+        return img
