@@ -86,3 +86,28 @@ def camera_intrinsic_matrix(
     s = intrinsic_proto.skew
 
     return np.array([[f.x, s.x, p.x], [s.y, f.y, p.y], [0, 0, 1]])
+
+
+class SpotImage:
+    def __init__(self, image_response: image_pb2.ImageResponse) -> None:
+        image_capture = image_response.shot
+        image_source = image_response.source
+        image = image_capture.image
+
+        assert image_response.status == image_pb2.ImageResponse.Status.STATUS_OK
+        assert (
+            image_source.image_type == image_pb2.ImageSource.ImageType.IMAGE_TYPE_VISUAL
+        )
+        assert image.format == image_pb2.Image.Format.FORMAT_JPEG
+        assert (
+            image.pixel_format == image_pb2.Image.PixelFormat.PIXEL_FORMAT_GREYSCALE_U8
+        )
+
+        self.frame_name = image_capture.frame_name_image_sensor
+        self.body_tform_camera = body_tform_frame(
+            image_capture.transforms_snapshot, self.frame_name
+        )
+        self.camera_matrix = camera_intrinsic_matrix(image_source)
+        self.width = image.cols
+        self.height = image.rows
+        self.picture = image.data
