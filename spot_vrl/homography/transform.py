@@ -74,7 +74,7 @@ def camera_rays(
         point to pixels in the camera's image.
 
     Args:
-        image_coords (npt.ArrayLike): A 2xN matrix of image coordinates.
+        image_coords (npt.ArrayLike): A 2xN matrix of (x, y) image coordinates.
         world_tform_camera (npt.NDArray[np.float64]): The camera-to-world affine
             transform matrix.
         camera_matrix (npt.NDArray[np.float64]): The camera intrinsic matrix.
@@ -101,7 +101,8 @@ def image_to_ground(
     coordinates.
 
     Args:
-        image_coords (npt.NDArray[np.float64]): A 2xN matrix of image coordinates.
+        image_coords (npt.NDArray[np.float64]): A 2xN matrix of (x, y) image
+            coordinates.
         ground_tform_camera (npt.NDArray[np.float64]): The camera-to-ground-plane
             affine transform matrix.
         camera_matrix (npt.NDArray[np.float64]): The camera intrinsic matrix.
@@ -151,7 +152,7 @@ def ground_to_image(
         camera_matrix (npt.NDArray[np.float64]): The camera intrinsic matrix.
 
     Returns:
-        npt.NDArray[np.float64]: A 2xN matrix of image coordinates.
+        npt.NDArray[np.float64]: A 2xN matrix of (x, y) image coordinates.
     """
     assert ground_coords.shape[0] == 3
 

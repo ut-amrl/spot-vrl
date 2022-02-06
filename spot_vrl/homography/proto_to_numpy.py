@@ -116,20 +116,38 @@ class SpotImage:
         self.imgbuf: npt.NDArray[np.uint8] = np.frombuffer(image.data, dtype=np.uint8)
 
     def decoded_image(self) -> npt.NDArray[np.uint8]:
-        """"""
-        img: npt.NDArray[np.uint8] = cv2.imdecode(self.imgbuf, cv2.IMREAD_GRAYSCALE)
+        """Decodes the raw bytes stored in self.imgbuf as an image.
+
+        Assumes the image is grayscale.
+
+        Returns:
+            npt.NDArray[np.uint8]: A 2D matrix of size (self.height, self.width)
+                containing a single-channel image.
+        """
+        img: npt.NDArray[np.uint8] = cv2.imdecode(self.imgbuf, cv2.IMREAD_UNCHANGED)
         assert img.shape == (self.height, self.width)
         return img
 
     def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
-        """"""
+        """Removes the sky from the image returned by self.decoded_image.
+
+        To preserve the size of the image, the color space is converted to RGBA
+        and pixels are "removed" by setting them to fully transparent black
+        pixels [0, 0, 0, 0].
+
+        Returns:
+            npt.NDArray[np.uint8]: A 3D matrix of size (self.height, self.width, 4)
+                containing an RGBA image of the visible ground plane. The image is
+                still grayscale.
+        """
         img = self.decoded_image()
         img: npt.NDArray[np.uint8] = cv2.cvtColor(img, cv2.COLOR_GRAY2RGBA)
 
-        # want to avoid slow python for-loops as much as possible, push as much
-        # computation to numpy as possible at the cost of memory complexity
+        # Implementation note: Python for-loops are pretty slow, so we want to
+        #  perform as much computation as possible in numpy at the cost of
+        #  space complexity.
 
-        # Generate a 2xN matrix of all integer image coordinates
+        # Generate a 2xN matrix of all integer image coordinates [x, y]
         image_coords = np.indices((self.width, self.height))
         image_coords = np.moveaxis(image_coords, 0, -1)
         image_coords = image_coords.reshape(self.width * self.height, 2)
@@ -142,12 +160,11 @@ class SpotImage:
         # Find the indices of the rays that point above the horizon
         above_horizon: npt.NDArray[np.bool_] = (rays[2] >= 0)
 
-        # Reshape the matrix to avoid manual computation of (x,y) indices, which
-        # was slow in testing.
+        # Reshape the matrix to avoid computing (x,y) coordinates from flat
+        # indices inside a for-loop.
         above_horizon = above_horizon.reshape(self.width, self.height)
 
         for x, y in zip(*above_horizon.nonzero()):
-            # [0, 0, 0, 0] is a fully transparent black pixel
             img[y, x] = 0
 
         return img
