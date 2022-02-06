@@ -158,13 +158,13 @@ class SpotImage:
         )
 
         # Find the indices of the rays that point above the horizon
-        above_horizon: npt.NDArray[np.bool_] = (rays[2] >= 0)
+        is_sky: npt.NDArray[np.bool_] = (rays[2] >= 0)
 
-        # Reshape the matrix to avoid computing (x,y) coordinates from flat
+        # Reshape the matrix to avoid computing (x, y) coordinates from flat
         # indices inside a for-loop.
-        above_horizon = above_horizon.reshape(self.width, self.height)
+        is_sky = is_sky.reshape(self.width, self.height)
+        sky_coords = is_sky.nonzero()
 
-        for x, y in zip(*above_horizon.nonzero()):
-            img[y, x] = 0
+        img[sky_coords[1], sky_coords[0]] = 0
 
         return img
