@@ -157,15 +157,33 @@ class SensorData:
 
     def save_video(self) -> None:
         save_dir = Path("images") / self._datapath.stem
-        frames_dir = save_dir / "frames"
         os.makedirs(save_dir, exist_ok=True)
-        os.makedirs(frames_dir, exist_ok=True)
 
         depth_it = iter(self.depths.items())
         depth_entry = next(depth_it)
 
-        pbar: tqdm.tqdm[int, int] = tqdm.tqdm(self.images.items(), desc="Saving Images")
-        for i, (ts, img) in enumerate(pbar):
+        # I couldn't get cv2.VideoWriter to work, so we'll stream to an ffmpeg process
+
+        fps = "8"
+        # fmt: off
+        ffmpeg_args = [
+            "ffmpeg",
+            "-loglevel", "warning",
+            "-y",
+            "-f", "image2pipe",
+            "-r", fps,  # need to specify input frame rate, otherwise frames are dropped
+            "-i", "-",
+            "-c:v", "libx264",
+            "-crf", "18",
+            "-r", fps,
+            "video.mp4",
+        ]
+        # fmt: on
+        ffmpeg = subprocess.Popen(ffmpeg_args, cwd=save_dir, stdin=subprocess.PIPE)
+        assert ffmpeg.stdin
+
+        pbar: tqdm.tqdm[int, int] = tqdm.tqdm(self.images.items(), desc="Saving Video")
+        for ts, img in pbar:
             img_wrapper = ImageWithText(img)
 
             img_wrapper.add_line(f"ts: {ts:.3f}s")
@@ -187,13 +205,12 @@ class SensorData:
             category = "concrete" if mean_depth < 0.01 else "grass"
             img_wrapper.add_line(f"cat: {category}")
 
-            # save_path = save_dir / f"top-down-{ts:06.3f}.png"
-            save_path = frames_dir / f"{i:04d}.png"
-            cv2.imwrite(str(save_path), img_wrapper.img)
+            img_buf: npt.NDArray[np.uint8]
+            _, img_buf = cv2.imencode(".png", img_wrapper.img)
+            ffmpeg.stdin.write(img_buf.tobytes())
 
-        # couldn't get opencv VideoWriter to work on macos
-        ffmpeg_args = f"ffmpeg -f image2 -r 8 -i {frames_dir.stem}/%04d.png -c:v libx264 -crf 18 video.mp4".split()
-        subprocess.run(ffmpeg_args, cwd=save_dir)
+        ffmpeg.stdin.close()
+        ffmpeg.wait()
 
 
 def main() -> None:
