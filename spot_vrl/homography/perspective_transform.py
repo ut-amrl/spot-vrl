@@ -1,4 +1,6 @@
-from typing import List, Dict
+import os
+from pathlib import Path
+from typing import Union, List, Dict
 
 import numpy as np
 import numpy.typing as npt
@@ -106,5 +108,9 @@ class TopDown:
 
         return output_img
 
-    def save(self, filename: str) -> None:
-        cv2.imwrite(filename, self.get_view())
+    def save(self, filename: Union[Path, str]) -> None:
+        filename = Path(filename)
+        if not os.path.isdir(filename.parent):
+            os.makedirs(filename.parent)
+
+        cv2.imwrite(str(filename), self.get_view())
