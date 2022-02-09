@@ -4,22 +4,36 @@ into top-down images.
 """
 
 import argparse
-
-import numpy as np
-import numpy.typing as npt
+from typing import List
+from pathlib import Path
 
 import bosdyn.bddf
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import (
     GetImageResponse,
-    Image,
-    ImageResponse,
-    ImageSource,
 )
+from bosdyn.api.robot_id_pb2 import RobotIdResponse
 
 from spot_vrl.homography import proto_to_numpy
+import spot_vrl.homography.transform  # noqa: F401
+import spot_vrl.homography.perspective_transform as perspective_transform
 
-from scipy.spatial.transform import Rotation
+
+# TODO(eyang): use values from robot states
+BODY_HEIGHT_EST = 0.48938  # meters
+
+
+def get_ref_ts(filename: str) -> float:
+    data_reader = bosdyn.bddf.DataReader(None, filename)
+    proto_reader = bosdyn.bddf.ProtobufReader(data_reader)
+
+    series_index: int = proto_reader.series_index("bosdyn.api.RobotIdResponse")
+    series_block_index: SeriesBlockIndex = data_reader.series_block_index(series_index)
+    num_msgs = len(series_block_index.block_entries)
+    assert num_msgs == 1
+
+    _, ts, _ = proto_reader.get_message(series_index, RobotIdResponse, 0)
+    return float(ts) * 1e-9
 
 
 def fuse_images(filename: str) -> None:
@@ -30,36 +44,28 @@ def fuse_images(filename: str) -> None:
     series_block_index: SeriesBlockIndex = data_reader.series_block_index(series_index)
     num_msgs = len(series_block_index.block_entries)
 
-    for msg_index in range(1):
-        _, _, response = proto_reader.get_message(
+    ground_tform_body = spot_vrl.homography.transform.affine3d(
+        [0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST]
+    )
+
+    start_ts = get_ref_ts(filename)
+
+    for msg_index in range(num_msgs):
+        _, ts, response = proto_reader.get_message(
             series_index, GetImageResponse, msg_index
         )
 
+        ts = float(ts) * 1e-9 - start_ts
+
+        images: List[proto_to_numpy.SpotImage] = []
+
         for image_response in response.image_responses:
-            assert image_response.status == ImageResponse.Status.STATUS_OK
-            img_capture = image_response.shot
-            print(img_capture.frame_name_image_sensor)
+            images.append(proto_to_numpy.SpotImage(image_response))
 
-            image = img_capture.image
-            assert image.format == Image.Format.FORMAT_JPEG
-            assert image.pixel_format == Image.PixelFormat.PIXEL_FORMAT_GREYSCALE_U8
+        td = perspective_transform.TopDown(images, ground_tform_body)
 
-            img_source = image_response.source
-            assert img_source.image_type == ImageSource.ImageType.IMAGE_TYPE_VISUAL
-
-            body_tform_camera = proto_to_numpy.body_tform_frame(
-                img_capture.transforms_snapshot, img_capture.frame_name_image_sensor
-            )
-            rotmat = body_tform_camera[:3, :3]
-            print(Rotation.from_matrix(rotmat).as_quat())
-
-            translation = body_tform_camera[:3, 3]
-            print(translation)
-
-            camera_matrix = proto_to_numpy.camera_intrinsic_matrix(img_source)
-            print(camera_matrix)
-
-            print()
+        save_dir = Path("images") / Path(filename).stem
+        td.save(save_dir / f"top-down-{ts:.4f}.png")
 
 
 def main() -> None:
