@@ -14,7 +14,8 @@ from typing import Dict, List, Tuple
 import cv2
 import numpy as np
 import numpy.typing as npt
-
+from matplotlib.gridspec import GridSpec
+import matplotlib.pyplot as plt
 import tqdm
 
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
@@ -212,6 +213,28 @@ class SensorData:
         ffmpeg.stdin.close()
         ffmpeg.wait()
 
+    def save_plot(self) -> None:
+        data_points = len(self.depths)
+        timestamps = np.empty(data_points)
+        depth_vals = np.empty(data_points)
+
+        for i, (ts, d) in enumerate(self.depths.items()):
+            timestamps[i] = ts
+            depth_vals[i] = d
+
+        fig = plt.figure(constrained_layout=True, figsize=(12, 7))
+        gs = GridSpec(1, 1, figure=fig)
+
+        ax: plt.Axes = fig.add_subplot(gs[0, 0])
+        ax.scatter(timestamps, depth_vals)
+        ax.set_title("Mean Foot Depth Estimate")
+        ax.set_ylabel("meters")
+        ax.set_xlabel("seconds")
+
+        save_dir = Path("images") / self._datapath.stem
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(save_dir / "plot.pdf", format="pdf", dpi=100)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -220,6 +243,7 @@ def main() -> None:
     options = parser.parse_args()
     data = SensorData(options.filename)
     data.save_video()
+    data.save_plot()
 
 
 if __name__ == "__main__":
