@@ -71,7 +71,7 @@ def camera_rays(
     camera_matrix: npt.NDArray[np.float64],
 ) -> npt.NDArray[np.float64]:
     """Calculates the rays originating from a camera in the world frame that
-        point to pixels in the camera's image.
+    point to pixels in the camera's image.
 
     Args:
         image_coords (npt.ArrayLike): A 2xN matrix of (x, y) image coordinates.
@@ -80,14 +80,14 @@ def camera_rays(
         camera_matrix (npt.NDArray[np.float64]): The camera intrinsic matrix.
 
     Returns:
-        npt.NDArray[np.float64]: A 3xN matrix of normalized rays.
+        npt.NDArray[np.float64]: A 3xN matrix of rays originating from the
+            camera frame. The rays have arbitrary magnitude.
     """
     image_coords = np.asarray(image_coords, dtype=np.float64)
     assert image_coords.shape[0] == 2
 
     tform_rot = world_tform_camera[:3, :3]
     rays = tform_rot @ np.linalg.inv(camera_matrix) @ to_homogenous(image_coords)
-    rays /= np.linalg.norm(rays, axis=0)
 
     return rays
 
@@ -128,7 +128,7 @@ def image_to_ground(
     for i in range(n_points):
         ray = rays[:, i]
 
-        if ray[2] >= 1e-6:
+        if ray[2] >= 0:
             rays[:, i] = np.NaN
         else:
             k = -camera_loc[2] / ray[2]
