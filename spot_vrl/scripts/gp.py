@@ -9,7 +9,7 @@ import argparse
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Iterator, List, Tuple
 
 import cv2
 import numpy as np
@@ -63,12 +63,8 @@ class SensorData:
     """Helper class for storing timestamped sensor data."""
 
     def __init__(self, filename: str) -> None:
-
         self.depths: Dict[float, float] = {}
         """Mapping of timestamps to mean ground penetration values."""
-
-        self.images: Dict[float, npt.NDArray[np.uint8]] = {}
-        """Mapping of timestamps to fused front camera images."""
 
         self._datapath: Path = Path(filename)
         self._data_reader = DataReader(None, filename)
@@ -79,7 +75,6 @@ class SensorData:
 
         self._init_start_ts()
         self._init_depths()
-        self._init_images()
 
     def _init_start_ts(self) -> None:
         series_index: int = self._proto_reader.series_index(
@@ -123,7 +118,18 @@ class SensorData:
             if depth_vals:
                 self.depths[ts] = sum(depth_vals) / len(depth_vals)
 
-    def _init_images(self) -> None:
+    def num_images(self) -> int:
+        series_index: int = self._proto_reader.series_index(
+            "bosdyn.api.GetImageResponse"
+        )
+        series_block_index: SeriesBlockIndex = self._data_reader.series_block_index(
+            series_index
+        )
+        return len(series_block_index.block_entries)
+
+    def images(self) -> Iterator[Tuple[float, npt.NDArray[np.uint8]]]:
+        """Generates tuples of (timestamp, fused image)."""
+
         assert self._start_ts != 0, "Initialize self._start_ts first."
         assert len(self.depths) != 0, "Initialize self.depths first."
 
@@ -139,9 +145,7 @@ class SensorData:
             [0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST]
         )
 
-        pbar = tqdm.trange(num_msgs)
-        pbar.set_description("Processing Images")
-        for msg_idx in pbar:
+        for msg_idx in range(num_msgs):
             _, ts, response = self._proto_reader.get_message(
                 series_index, GetImageResponse, msg_idx
             )
@@ -154,7 +158,7 @@ class SensorData:
                     images.append(image)
 
             fused = perspective_transform.TopDown(images, ground_tform_body)
-            self.images[ts] = fused.get_view()
+            yield ts, fused.get_view()
 
     def save_video(self) -> None:
         save_dir = Path("images") / self._datapath.stem
@@ -183,7 +187,10 @@ class SensorData:
         ffmpeg = subprocess.Popen(ffmpeg_args, cwd=save_dir, stdin=subprocess.PIPE)
         assert ffmpeg.stdin
 
-        pbar: tqdm.tqdm[int, int] = tqdm.tqdm(self.images.items(), desc="Saving Video")
+        images = self.images()
+        pbar: tqdm.tqdm[int, int] = tqdm.tqdm(
+            images, desc="Processing Video Frames", total=self.num_images()
+        )
         for ts, img in pbar:
             img_wrapper = ImageWithText(img)
 
@@ -243,7 +250,7 @@ def main() -> None:
     options = parser.parse_args()
     data = SensorData(options.filename)
     data.save_video()
-    data.save_plot()
+    # data.save_plot()
 
 
 if __name__ == "__main__":
