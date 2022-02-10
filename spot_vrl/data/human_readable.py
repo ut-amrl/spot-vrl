@@ -1,25 +1,21 @@
 """Human-readable representations of common numerical types."""
 
 import math
-import os.path
 import time
 
 
-def filesize(filename: str) -> str:
-    """Returns the size of a file in a uman-readable format.
+def filesize(bytes: int) -> str:
+    """Returns a quantity of bytes in a human-readable format.
 
     Uses binary (base 1024) units, e.g. 12 B, 34.5 KiB, 678.9 MiB
-    If `filename` does not point to a regular file, a size of zero is returned.
 
     Args:
-        filename: The path to the file to query.
+        bytes: The number of bytes.
     """
     units = ["B", "KiB", "MiB", "GiB", "TiB"]
     base = 1024.0
 
-    size = 0.0
-    if os.path.isfile(filename):
-        size = float(os.path.getsize(filename))
+    size = float(bytes)
     unit_idx = 0
     while size > base and unit_idx + 1 < len(units):
         size /= base

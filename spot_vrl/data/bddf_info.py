@@ -5,6 +5,7 @@ Invocation from the project's root directory:
 """
 
 import argparse
+import os.path
 from typing import Dict
 
 import bosdyn.api.bddf_pb2
@@ -33,6 +34,7 @@ def summarize(filename: str, filter_series: bool = False) -> str:
 
         # Mapped Fileindex
         message_counts: Dict[str, Dict[str, int]] = {}
+        message_sizes: Dict[str, Dict[str, str]] = {}
         total_message_count = 0
         start_ts = hr.LocalTimestamp(40000000000)  # year 3237
         end_ts = hr.LocalTimestamp(0)
@@ -57,6 +59,9 @@ def summarize(filename: str, filter_series: bool = False) -> str:
                 message_counts.setdefault(series_type, {})[message_type] = len(
                     series_block_index.block_entries
                 )
+                message_sizes.setdefault(series_type, {})[
+                    message_type
+                ] = hr.filesize(series_block_index.total_bytes)
 
             for block_entry in series_block_index.block_entries:
                 ts: google.protobuf.timestamp_pb2.Timestamp = block_entry.timestamp
@@ -67,7 +72,7 @@ def summarize(filename: str, filter_series: bool = False) -> str:
         summary["duration"] = f"{start_ts.seconds_until(end_ts):.1f}s"
         summary["start"] = f"{start_ts.rfc1123()} ({start_ts.unix_time:.2f})"
         summary["end"] = f"{end_ts.rfc1123()} ({end_ts.unix_time:.2f})"
-        summary["size"] = hr.filesize(filename)
+        summary["size"] = hr.filesize(os.path.getsize(filename))
         summary["messages"] = str(total_message_count)
         summary["types"] = "(filtered)" if filter_series else ""
 
@@ -84,7 +89,17 @@ def summarize(filename: str, filter_series: bool = False) -> str:
                 continue
             out += f"{'':4}{series_type}\n"
             for msg_type in sorted(message_counts[series_type].keys()):
-                out += f"{'':<{label_width}}{msg_type:<{msg_type_width}} {message_counts[series_type][msg_type]:>4}\n"
+                out += f"{'':<{label_width}}"
+                out += f"{msg_type:<{msg_type_width}}"
+                out += f"{message_counts[series_type][msg_type]:>6}"
+
+                msg_size_width = 11
+                msg_size = message_sizes[series_type][msg_type]
+                if msg_size.endswith(" B"):
+                    msg_size_width -= 2
+                out += f"{msg_size:>{msg_size_width}}"
+
+                out += "\n"
 
     return out
 
