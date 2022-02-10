@@ -23,6 +23,10 @@ class TopDown:
     def get_view(self) -> npt.NDArray[np.uint8]:
         """Generate a top-down view of the ground around the robot.
 
+        The image is oriented such that:
+        - The robot's X axis points upwards from the center of the image.
+        - The robot's Y axis points left from the center of the image.
+
         Returns:
             npt.NDArray[np.uint8]: A 3D matrix of containing an RGBA image of
                 the ground around the robot.
@@ -39,6 +43,7 @@ class TopDown:
                 spot_image.camera_matrix,
                 spot_image.width,
                 spot_image.height,
+                horizon_dist=2,
             )
 
         view_limits = np.zeros((2, 2))  # min, max as xy row vectors
@@ -47,18 +52,13 @@ class TopDown:
                 view_limits[0] = np.minimum(view_limits[0], col[:2])
                 view_limits[1] = np.maximum(view_limits[1], col[:2])
 
-        print("view limits: [x y]")
-        print(f"\tmin: {view_limits[0]}")
-        print(f"\tmax: {view_limits[1]}")
-
         output_width = int(
-            np.ceil((view_limits[1] - view_limits[0])[0] * OUTPUT_RESOLUTION)
-        )
-        output_height = int(
             np.ceil((view_limits[1] - view_limits[0])[1] * OUTPUT_RESOLUTION)
         )
+        output_height = int(
+            np.ceil((view_limits[1] - view_limits[0])[0] * OUTPUT_RESOLUTION)
+        )
 
-        print(f"output img dim: {output_width} x {output_height}")
         output_img: npt.NDArray[np.uint8] = np.zeros(
             (output_height, output_width, 4), dtype=np.uint8
         )
@@ -79,10 +79,10 @@ class TopDown:
             # plane limits.
             limits_output_coords = np.empty((2, 4))
             limits_output_coords[0] = (
-                -(plane_limits[0] - view_limits[1, 0]) * OUTPUT_RESOLUTION
-            )
+                view_limits[1, 1] - plane_limits[1]
+            ) * OUTPUT_RESOLUTION
             limits_output_coords[1] = (
-                plane_limits[1] - view_limits[0, 1]
+                view_limits[1, 0] - plane_limits[0]
             ) * OUTPUT_RESOLUTION
 
             perspective_transform = cv2.getPerspectiveTransform(
