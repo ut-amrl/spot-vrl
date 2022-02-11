@@ -11,9 +11,6 @@ from spot_vrl.homography import transform as camera_transform
 
 
 class TopDown:
-    # transparent pixel in RGBA
-    ZERO_PIXEL = np.array([0, 0, 0, 0])
-
     def __init__(
         self, spot_images: List[SpotImage], ground_tform_body: npt.NDArray[np.float64]
     ) -> None:
@@ -28,8 +25,9 @@ class TopDown:
         - The robot's Y axis points left from the center of the image.
 
         Returns:
-            npt.NDArray[np.uint8]: A 3D matrix of containing an RGBA image of
-                the ground around the robot.
+            npt.NDArray[np.uint8]: A 2D matrix of containing a single-channel
+                image of the ground around the robot. Pixels with value 0 are
+                invalid (e.g. out of view).
         """
         OUTPUT_RESOLUTION = 100  # pixels per meter
 
@@ -60,7 +58,7 @@ class TopDown:
         )
 
         output_img: npt.NDArray[np.uint8] = np.zeros(
-            (output_height, output_width, 4), dtype=np.uint8
+            (output_height, output_width), dtype=np.uint8
         )
 
         for spot_image in self.spot_images:
@@ -95,13 +93,9 @@ class TopDown:
                 ground_img, perspective_transform, (output_width, output_height)
             )
 
-            # Fill in pixels in the output image iff:
-            #  - The pixel in the output image is empty (alpha == 0)
-            #  - The pixel in the warped ground image is not empty (alpha != 0)
+            # Fill in empty pixels in the output image.
             output_img = np.where(
-                ((output_img[:, :, 3] == 0) & (warped_ground_img[:, :, 3] != 0))[
-                    :, :, np.newaxis
-                ],
+                output_img == 0,
                 warped_ground_img,
                 output_img,
             )
