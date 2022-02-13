@@ -40,7 +40,7 @@ class ImageWithText:
         self.y = 0
 
     def add_line(
-        self, text: str, color: Tuple[int, int, int, int] = (0, 0, 255, 255)
+        self, text: str, color: Tuple[int, int, int] = (0, 0, 255)
     ) -> None:
         face = cv2.FONT_HERSHEY_SIMPLEX
         scale = 1.25
@@ -192,6 +192,7 @@ class SensorData:
             images, desc="Processing Video Frames", total=self.num_images()
         )
         for ts, img in pbar:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
             img_wrapper = ImageWithText(img)
 
             img_wrapper.add_line(f"ts: {ts:.3f}s")
