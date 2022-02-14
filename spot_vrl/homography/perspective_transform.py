@@ -17,20 +17,22 @@ class TopDown:
         self.spot_images = spot_images
         self.ground_tform_body = ground_tform_body
 
-    def get_view(self) -> npt.NDArray[np.uint8]:
+    def get_view(self, resolution: int = 100) -> npt.NDArray[np.uint8]:
         """Generate a top-down view of the ground around the robot.
 
         The image is oriented such that:
         - The robot's X axis points upwards from the center of the image.
         - The robot's Y axis points left from the center of the image.
 
+        Args:
+            resolution (int): The output resolution in pixels per meter of
+                ground.
+
         Returns:
             npt.NDArray[np.uint8]: A 2D matrix of containing a single-channel
                 image of the ground around the robot. Pixels with value 0 are
                 invalid (e.g. out of view).
         """
-        OUTPUT_RESOLUTION = 100  # pixels per meter
-
         all_plane_limits: Dict[str, npt.NDArray[np.float64]] = {}
         for spot_image in self.spot_images:
             ground_tform_camera = self.ground_tform_body @ spot_image.body_tform_camera
@@ -50,12 +52,8 @@ class TopDown:
                 view_limits[0] = np.minimum(view_limits[0], col[:2])
                 view_limits[1] = np.maximum(view_limits[1], col[:2])
 
-        output_width = int(
-            np.ceil((view_limits[1] - view_limits[0])[1] * OUTPUT_RESOLUTION)
-        )
-        output_height = int(
-            np.ceil((view_limits[1] - view_limits[0])[0] * OUTPUT_RESOLUTION)
-        )
+        output_width = int(np.ceil((view_limits[1] - view_limits[0])[1] * resolution))
+        output_height = int(np.ceil((view_limits[1] - view_limits[0])[0] * resolution))
 
         output_img: npt.NDArray[np.uint8] = np.zeros(
             (output_height, output_width), dtype=np.uint8
@@ -76,12 +74,8 @@ class TopDown:
             # Calculate the output image coordinates of this camera's ground
             # plane limits.
             limits_output_coords = np.empty((2, 4))
-            limits_output_coords[0] = (
-                view_limits[1, 1] - plane_limits[1]
-            ) * OUTPUT_RESOLUTION
-            limits_output_coords[1] = (
-                view_limits[1, 0] - plane_limits[0]
-            ) * OUTPUT_RESOLUTION
+            limits_output_coords[0] = (view_limits[1, 1] - plane_limits[1]) * resolution
+            limits_output_coords[1] = (view_limits[1, 0] - plane_limits[0]) * resolution
 
             perspective_transform = cv2.getPerspectiveTransform(
                 limits_source_coords.astype(np.float32).T,
