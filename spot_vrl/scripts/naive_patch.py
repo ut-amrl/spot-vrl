@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
+from scipy.spatial.transform import Rotation
 import tqdm
 
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
@@ -60,7 +61,13 @@ class Terrain(enum.Enum):
 
 
 class Datum:
-    def __init__(self, ts: float, gp: float, image: npt.NDArray[np.uint8]) -> None:
+    def __init__(
+        self,
+        ts: float,
+        gp: float,
+        image: npt.NDArray[np.uint8],
+        odom_pose: npt.NDArray[np.float64],
+    ) -> None:
         self.ts = ts
         """Timestamp (s)"""
 
@@ -69,6 +76,12 @@ class Datum:
 
         self.image = image
         """Top-down image"""
+
+        self.odom_pose = odom_pose
+
+        self.rel_pose = np.identity(4)
+        """The pose of this image relative to the previous image in the sequence
+        as an Affine3D matrix."""
 
 
 class SensorData:
@@ -168,7 +181,15 @@ class SensorData:
 
             fused = perspective_transform.TopDown(images, ground_tform_body)
 
-            self.data.append(Datum(ts, -1, fused.get_view(200)))
+            tf_tree = response.image_responses[0].shot.transforms_snapshot
+            body_tform_odom = proto_to_numpy.body_tform_frame(tf_tree, "odom")
+            odom_tform_body = np.linalg.inv(body_tform_odom)
+
+            self.data.append(Datum(ts, -1, fused.get_view(200), odom_tform_body))
+            if msg_idx > 0:
+                self.data[-1].rel_pose = (
+                    np.linalg.inv(self.data[-2].odom_pose) @ self.data[-1].odom_pose
+                )
 
         depth_it = iter(depths.items())
         depth_entry = next(depth_it)
@@ -230,10 +251,14 @@ class SensorData:
                 img_wrapper.add_line("invalid (<0.01 cm)")
             else:
                 diff = self.data[i + 6].gp - self.data[i].gp
+                zxy = Rotation.from_matrix(self.data[i].rel_pose[:3, :3]).as_euler(
+                    "zxy", degrees=True
+                )
+                yaw = zxy[0]
 
-                print(f"transition ({diff * 100:.2f} cm)", end="")
+                print(f"rotation ({yaw:.2f}º)", end="")
 
-                if abs(diff) * 100 > 1:
+                if abs(yaw) >= 0.5 or abs(diff) * 100 > 1.4:
                     img_wrapper.add_line("invalid (transition)")
                     print()
                 else:
