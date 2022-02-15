@@ -137,6 +137,8 @@ class SensorData:
 
         #
         # Read in images and average the ground depth vals between image timestamps.
+        # Depth values collected in the interval between images are attributed to the
+        #   image at the start of the interval.
         #
         series_index = self._proto_reader.series_index("bosdyn.api.GetImageResponse")
         series_block_index = self._data_reader.series_block_index(series_index)
@@ -145,18 +147,44 @@ class SensorData:
         ground_tform_body = spot_vrl.homography.transform.affine3d(
             [0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST]
         )
-        depth_it = iter(depths.items())
-        depth_entry = next(depth_it)
 
-        num_msgs = 10
         for msg_idx in range(num_msgs):
             _, ts, response = self._proto_reader.get_message(
                 series_index, GetImageResponse, msg_idx
             )
             ts = float(ts) * 1e-9 - self._start_ts
 
+            images: List[proto_to_numpy.SpotImage] = []
+            for image_response in response.image_responses:
+                image = proto_to_numpy.SpotImage(image_response)
+                if image.frame_name.startswith("front"):
+                    images.append(image)
+                    # image_save_path = (
+                    #     Path("images")
+                    #     / self._datapath.stem
+                    #     / f"{msg_idx:03d}-{image.frame_name}.png"
+                    # )
+                    # cv2.imwrite(str(image_save_path), image.decoded_image())
+
+            fused = perspective_transform.TopDown(images, ground_tform_body)
+
+            self.data.append(Datum(ts, -1, fused.get_view(200)))
+
+        depth_it = iter(depths.items())
+        depth_entry = next(depth_it)
+
+        for i in range(len(self.data) - 1):
+            ts = self.data[i].ts
+            next_ts = self.data[i + 1].ts
+
             corr_depths: List[float] = []
-            while depth_entry[0] <= ts:
+            while depth_entry[0] < ts:
+                try:
+                    depth_entry = next(depth_it)
+                except StopIteration:
+                    depth_entry = (np.inf, 0)
+
+            while depth_entry[0] >= ts and depth_entry[0] < next_ts:
                 corr_depths.append(depth_entry[1])
                 try:
                     depth_entry = next(depth_it)
@@ -166,22 +194,7 @@ class SensorData:
             mean_depth = 0.0
             if corr_depths:
                 mean_depth = sum(corr_depths) / len(corr_depths)
-
-            images: List[proto_to_numpy.SpotImage] = []
-            for image_response in response.image_responses:
-                image = proto_to_numpy.SpotImage(image_response)
-                if image.frame_name.startswith("front"):
-                    images.append(image)
-                    image_save_path = (
-                        Path("images")
-                        / self._datapath.stem
-                        / f"{msg_idx:03d}-{image.frame_name}.png"
-                    )
-                    cv2.imwrite(str(image_save_path), image.decoded_image())
-
-            fused = perspective_transform.TopDown(images, ground_tform_body)
-
-            self.data.append(Datum(ts, mean_depth, fused.get_view(200)))
+            self.data[i].gp = mean_depth
 
     def process(self) -> None:
         for i in range(len(self.data) - 6):
