@@ -268,16 +268,17 @@ class SensorData:
                         img_wrapper.img, (r_tl_x, r_tl_y), (r_br_x, r_br_y), (0, 255, 0)
                     )
 
-                    os.makedirs(patch_save_path, exist_ok=True)
+                    os.makedirs(f"{patch_save_path}-L", exist_ok=True)
+                    os.makedirs(f"{patch_save_path}-R", exist_ok=True)
 
                     left_patch = self.data[i].image[l_tl_y:l_br_y, l_tl_x:l_br_x]
                     right_patch = self.data[i].image[r_tl_y:r_br_y, r_tl_x:r_br_x]
                     cv2.imwrite(
-                        f"{patch_save_path}/{i:03d}-L.png",
+                        f"{patch_save_path}-L/{i:03d}.png",
                         left_patch,
                     )
                     cv2.imwrite(
-                        f"{patch_save_path}/{i:03d}-R.png",
+                        f"{patch_save_path}-R/{i:03d}.png",
                         right_patch,
                     )
 
@@ -325,13 +326,14 @@ class SensorData:
                         right_patch = self.data[i].image[r_tl_y - fut_x:r_br_y - fut_x, r_tl_x - fut_y:r_br_x - fut_y]
 
                         patch_save_path = patch_save_path.parent / f"{i +j + 1:03d}"
-                        os.makedirs(patch_save_path, exist_ok=True)
+                        os.makedirs(f"{patch_save_path}-L", exist_ok=True)
+                        os.makedirs(f"{patch_save_path}-R", exist_ok=True)
                         cv2.imwrite(
-                            f"{patch_save_path}/{i:03d}-L.png",
+                            f"{patch_save_path}-L/{i:03d}.png",
                             left_patch,
                         )
                         cv2.imwrite(
-                            f"{patch_save_path}/{i:03d}-R.png",
+                            f"{patch_save_path}-R/{i:03d}.png",
                             right_patch,
                         )
 
