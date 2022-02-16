@@ -235,16 +235,6 @@ class SensorData:
             r_br_x = r_tl_x + patch_size
             r_br_y = r_tl_y + patch_size
 
-            left_patch = self.data[i].image[l_tl_y:l_br_y, l_tl_x:l_br_x]
-            right_patch = self.data[i].image[r_tl_y:l_br_y, l_tl_x:l_br_x]
-
-            img_wrapper.img = cv2.rectangle(
-                img_wrapper.img, (l_tl_x, l_tl_y), (l_br_x, l_br_y), (0, 255, 0)
-            )
-            img_wrapper.img = cv2.rectangle(
-                img_wrapper.img, (r_tl_x, r_tl_y), (r_br_x, r_br_y), (0, 255, 0)
-            )
-
             print(f"{i:03d} ({self.data[i].ts:06.3f}s): ", end="")
             if self.data[i].gp * 100 < 0.01:
                 print("invalid ground depth (<0.01 cm)")
@@ -265,19 +255,86 @@ class SensorData:
                     if self.data[i].gp * 100 < 1.5:
                         img_wrapper.add_line("concrete")
                         print(" concrete")
-                        patch_save_path = "images/patches2/concrete"
+                        patch_save_path = Path(f"images/patches3/concrete/{self._datapath.stem}/{i:03d}")
                     else:
                         img_wrapper.add_line("grass")
                         print(" grass")
-                        patch_save_path = "images/patches2/grass"
+                        patch_save_path = Path(f"images/patches3/grass/{self._datapath.stem}/{i:03d}")
+
+                    img_wrapper.img = cv2.rectangle(
+                        img_wrapper.img, (l_tl_x, l_tl_y), (l_br_x, l_br_y), (0, 255, 0)
+                    )
+                    img_wrapper.img = cv2.rectangle(
+                        img_wrapper.img, (r_tl_x, r_tl_y), (r_br_x, r_br_y), (0, 255, 0)
+                    )
+
+                    os.makedirs(patch_save_path, exist_ok=True)
+
+                    left_patch = self.data[i].image[l_tl_y:l_br_y, l_tl_x:l_br_x]
+                    right_patch = self.data[i].image[r_tl_y:r_br_y, r_tl_x:r_br_x]
                     cv2.imwrite(
-                        f"{patch_save_path}/{self._datapath.stem}-{i:03d}-L.png",
+                        f"{patch_save_path}/{i:03d}-L.png",
                         left_patch,
                     )
                     cv2.imwrite(
-                        f"{patch_save_path}/{self._datapath.stem}-{i:03d}-R.png",
+                        f"{patch_save_path}/{i:03d}-R.png",
                         right_patch,
                     )
+
+                    colors = [
+                        (255, 255, 0),
+                        (0, 255, 255),
+                        (255, 0, 255),
+                    ]
+                    future_steps = 3
+                    future_pose = np.identity(4)
+                    for j in range(future_steps):
+                        if (i + j + 1 + 6) < len(self.data):
+                            diff = self.data[i + j + 1 + 6].gp - self.data[i + j + 1].gp
+                        else:
+                            diff = 0
+
+                        zxy = Rotation.from_matrix(
+                            self.data[i + j + 1].rel_pose[:3, :3]
+                        ).as_euler("zxy", degrees=True)
+                        yaw = zxy[0]
+
+                        if abs(yaw) >= 0.5 or abs(diff) * 100 > 1.4:
+                            break
+
+                        future_pose = self.data[i + j + 1].rel_pose @ future_pose
+
+                        # adjust accordingly for dpi
+                        fut_x, fut_y = (future_pose[:2, 3] * 200).astype(int)
+
+                        # image and world axes are flipped
+                        img_wrapper.img = cv2.rectangle(
+                            img_wrapper.img,
+                            (l_tl_x - fut_y, l_tl_y - fut_x),
+                            (l_br_x - fut_y, l_br_y - fut_x),
+                            colors[j % 3],
+                        )
+                        img_wrapper.img = cv2.rectangle(
+                            img_wrapper.img,
+                            (r_tl_x - fut_y, r_tl_y - fut_x),
+                            (r_br_x - fut_y, r_br_y - fut_x),
+                            colors[j % 3],
+                        )
+
+                        left_patch = self.data[i].image[l_tl_y - fut_x:l_br_y - fut_x, l_tl_x - fut_y:l_br_x - fut_y]
+                        right_patch = self.data[i].image[r_tl_y - fut_x:r_br_y - fut_x, r_tl_x - fut_y:r_br_x - fut_y]
+
+                        patch_save_path = patch_save_path.parent / f"{i +j + 1:03d}"
+                        os.makedirs(patch_save_path, exist_ok=True)
+                        cv2.imwrite(
+                            f"{patch_save_path}/{i:03d}-L.png",
+                            left_patch,
+                        )
+                        cv2.imwrite(
+                            f"{patch_save_path}/{i:03d}-R.png",
+                            right_patch,
+                        )
+
 
             image_save_path = Path("images") / self._datapath.stem / f"{i:03d}.png"
             cv2.imwrite(str(image_save_path), img_wrapper.img)
