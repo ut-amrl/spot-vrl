@@ -9,7 +9,7 @@ class EmbeddingNet(nn.Module):
                                      nn.Conv2d(32, 64, 5), nn.PReLU(),
                                      nn.MaxPool2d(2, stride=2))
 
-        self.fc = nn.Sequential(nn.Linear(3136, 256),
+        self.fc = nn.Sequential(nn.Linear(18496, 256),
                                 nn.PReLU(),
                                 nn.Linear(256, 256),
                                 nn.PReLU(),

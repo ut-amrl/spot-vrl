@@ -1,10 +1,12 @@
 import numpy as np
 import os
+from typing import Any, List, Tuple
 
 from torch.utils.data import Dataset
 import torch
 import torchvision
-import torchvision.transforms.functional
+import torchvision.transforms.functional as F
+
 
 class ConcreteGrassTripletDataset(Dataset):
     def __init__(self, patches_dir: str, trajectory: str) -> None:
@@ -14,12 +16,14 @@ class ConcreteGrassTripletDataset(Dataset):
         self.concrete_ids = sorted(os.listdir(self.concrete_dir))
         self.grass_ids = sorted(os.listdir(self.grass_dir))
 
-    def _read_img(self, filename: str):
+    def _read_img(self, filename: str) -> torch.Tensor:
         img = torchvision.io.read_image(filename, torchvision.io.ImageReadMode.RGB)
-        img = torchvision.transforms.functional.resize(img, (40, 40))
-        return torchvision.transforms.functional.convert_image_dtype(img, dtype=torch.float32)
+        img: torch.Tensor = F.convert_image_dtype(img, dtype=torch.float32)
+        return img
 
-    def __getitem__(self, index: int):
+    def __getitem__(
+        self, index: int
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor, torch.Tensor], List[Any]]:
         if index < len(self.concrete_ids):
             concrete_id = self.concrete_ids[index]
             concrete_views = sorted(os.listdir(f"{self.concrete_dir}/{concrete_id}"))

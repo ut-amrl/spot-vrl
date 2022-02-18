@@ -25,7 +25,7 @@ pref_datasets = []
 for traj_id in os.listdir(f"{args.root_dir}/concrete"):
     pref_datasets.append(ConcreteGrassTripletDataset(args.root_dir, traj_id))
 triplet_dataset = torch.utils.data.ConcatDataset(pref_datasets)
-batch_size = 128
+batch_size = 1
 kwargs = {'num_workers': 16, 'pin_memory': True} if cuda else {}
 train_size = int(len(triplet_dataset) * 0.75)
 train_set, test_set = torch.utils.data.dataset.random_split(triplet_dataset, (train_size, len(triplet_dataset) - train_size))
@@ -44,7 +44,7 @@ model = TripletNet(embedding_net)
 if cuda:
     model.cuda()
 loss_fn = TripletLoss(margin)
-lr = 1e-4
+lr = 1e-4 * batch_size
 optimizer = optim.Adam(model.parameters(), lr=lr)
 scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
 n_epochs = 40
