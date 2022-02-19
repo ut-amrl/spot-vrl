@@ -7,7 +7,6 @@ the ground penetration metric.
 
 import argparse
 import os
-import subprocess
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple
 
@@ -28,7 +27,7 @@ import spot_vrl.homography
 import spot_vrl.homography.transform
 from spot_vrl.homography import proto_to_numpy
 import spot_vrl.homography.perspective_transform as perspective_transform
-
+from spot_vrl.utils.video_writer import VideoWriter
 
 # TODO(eyang): use values from robot states
 BODY_HEIGHT_EST = 0.48938  # meters
@@ -161,31 +160,10 @@ class SensorData:
             yield ts, fused.get_view()
 
     def save_video(self) -> None:
-        save_dir = Path("images") / self._datapath.stem
-        os.makedirs(save_dir, exist_ok=True)
+        video_writer = VideoWriter(Path("images") / self._datapath.stem / "video.mp4")
 
         depth_it = iter(self.depths.items())
         depth_entry = next(depth_it)
-
-        # I couldn't get cv2.VideoWriter to work, so we'll stream to an ffmpeg process
-
-        fps = "8"
-        # fmt: off
-        ffmpeg_args = [
-            "ffmpeg",
-            "-loglevel", "warning",
-            "-y",
-            "-f", "image2pipe",
-            "-r", fps,  # need to specify input frame rate, otherwise frames are dropped
-            "-i", "-",
-            "-c:v", "libx264",
-            "-crf", "18",
-            "-r", fps,
-            "video.mp4",
-        ]
-        # fmt: on
-        ffmpeg = subprocess.Popen(ffmpeg_args, cwd=save_dir, stdin=subprocess.PIPE)
-        assert ffmpeg.stdin
 
         images = self.images()
         pbar: tqdm.tqdm[int, int] = tqdm.tqdm(
@@ -214,12 +192,8 @@ class SensorData:
             category = "concrete" if mean_depth < 0.01 else "grass"
             img_wrapper.add_line(f"cat: {category}")
 
-            img_buf: npt.NDArray[np.uint8]
-            _, img_buf = cv2.imencode(".png", img_wrapper.img)
-            ffmpeg.stdin.write(img_buf.tobytes())
-
-        ffmpeg.stdin.close()
-        ffmpeg.wait()
+            video_writer.add_frame(img_wrapper.img)
+        video_writer.close()
 
     def save_plot(self) -> None:
         data_points = len(self.depths)
