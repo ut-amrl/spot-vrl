@@ -83,7 +83,7 @@ class VideoWriter:
         """Add a frame to the video.
 
         Args:
-            frame (npt.NDArray[np.uint8]): Image contents of the video frame.
+            frame (npt.NDArray[np.uint8]): The unencoded frame as an array.
 
         Raises:
             ValueError: The shape of `frame` is invalid or does not match a
@@ -91,8 +91,8 @@ class VideoWriter:
             ValueError: The image could not be encoded.
             ChildProcessError: The ffmpeg process has terminated already.
         """
-        if frame.ndim != 2:
-            raise ValueError(f"Expected 2 dimensions, got {frame.ndim}.")
+        if frame.ndim < 2 or frame.ndim > 3:
+            raise ValueError(f"Expected 2 or 3 dimensions, got {frame.ndim}.")
 
         if self._shape is None:
             self._shape = frame.shape
