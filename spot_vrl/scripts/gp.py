@@ -20,9 +20,9 @@ import tqdm
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.api.robot_id_pb2 import RobotIdResponse
-from bosdyn.api.robot_state_pb2 import RobotStateResponse, FootState
 from bosdyn.bddf import DataReader, ProtobufReader
 
+from spot_vrl.data import ImuData
 import spot_vrl.homography
 import spot_vrl.homography.transform
 from spot_vrl.homography import proto_to_numpy
@@ -38,9 +38,7 @@ class ImageWithText:
         self.img = img
         self.y = 0
 
-    def add_line(
-        self, text: str, color: Tuple[int, int, int] = (0, 0, 255)
-    ) -> None:
+    def add_line(self, text: str, color: Tuple[int, int, int] = (0, 0, 255)) -> None:
         face = cv2.FONT_HERSHEY_SIMPLEX
         scale = 1.25
         thickness = 3
@@ -91,31 +89,11 @@ class SensorData:
     def _init_depths(self) -> None:
         assert self._start_ts != 0, "Initialize self._start_ts first."
 
-        series_index: int = self._proto_reader.series_index(
-            "bosdyn.api.RobotStateResponse"
-        )
-        series_block_index: SeriesBlockIndex = self._data_reader.series_block_index(
-            series_index
-        )
-        num_msgs = len(series_block_index.block_entries)
+        imu = ImuData(self._datapath)
+        ts = imu.timestamp_sec - self._start_ts
 
-        for msg_idx in range(num_msgs):
-            _, ts, response = self._proto_reader.get_message(
-                series_index, RobotStateResponse, msg_idx
-            )
-            ts = float(ts) * 1e-9 - self._start_ts
-            depth_vals: List[float] = []
-
-            robot_state = response.robot_state
-            for foot_state in robot_state.foot_state:
-                if foot_state.contact == FootState.Contact.CONTACT_MADE:
-                    terrain = foot_state.terrain
-                    assert terrain.frame_name == "odom"
-
-                    depth_vals.append(terrain.visual_surface_ground_penetration_mean)
-
-            if depth_vals:
-                self.depths[ts] = sum(depth_vals) / len(depth_vals)
+        for t, d in zip(ts, imu.foot_depth_mean):
+            self.depths[t] = d
 
     def num_images(self) -> int:
         series_index: int = self._proto_reader.series_index(
