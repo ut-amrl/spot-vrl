@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, Iterator, List, Tuple, Union, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -164,6 +164,23 @@ class ImuData:
         ):
             logger.warning("Data sequence is not sorted by ascending ts.")
 
+    def __len__(self) -> int:
+        return len(self._data)
+
+    @overload
+    def __getitem__(self, idx: int) -> Datum:
+        ...
+
+    @overload
+    def __getitem__(self, idx: slice) -> List[Datum]:
+        ...
+
+    def __getitem__(self, idx: Union[int, slice]) -> Union[Datum, List[Datum]]:
+        return self._data[idx]
+
+    def __iter__(self) -> Iterator[Datum]:
+        return iter(self._data)
+
     @property
     def timestamp_sec(self) -> npt.NDArray[np.float64]:
         return np.array([d.ts for d in self._data], dtype=np.float64)
@@ -224,8 +241,7 @@ class ImuData:
         return np.array([d.foot_depth_std for d in self._data], dtype=np.float32)
 
     @property
-    def all_data(self) -> npt.NDArray[np.float32]:
-        """All sensor data, excluding timestamps."""
+    def all_sensor_data(self) -> npt.NDArray[np.float32]:
         return np.vstack(
             (
                 self.power,
@@ -240,3 +256,63 @@ class ImuData:
                 self.foot_depth_std,
             )
         )
+
+    def query_time_range(
+        self, prop: npt.NDArray[np.float32], start: float = 0, end: float = np.inf
+    ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float32]]:
+        """Queries a time range of the specified property.
+
+        Args:
+            prop (npt.NDArray[np.float32]): A numpy array returned by one of
+                this class' properties.
+            start (float): The start of the time range (seconds, inclusive).
+            end (float): The end of the time range (seconds, exclusive).
+
+        Returns:
+            Tuple[npt.NDArray[np.float64], npt.NDArray[np.float32]]:
+                A tuple containing the timestamps and data corresponding to
+                the time range.
+
+        Raises:
+            ValueError: Invalid time range or property matrix.
+
+        Examples:
+            >>> imu = ImuData(...)
+            >>> timestamps, data = imu.query_time_range(imu.all_sensor_data, 1000, 2000)
+            >>> timestamps, power = imu.query_time_range(imu.power, 1000, 2000)
+        """
+        if start > end:
+            raise ValueError("start > end")
+        if prop.shape[-1] != len(self._data):
+            raise ValueError("Number of columns does not match internal list.")
+
+        start_i = self._ts_index(start)
+        end_i = self._ts_index(end)
+        ts_range = self.timestamp_sec[start_i:end_i]
+        prop_range = prop[..., start_i:end_i]
+        return ts_range, prop_range
+
+    def _ts_index(self, ts: float) -> int:
+        """Returns the index of the earliest datum with timestamp at least `ts`.
+
+        Args:
+            ts (float): Timestamp in seconds to search for.
+
+        Returns:
+            int: The index of the earliest datum with timestamp greater than
+                or equal to `ts`.
+        """
+        left = 0
+        right = len(self._data) - 1
+        while left <= right:
+            mid = (left + right) // 2
+            datum_ts = self._data[mid].ts
+
+            if datum_ts > ts:
+                right = mid - 1
+            elif datum_ts < ts:
+                left = mid + 1
+            else:
+                return mid
+
+        return left
