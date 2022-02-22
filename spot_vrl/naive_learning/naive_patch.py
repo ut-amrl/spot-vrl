@@ -1,24 +1,20 @@
 import argparse
 import enum
 import os
-import subprocess
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple
+from typing import Dict, List, Tuple
 
 import cv2
 import numpy as np
 import numpy.typing as npt
-from matplotlib.gridspec import GridSpec
-import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
-import tqdm
 
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.api.robot_id_pb2 import RobotIdResponse
-from bosdyn.api.robot_state_pb2 import RobotStateResponse, FootState
 from bosdyn.bddf import DataReader, ProtobufReader
 
+from spot_vrl.data import ImuData
 import spot_vrl.homography
 import spot_vrl.homography.transform
 from spot_vrl.homography import proto_to_numpy
@@ -119,34 +115,15 @@ class SensorData:
         #
         # First read all of the depth values from robot states
         #
-        series_index: int = self._proto_reader.series_index(
-            "bosdyn.api.RobotStateResponse"
-        )
-        series_block_index: SeriesBlockIndex = self._data_reader.series_block_index(
-            series_index
-        )
-        num_msgs = len(series_block_index.block_entries)
 
         # mapping of timestamps (s) to mean depth estimates for the timestamp
         depths: Dict[float, float] = {}
 
-        for msg_idx in range(num_msgs):
-            _, ts, response = self._proto_reader.get_message(
-                series_index, RobotStateResponse, msg_idx
-            )
-            ts = float(ts) * 1e-9 - self._start_ts
-            indiv_depths: List[float] = []
+        imu = ImuData(self._datapath)
+        depth_ts = imu.timestamp_sec - self._start_ts
 
-            robot_state = response.robot_state
-            for foot_state in robot_state.foot_state:
-                if foot_state.contact == FootState.Contact.CONTACT_MADE:
-                    terrain = foot_state.terrain
-                    assert terrain.frame_name == "odom"
-
-                    indiv_depths.append(terrain.visual_surface_ground_penetration_mean)
-
-            if indiv_depths:
-                depths[ts] = sum(indiv_depths) / len(indiv_depths)
+        for t, d in zip(depth_ts, imu.foot_depth_mean):
+            depths[t] = d
 
         #
         # Read in images and average the ground depth vals between image timestamps.
@@ -255,11 +232,15 @@ class SensorData:
                     if self.data[i].gp * 100 < 1.5:
                         img_wrapper.add_line("concrete")
                         print(" concrete")
-                        patch_save_path = Path(f"images/patches3/concrete/{self._datapath.stem}/{i:03d}")
+                        patch_save_path = Path(
+                            f"images/patches3/concrete/{self._datapath.stem}/{i:03d}"
+                        )
                     else:
                         img_wrapper.add_line("grass")
                         print(" grass")
-                        patch_save_path = Path(f"images/patches3/grass/{self._datapath.stem}/{i:03d}")
+                        patch_save_path = Path(
+                            f"images/patches3/grass/{self._datapath.stem}/{i:03d}"
+                        )
 
                     img_wrapper.img = cv2.rectangle(
                         img_wrapper.img, (l_tl_x, l_tl_y), (l_br_x, l_br_y), (0, 255, 0)
@@ -322,8 +303,14 @@ class SensorData:
                             colors[j % 3],
                         )
 
-                        left_patch = self.data[i].image[l_tl_y - fut_x:l_br_y - fut_x, l_tl_x - fut_y:l_br_x - fut_y]
-                        right_patch = self.data[i].image[r_tl_y - fut_x:r_br_y - fut_x, r_tl_x - fut_y:r_br_x - fut_y]
+                        left_patch = self.data[i].image[
+                            l_tl_y - fut_x : l_br_y - fut_x,
+                            l_tl_x - fut_y : l_br_x - fut_y,
+                        ]
+                        right_patch = self.data[i].image[
+                            r_tl_y - fut_x : r_br_y - fut_x,
+                            r_tl_x - fut_y : r_br_x - fut_y,
+                        ]
 
                         patch_save_path = patch_save_path.parent / f"{i +j + 1:03d}"
                         os.makedirs(f"{patch_save_path}-L", exist_ok=True)
@@ -336,7 +323,6 @@ class SensorData:
                             f"{patch_save_path}-R/{i:03d}.png",
                             right_patch,
                         )
-
 
             image_save_path = Path("images") / self._datapath.stem / f"{i:03d}.png"
             cv2.imwrite(str(image_save_path), img_wrapper.img)
