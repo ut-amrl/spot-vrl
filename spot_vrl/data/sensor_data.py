@@ -11,9 +11,15 @@ from loguru import logger
 
 
 class ImuData:
-    """Class to store a sequence of deconstructed RobotStates.
+    """Storage container for non-visual Spot sensor data of interest.
 
-    The deconstruction omits data we're not primarily interested in.
+    This class stores a time-ordered sequence of deconstructed RobotState
+    messages from a BDDF file. Only a subset of RobotState is stored; these
+    fields can be found in the constructor for the Datum inner class.
+
+    The full sequence of each field can be accessed as numpy arrays using the
+    property fields of the ImuData class. Each item in the sequence is
+    represented as a column vector.
     """
 
     class Datum:
@@ -131,6 +137,10 @@ class ImuData:
                 logger.warning("Spot is flying (no feet made contact with the ground)")
 
     def __init__(self, filename: Union[str, Path]) -> None:
+        """
+        Args:
+            filename (str | Path): Path to a BDDF file.
+        """
         self._data: List["ImuData.Datum"] = []
 
         data_reader = DataReader(None, str(filename))
@@ -164,7 +174,6 @@ class ImuData:
 
     @property
     def joint_pos(self) -> npt.NDArray[np.float32]:
-        """note: each time epoch is returned as a column vector"""
         tensor = np.empty((12, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.joint_pos
@@ -172,7 +181,6 @@ class ImuData:
 
     @property
     def joint_vel(self) -> npt.NDArray[np.float32]:
-        """note: each time epoch is returned as a column vector"""
         tensor = np.empty((12, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.joint_vel
@@ -180,7 +188,6 @@ class ImuData:
 
     @property
     def joint_acc(self) -> npt.NDArray[np.float32]:
-        """note: each time epoch is returned as a column vector"""
         tensor = np.empty((12, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.joint_acc
@@ -218,7 +225,7 @@ class ImuData:
 
     @property
     def all_data(self) -> npt.NDArray[np.float32]:
-        """note: except timestamps"""
+        """All sensor data, excluding timestamps."""
         return np.vstack(
             (
                 self.power,
