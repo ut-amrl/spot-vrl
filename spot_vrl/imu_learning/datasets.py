@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import torch
 from loguru import logger
-from torch.utils.data import Dataset
+from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data import ImuData
 
@@ -26,7 +26,7 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
 
         ts, data = imu.query_time_range(imu.all_sensor_data, start, end)
         # Overlap windows for more data points
-        for i in range(0, data.shape[-1] - window_size + 1, window_size // 5):
+        for i in range(0, data.shape[-1] - window_size + 1, window_size // 8):
             window = data[:, i : i + window_size]
 
             # Add statistical features as additional column vectors
@@ -50,13 +50,59 @@ Triplet = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class ManualTripletDataset(Dataset[Triplet]):
-    """Hardcoded triplet dataset using fixed log files and time ranges."""
+    """Hardcoded triplet training dataset using fixed log files and time
+    ranges."""
 
     def __init__(self) -> None:
-        ...
+        concretes = [
+            SingleTerrainDataset(
+                "data-2022-02-08/2022-02-08-17-52-06.bddf",
+                start=1644364331,
+                end=1644364350,
+            ),
+            SingleTerrainDataset(
+                "data-2022-02-08/2022-02-08-17-52-06.bddf",
+                start=1644364378,
+                end=1644364384,
+            ),
+            SingleTerrainDataset(
+                "data-2022-02-08/2022-02-08-17-48-11.bddf",
+                start=1644364103,
+                end=1644364131,
+            ),
+        ]
+
+        grasses = [
+            SingleTerrainDataset(
+                "data-2022-02-08/2022-02-08-17-52-06.bddf",
+                start=1644364352,
+                end=1644364374,
+            ),
+            SingleTerrainDataset(
+                "data-2022-02-08/2022-02-08-17-48-11.bddf",
+                start=1644364133,
+                end=1644364148,
+            ),
+        ]
+
+        self.concrete: ConcatDataset[torch.Tensor] = ConcatDataset(concretes)
+        self.grass: ConcatDataset[torch.Tensor] = ConcatDataset(grasses)
+
+        logger.info(f"concrete data points: {len(self.concrete)}")
+        logger.info(f"grass data points: {len(self.grass)}")
 
     def __len__(self) -> int:
-        ...
+        return len(self.concrete) + len(self.grass)
 
     def __getitem__(self, index: int) -> Triplet:
-        ...
+        if index < len(self.concrete):
+            anchor = self.concrete[index]
+            pos = self.concrete[np.random.randint(len(self.concrete))]
+            neg = self.grass[np.random.randint(len(self.grass))]
+        else:
+            index -= len(self.concrete)
+            anchor = self.grass[index]
+            pos = self.grass[np.random.randint(len(self.grass))]
+            neg = self.concrete[np.random.randint(len(self.concrete))]
+
+        return anchor, pos, neg
