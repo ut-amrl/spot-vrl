@@ -2,6 +2,7 @@ from torch.utils.tensorboard import SummaryWriter
 import torch
 import numpy as np
 import os
+import time
 
 
 def fit(
@@ -30,7 +31,12 @@ def fit(
     """
     for epoch in range(0, start_epoch):
         scheduler.step()
-    writer = SummaryWriter(log_dir=os.path.join(save_dir, "tensorboard"))
+
+    stime = time.strftime("%H-%M-%S")
+    slayers = "-".join([str(x) for x in model._embedding_net.sizes])
+    writer = SummaryWriter(
+        log_dir=os.path.join(save_dir, f"tensorboard-{slayers}--{stime}")
+    )
 
     for epoch in range(start_epoch, n_epochs):
         # Train stage
@@ -44,10 +50,10 @@ def fit(
             metrics,
             loss_input,
         )
-        torch.save(
-            model.state_dict(),
-            os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
-        )
+        # torch.save(
+        #     model.state_dict(),
+        #     os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
+        # )
         message = "Epoch: {}/{}. Train set: Average loss: {:.4f}".format(
             epoch + 1, n_epochs, train_loss
         )

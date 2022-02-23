@@ -12,14 +12,14 @@ class EmbeddingNet(nn.Module):
         super().__init__()
 
         input_dim = np.prod(input_shape)
+        self.sizes = [input_dim, 512, 512, 256, embedding_dim]
 
-        sizes = [input_dim, 256, 256, embedding_dim]
         layers: List[Any] = []
 
-        for i in range(len(sizes) - 1):
+        for i in range(len(self.sizes) - 1):
             if i > 0:
                 layers.append(nn.PReLU())
-            layers.append(nn.Linear(sizes[i], sizes[i + 1]))
+            layers.append(nn.Linear(self.sizes[i], self.sizes[i + 1]))
 
         self._fc = nn.Sequential(*layers)
 

@@ -24,7 +24,7 @@ from spot_vrl.imu_learning.datasets import ManualTripletDataset
 
 pref_datasets = []
 triplet_dataset = ManualTripletDataset()
-batch_size = 2
+batch_size = 1
 kwargs = {"num_workers": 16, "pin_memory": True} if cuda else {}
 train_size = int(len(triplet_dataset) * 0.75)
 train_set, test_set = torch.utils.data.dataset.random_split(
