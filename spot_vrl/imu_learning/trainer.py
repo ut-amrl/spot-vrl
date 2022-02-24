@@ -1,25 +1,31 @@
-from torch.utils.tensorboard import SummaryWriter
-import torch
-import numpy as np
 import os
 import time
+from typing import Any, List, Tuple
+
+import numpy as np
+import torch
+from spot_vrl.imu_learning.datasets import Triplet
+from spot_vrl.imu_learning.losses import TripletLoss
+from spot_vrl.imu_learning.network import TripletNet
+from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data import DataLoader
 
 
 def fit(
-    train_loader,
-    val_loader,
-    model,
-    loss_fn,
-    optimizer,
-    scheduler,
-    n_epochs,
-    cuda,
-    log_interval,
-    save_dir="ckpt",
-    metrics=[],
-    start_epoch=0,
-    loss_input=False,
-):
+    train_loader: DataLoader[Triplet],
+    val_loader: DataLoader[Triplet],
+    model: TripletNet,
+    loss_fn: TripletLoss,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler.StepLR,
+    n_epochs: int,
+    cuda: bool,
+    log_interval: int,
+    save_dir: str = "ckpt",
+    metrics: List[Any] = [],
+    start_epoch: int = 0,
+    loss_input: bool = False,
+) -> None:
     """
     Loaders, model, loss function and metrics should work together for a given task,
     i.e. The model should be able to process data output of loaders,
@@ -36,7 +42,7 @@ def fit(
     slayers = "-".join([str(x) for x in model._embedding_net.sizes])
     writer = SummaryWriter(
         log_dir=os.path.join(save_dir, f"tensorboard-{slayers}--{stime}")
-    )
+    )  # type: ignore
 
     for epoch in range(start_epoch, n_epochs):
         # Train stage
@@ -68,8 +74,8 @@ def fit(
         message += "\nEpoch: {}/{}. Validation set: Average loss: {:.4f}".format(
             epoch + 1, n_epochs, val_loss
         )
-        writer.add_scalar("train_loss", train_loss, epoch)
-        writer.add_scalar("val_loss", val_loss, epoch)
+        writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
+        writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
 
         for metric in metrics:
             message += "\t{}: {}".format(metric.name(), metric.value())
@@ -79,21 +85,21 @@ def fit(
 
 
 def train_epoch(
-    train_loader,
-    model,
-    loss_fn,
-    optimizer,
-    cuda,
-    log_interval,
-    metrics,
-    loss_input=False,
-):
+    train_loader: DataLoader[Triplet],
+    model: TripletNet,
+    loss_fn: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    cuda: bool,
+    log_interval: int,
+    metrics: List[Any],
+    loss_input: bool = False,
+) -> Tuple[float, List[Any]]:
     for metric in metrics:
         metric.reset()
 
     model.train()
     losses = []
-    total_loss = 0
+    total_loss = 0.0
 
     for batch_idx, data in enumerate(train_loader):
         target = None  # TODO(eyang): remove
@@ -150,12 +156,19 @@ def train_epoch(
     return total_loss, metrics
 
 
-def test_epoch(val_loader, model, loss_fn, cuda, metrics, loss_input=False):
-    with torch.no_grad():
+def test_epoch(
+    val_loader: DataLoader[Triplet],
+    model: TripletNet,
+    loss_fn: torch.nn.Module,
+    cuda: bool,
+    metrics: List[Any],
+    loss_input: bool = False,
+) -> Tuple[float, List[Any]]:
+    with torch.no_grad():  # type: ignore
         for metric in metrics:
             metric.reset()
         model.eval()
-        val_loss = 0
+        val_loss = 0.0
         for batch_idx, data in enumerate(val_loader):
             target = None  # TODO(eyang): remove
             if not type(data) in (tuple, list):

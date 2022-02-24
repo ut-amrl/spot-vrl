@@ -46,6 +46,7 @@ module = [
     "matplotlib.*",
     "scipy.*",
     "seaborn",
+    "torchvision.*",
     "tqdm",
 ]
 ignore_missing_imports = true
