@@ -1,4 +1,4 @@
-from typing import List, Tuple, Union
+from typing import Dict, List, Sequence, Tuple, Union
 from pathlib import Path
 
 import numpy as np
@@ -56,53 +56,91 @@ class ManualTripletDataset(Dataset[Triplet]):
     def __init__(self) -> None:
         concretes = [
             SingleTerrainDataset(
-                "data/2022-02-08/2022-02-08-17-52-06.bddf",
-                start=1644364331,
-                end=1644364350,
+                "data/2022-02-27/2022-02-27-16-31-16.bddf",
+                start=1646001080,
+                end=1646001382,
             ),
             SingleTerrainDataset(
-                "data/2022-02-08/2022-02-08-17-52-06.bddf",
-                start=1644364378,
-                end=1644364384,
-            ),
-            SingleTerrainDataset(
-                "data/2022-02-08/2022-02-08-17-48-11.bddf",
-                start=1644364103,
-                end=1644364131,
+                "data/2022-02-27/2022-02-27-17-55-35.bddf",
+                start=1646006138,
+                end=1646006272,
             ),
         ]
 
         grasses = [
             SingleTerrainDataset(
-                "data/2022-02-08/2022-02-08-17-52-06.bddf",
-                start=1644364352,
-                end=1644364374,
+                "data/2022-02-27/2022-02-27-16-47-20.bddf",
+                start=1646002045,
+                end=1646002323,
             ),
             SingleTerrainDataset(
-                "data/2022-02-08/2022-02-08-17-48-11.bddf",
-                start=1644364133,
-                end=1644364148,
+                "data/2022-02-27/2022-02-27-17-50-10.bddf",
+                start=1646005815,
+                end=1646006071,
             ),
         ]
 
-        self.concrete: ConcatDataset[torch.Tensor] = ConcatDataset(concretes)
-        self.grass: ConcatDataset[torch.Tensor] = ConcatDataset(grasses)
+        sml_rocks = [
+            SingleTerrainDataset(
+                "data/2022-02-27/2022-02-27-17-24-55.bddf",
+                start=1646004299,
+                end=1646004528,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-27/2022-02-27-17-32-28.bddf",
+                start=1646004753,
+                end=1646005015,
+            ),
+        ]
 
-        logger.info(f"concrete data points: {len(self.concrete)}")
-        logger.info(f"grass data points: {len(self.grass)}")
+        self._categories: Dict[str, ConcatDataset[torch.Tensor]] = {}
+
+        self._categories["concrete"] = ConcatDataset(concretes)
+        self._categories["grass"] = ConcatDataset(grasses)
+        self._categories["sml_rock"] = ConcatDataset(sml_rocks)
+
+        for cat, ds in self._categories.items():
+            logger.info(f"{cat} data points: {len(ds)}")
+
+        self._cumulative_sizes: List[int] = np.cumsum(
+            [len(ds) for ds in self._categories.values()], dtype=np.int_
+        ).tolist()
+
+        self._rng = np.random.default_rng()
+
+    def _get_random_datum(self, cats: Sequence[str] = ()) -> torch.Tensor:
+        """Returns a random datum from the specified categories.
+
+        The category is chosen from the sequence with equal probability.
+
+        Args:
+            cats (tuple[str] | list[str]): A sequence containing the categories
+                to sample from. If the sequence is empty, all of the internal
+                categories are used instead.
+        """
+        if not cats:
+            cats = tuple(self._categories.keys())
+
+        cat: str = self._rng.choice(cats)
+        ds = self._categories[cat]
+        datum: torch.Tensor = ds[self._rng.integers(len(ds))]
+        return datum
 
     def __len__(self) -> int:
-        return len(self.concrete) + len(self.grass)
+        return self._cumulative_sizes[-1]
 
     def __getitem__(self, index: int) -> Triplet:
-        if index < len(self.concrete):
-            anchor = self.concrete[index]
-            pos = self.concrete[np.random.randint(len(self.concrete))]
-            neg = self.grass[np.random.randint(len(self.grass))]
-        else:
-            index -= len(self.concrete)
-            anchor = self.grass[index]
-            pos = self.grass[np.random.randint(len(self.grass))]
-            neg = self.concrete[np.random.randint(len(self.concrete))]
+        cat_idx: int = np.searchsorted(
+            self._cumulative_sizes, index, side="right"
+        ).astype(int)
+
+        if cat_idx > 0:
+            index -= self._cumulative_sizes[cat_idx - 1]
+
+        cat_names = tuple(self._categories.keys())
+
+        anchor = self._categories[cat_names[cat_idx]][index]
+        pos = self._get_random_datum((cat_names[cat_idx],))
+        neg = self._get_random_datum((*cat_names[:cat_idx], *cat_names[cat_idx + 1 :]))
 
         return anchor, pos, neg
