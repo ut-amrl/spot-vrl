@@ -7,10 +7,11 @@ __version__ = "0.1.0"
 
 
 def _get_omp_num_threads() -> int:
-    count: typing.Union[int, str] = os.environ["OMP_NUM_THREADS"]
-    if not count:
+    try:
+        count = int(os.environ["OMP_NUM_THREADS"])
+    except (KeyError, ValueError):
         count = multiprocessing.cpu_count()
-    return int(count)
+    return count
 
 
 def _set_omp_num_threads(count: int) -> None:
