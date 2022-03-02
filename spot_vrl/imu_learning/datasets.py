@@ -56,17 +56,17 @@ class ManualTripletDataset(Dataset[Triplet]):
     def __init__(self) -> None:
         concretes = [
             SingleTerrainDataset(
-                "data-2022-02-08/2022-02-08-17-52-06.bddf",
+                "data/2022-02-08/2022-02-08-17-52-06.bddf",
                 start=1644364331,
                 end=1644364350,
             ),
             SingleTerrainDataset(
-                "data-2022-02-08/2022-02-08-17-52-06.bddf",
+                "data/2022-02-08/2022-02-08-17-52-06.bddf",
                 start=1644364378,
                 end=1644364384,
             ),
             SingleTerrainDataset(
-                "data-2022-02-08/2022-02-08-17-48-11.bddf",
+                "data/2022-02-08/2022-02-08-17-48-11.bddf",
                 start=1644364103,
                 end=1644364131,
             ),
@@ -74,12 +74,12 @@ class ManualTripletDataset(Dataset[Triplet]):
 
         grasses = [
             SingleTerrainDataset(
-                "data-2022-02-08/2022-02-08-17-52-06.bddf",
+                "data/2022-02-08/2022-02-08-17-52-06.bddf",
                 start=1644364352,
                 end=1644364374,
             ),
             SingleTerrainDataset(
-                "data-2022-02-08/2022-02-08-17-48-11.bddf",
+                "data/2022-02-08/2022-02-08-17-48-11.bddf",
                 start=1644364133,
                 end=1644364148,
             ),
