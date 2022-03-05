@@ -1,3 +1,4 @@
+from functools import cached_property
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple, Union, overload
 
@@ -181,66 +182,66 @@ class ImuData:
     def __iter__(self) -> Iterator[Datum]:
         return iter(self._data)
 
-    @property
+    @cached_property
     def timestamp_sec(self) -> npt.NDArray[np.float64]:
         return np.array([d.ts for d in self._data], dtype=np.float64)
 
-    @property
+    @cached_property
     def power(self) -> npt.NDArray[np.float32]:
         return np.array([d.power for d in self._data], dtype=np.float32)
 
-    @property
+    @cached_property
     def joint_pos(self) -> npt.NDArray[np.float32]:
         tensor = np.empty((12, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.joint_pos
         return tensor
 
-    @property
+    @cached_property
     def joint_vel(self) -> npt.NDArray[np.float32]:
         tensor = np.empty((12, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.joint_vel
         return tensor
 
-    @property
+    @cached_property
     def joint_acc(self) -> npt.NDArray[np.float32]:
         tensor = np.empty((12, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.joint_acc
         return tensor
 
-    @property
+    @cached_property
     def linear_vel(self) -> npt.NDArray[np.float32]:
         tensor = np.empty((3, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.linear_vel
         return tensor
 
-    @property
+    @cached_property
     def angular_vel(self) -> npt.NDArray[np.float32]:
         tensor = np.empty((3, len(self._data)), dtype=np.float32)
         for i, d in enumerate(self._data):
             tensor[:, i] = d.angular_vel
         return tensor
 
-    @property
+    @cached_property
     def foot_slip_dist(self) -> npt.NDArray[np.float32]:
         return np.array([d.foot_slip_dist for d in self._data], dtype=np.float32)
 
-    @property
+    @cached_property
     def foot_slip_vel(self) -> npt.NDArray[np.float32]:
         return np.array([d.foot_slip_vel for d in self._data], dtype=np.float32)
 
-    @property
+    @cached_property
     def foot_depth_mean(self) -> npt.NDArray[np.float32]:
         return np.array([d.foot_depth_mean for d in self._data], dtype=np.float32)
 
-    @property
+    @cached_property
     def foot_depth_std(self) -> npt.NDArray[np.float32]:
         return np.array([d.foot_depth_std for d in self._data], dtype=np.float32)
 
-    @property
+    @cached_property
     def all_sensor_data(self) -> npt.NDArray[np.float32]:
         return np.vstack(
             (
@@ -286,33 +287,8 @@ class ImuData:
         if prop.shape[-1] != len(self._data):
             raise ValueError("Number of columns does not match internal list.")
 
-        start_i = self._ts_index(start)
-        end_i = self._ts_index(end)
+        start_i = int(np.searchsorted(self.timestamp_sec, start))
+        end_i = int(np.searchsorted(self.timestamp_sec, end))
         ts_range = self.timestamp_sec[start_i:end_i]
         prop_range = prop[..., start_i:end_i]
         return ts_range, prop_range
-
-    def _ts_index(self, ts: float) -> int:
-        """Returns the index of the earliest datum with timestamp at least `ts`.
-
-        Args:
-            ts (float): Timestamp in seconds to search for.
-
-        Returns:
-            int: The index of the earliest datum with timestamp greater than
-                or equal to `ts`.
-        """
-        left = 0
-        right = len(self._data) - 1
-        while left <= right:
-            mid = (left + right) // 2
-            datum_ts = self._data[mid].ts
-
-            if datum_ts > ts:
-                right = mid - 1
-            elif datum_ts < ts:
-                left = mid + 1
-            else:
-                return mid
-
-        return left
