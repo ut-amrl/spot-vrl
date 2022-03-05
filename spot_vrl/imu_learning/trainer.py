@@ -4,7 +4,7 @@ from typing import Any, List, Tuple
 
 import numpy as np
 import torch
-from spot_vrl.imu_learning.datasets import Triplet
+from spot_vrl.imu_learning.datasets import ManualTripletDataset, Triplet
 from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import TripletNet
 from torch.utils.tensorboard import SummaryWriter
@@ -82,6 +82,28 @@ def fit(
 
         print(message)
         scheduler.step()
+
+    m_ds = ManualTripletDataset()
+    tensors = {}
+
+    for key, ds in m_ds._categories.items():
+        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0)
+        if cuda:
+            tensors[key] = tensors[key].cuda()
+
+    embeddings = []
+    labels = []
+
+    for key, t in tensors.items():
+        embeddings.append(model.get_embedding(t))
+        labels.extend([key for _ in range(t.shape[0])])
+
+    writer.add_embedding(
+        torch.cat(embeddings, dim=0),
+        metadata=labels,
+        tag="imu-embed",
+        global_step=epoch,
+    )  # type: ignore
 
 
 def train_epoch(
