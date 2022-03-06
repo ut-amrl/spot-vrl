@@ -44,7 +44,8 @@ def fit(
         log_dir=os.path.join(save_dir, f"tensorboard-{slayers}--{stime}")
     )  # type: ignore
 
-    for epoch in range(start_epoch, n_epochs):
+    pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Epoch")
+    for epoch in pbar:
         # Train stage
         train_loss, metrics = train_epoch(
             train_loader,
@@ -80,6 +81,7 @@ def fit(
         for metric in metrics:
             message += "\t{}: {}".format(metric.name(), metric.value())
 
+        pbar.clear()
         print(message)
         scheduler.step()
 
@@ -161,18 +163,18 @@ def train_epoch(
         for metric in metrics:
             metric(outputs, target, loss_outputs)
 
-        if batch_idx % log_interval == 0:
-            message = "Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-                batch_idx * len(data[0]),
-                len(train_loader.dataset),
-                100.0 * batch_idx / len(train_loader),
-                np.mean(losses),
-            )
-            for metric in metrics:
-                message += "\t{}: {}".format(metric.name(), metric.value())
+        # if batch_idx % log_interval == 0:
+        #     message = "Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+        #         batch_idx * len(data[0]),
+        #         len(train_loader.dataset),
+        #         100.0 * batch_idx / len(train_loader),
+        #         np.mean(losses),
+        #     )
+        #     for metric in metrics:
+        #         message += "\t{}: {}".format(metric.name(), metric.value())
 
-            print(message)
-            losses = []
+        #     print(message)
+        #     losses = []
 
     total_loss /= batch_idx + 1
     return total_loss, metrics
