@@ -17,7 +17,6 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt_dir", type=str, required=True)
     parser.add_argument("--embedding_dim", type=int, required=True)
-    parser.add_argument("--grayscale", action="store_true")
 
     args = parser.parse_args()
 
@@ -40,7 +39,7 @@ def main() -> None:
     print("LOADED DATA")
 
     # Set up the network and training parameters
-    margin = 2.0
+    margin = 48.0
     embedding_net = EmbeddingNet(triplet_dataset[0][0].shape, args.embedding_dim)
     model = TripletNet(embedding_net)
     if cuda:
@@ -48,7 +47,7 @@ def main() -> None:
     loss_fn = TripletLoss(margin)
     lr = 1e-4 * batch_size
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = lr_scheduler.StepLR(optimizer, 8, gamma=0.1, last_epoch=-1)
+    scheduler = lr_scheduler.StepLR(optimizer, 10, gamma=0.5, last_epoch=-1)
     n_epochs = 40
     log_interval = 5
 
