@@ -146,3 +146,69 @@ class ManualTripletDataset(Dataset[Triplet]):
         neg = self._get_random_datum((*cat_names[:cat_idx], *cat_names[cat_idx + 1 :]))
 
         return anchor, pos, neg
+
+
+class ManualTripletHoldoutSet:
+    def __init__(self) -> None:
+        concretes = [
+            SingleTerrainDataset(
+                "data/2022-02-08/2022-02-08-17-52-06.bddf",
+                start=1644364331,
+                end=1644364350,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-08/2022-02-08-17-52-06.bddf",
+                start=1644364378,
+                end=1644364384,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-08/2022-02-08-17-48-11.bddf",
+                start=1644364103,
+                end=1644364131,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-27/2022-02-27-16-38-12.bddf",
+                start=1646001496,
+                end=1646001572,
+            ),
+        ]
+
+        grasses = [
+            SingleTerrainDataset(
+                "data/2022-02-08/2022-02-08-17-52-06.bddf",
+                start=1644364352,
+                end=1644364374,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-08/2022-02-08-17-48-11.bddf",
+                start=1644364133,
+                end=1644364148,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-27/2022-02-27-16-43-41.bddf",
+                start=1646001826,
+                end=1646001946,
+            ),
+        ]
+
+        sml_rocks = [
+            SingleTerrainDataset(
+                "data/2022-02-27/2022-02-27-17-40-02.bddf",
+                start=1646005206,
+                end=1646005254,
+            ),
+            SingleTerrainDataset(
+                "data/2022-02-27/2022-02-27-17-41-31.bddf",
+                start=1646005295,
+                end=1646005347,
+            ),
+        ]
+
+        self._categories: Dict[str, ConcatDataset[torch.Tensor]] = {}
+
+        self._categories["concrete"] = ConcatDataset(concretes)
+        self._categories["grass"] = ConcatDataset(grasses)
+        self._categories["sml_rock"] = ConcatDataset(sml_rocks)
+
+        for cat, ds in self._categories.items():
+            logger.info(f"{cat} data points: {len(ds)}")

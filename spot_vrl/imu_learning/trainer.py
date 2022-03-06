@@ -3,8 +3,14 @@ import time
 from typing import Any, List, Tuple
 
 import numpy as np
+import tqdm
 import torch
-from spot_vrl.imu_learning.datasets import ManualTripletDataset, Triplet
+from loguru import logger
+from spot_vrl.imu_learning.datasets import (
+    ManualTripletDataset,
+    ManualTripletHoldoutSet,
+    Triplet,
+)
 from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import TripletNet
 from torch.utils.tensorboard import SummaryWriter
@@ -85,6 +91,7 @@ def fit(
         print(message)
         scheduler.step()
 
+    logger.info("Generating embeddings for training set")
     m_ds = ManualTripletDataset()
     tensors = {}
 
@@ -104,6 +111,29 @@ def fit(
         torch.cat(embeddings, dim=0),
         metadata=labels,
         tag="imu-embed",
+        global_step=epoch,
+    )  # type: ignore
+
+    logger.info("Generating embeddings for holdout set")
+    h_ds = ManualTripletHoldoutSet()
+    tensors = {}
+
+    for key, ds in h_ds._categories.items():
+        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0)
+        if cuda:
+            tensors[key] = tensors[key].cuda()
+
+    embeddings = []
+    labels = []
+
+    for key, t in tensors.items():
+        embeddings.append(model.get_embedding(t))
+        labels.extend([key for _ in range(t.shape[0])])
+
+    writer.add_embedding(
+        torch.cat(embeddings, dim=0),
+        metadata=labels,
+        tag="imu-holdout-embed",
         global_step=epoch,
     )  # type: ignore
 
