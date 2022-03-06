@@ -127,9 +127,11 @@ class ManualTripletDataset(Dataset[Triplet]):
         return datum
 
     def __len__(self) -> int:
-        return self._cumulative_sizes[-1]
+        return self._cumulative_sizes[-1] * 3
 
     def __getitem__(self, index: int) -> Triplet:
+        index = index % self._cumulative_sizes[-1]
+
         cat_idx: int = np.searchsorted(
             self._cumulative_sizes, index, side="right"
         ).astype(int)
