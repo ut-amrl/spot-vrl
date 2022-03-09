@@ -45,10 +45,10 @@ def main() -> None:
     if cuda:
         model.cuda()
     loss_fn = TripletLoss(margin)
-    lr = 1e-4 * batch_size
+    lr = 1e-3 * batch_size
     optimizer = optim.Adam(model.parameters(), lr=lr)
-    scheduler = lr_scheduler.StepLR(optimizer, 10, gamma=0.5, last_epoch=-1)
-    n_epochs = 40
+    scheduler = lr_scheduler.StepLR(optimizer, 20, gamma=0.5, last_epoch=-1)
+    n_epochs = 80
     log_interval = 5
 
     os.makedirs(args.ckpt_dir, exist_ok=True)

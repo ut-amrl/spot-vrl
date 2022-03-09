@@ -47,7 +47,9 @@ def fit(
     stime = time.strftime("%H-%M-%S")
     slayers = "-".join([str(x) for x in model._embedding_net.sizes])
     writer = SummaryWriter(
-        log_dir=os.path.join(save_dir, f"tensorboard-{slayers}--{stime}--stats-only")
+        log_dir=os.path.join(
+            save_dir, f"tensorboard-{slayers}--{stime}--stats-only-dropout"
+        )
     )  # type: ignore
 
     pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Epoch")
@@ -91,6 +93,7 @@ def fit(
         print(message)
         scheduler.step()
 
+    model.eval()
     logger.info("Generating embeddings for training set")
     m_ds = ManualTripletDataset()
     tensors = {}
