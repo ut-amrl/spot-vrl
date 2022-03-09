@@ -47,7 +47,7 @@ def fit(
     stime = time.strftime("%H-%M-%S")
     slayers = "-".join([str(x) for x in model._embedding_net.sizes])
     writer = SummaryWriter(
-        log_dir=os.path.join(save_dir, f"tensorboard-{slayers}--{stime}")
+        log_dir=os.path.join(save_dir, f"tensorboard-{slayers}--{stime}--stats-only")
     )  # type: ignore
 
     pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Epoch")
@@ -63,10 +63,10 @@ def fit(
             metrics,
             loss_input,
         )
-        # torch.save(
-        #     model.state_dict(),
-        #     os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
-        # )
+        torch.save(
+            model.state_dict(),
+            os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
+        )
         message = "Epoch: {}/{}. Train set: Average loss: {:.4f}".format(
             epoch + 1, n_epochs, train_loss
         )
@@ -115,7 +115,8 @@ def fit(
     )  # type: ignore
 
     logger.info("Generating embeddings for holdout set")
-    h_ds = ManualTripletHoldoutSet()
+    # h_ds = ManualTripletHoldoutSet()
+    h_ds = m_ds.holdout
     tensors = {}
 
     for key, ds in h_ds._categories.items():

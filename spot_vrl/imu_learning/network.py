@@ -12,7 +12,7 @@ class EmbeddingNet(nn.Module):
         super().__init__()
 
         input_dim = np.prod(input_shape)
-        self.sizes = [input_dim, 512, embedding_dim]
+        self.sizes = [input_dim, 256, embedding_dim]
 
         layers: List[Any] = []
 
