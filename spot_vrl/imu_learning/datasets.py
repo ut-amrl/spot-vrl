@@ -15,8 +15,14 @@ from spot_vrl.data import ImuData
 class SingleTerrainDataset(Dataset[torch.Tensor]):
     """IMU dataset from a single terrain type.
 
-    Datum are organized as fixed-sized matrices where rows encode individual
-    data types over time and columns encode observations of all data types.
+    Data are time windows as fixed-sized matrices in the layout:
+
+            *-------> time
+            |
+            |
+            |
+            V
+        data types
     """
 
     def __init__(
