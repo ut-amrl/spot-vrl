@@ -149,136 +149,64 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
         for cat, ds in self._categories.items():
             logger.info(f"{cat} data points: {len(ds)}")
 
-class ManualTripletDataset(Dataset[Triplet]):
-    """Hardcoded triplet training dataset using fixed log files and time
-    ranges."""
 
+class ManualTripletDataset(BaseTripletDataset):
     def __init__(self) -> None:
-        concretes = [
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-16-31-16.bddf",
-                start=1646001080,
-                end=1646001382,
-            ),
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-17-55-35.bddf",
-                start=1646006138,
-                end=1646006272,
-            ),
-        ]
+        super().__init__()
 
-        grasses = [
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-16-47-20.bddf",
-                start=1646002045,
-                end=1646002323,
+        self._add_category(
+            "concrete",
+            (
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-16-31-16.bddf",
+                    start=1646001080,
+                    end=1646001382,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-17-55-35.bddf",
+                    start=1646006138,
+                    end=1646006272,
+                ),
             ),
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-17-50-10.bddf",
-                start=1646005815,
-                end=1646006071,
+        )
+        self._add_category(
+            "grass",
+            (
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-16-47-20.bddf",
+                    start=1646002045,
+                    end=1646002323,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-17-50-10.bddf",
+                    start=1646005815,
+                    end=1646006071,
+                ),
             ),
-        ]
-
-        sml_rocks = [
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-17-24-55.bddf",
-                start=1646004299,
-                end=1646004528,
+        )
+        self._add_category(
+            "sml_rock",
+            (
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-17-24-55.bddf",
+                    start=1646004299,
+                    end=1646004528,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-17-32-28.bddf",
+                    start=1646004753,
+                    end=1646005015,
+                ),
             ),
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-17-32-28.bddf",
-                start=1646004753,
-                end=1646005015,
-            ),
-        ]
+        )
 
         # debug: extend with holdout sets
         self.holdout = ManualTripletHoldoutSet()
-        # concretes.extend(holdout._categories["concrete"].datasets)  # type: ignore
-        # grasses.extend(holdout._categories["grass"].datasets)  # type: ignore
-        # sml_rocks.extend(holdout._categories["sml_rock"].datasets)  # type: ignore
-
-        # l = len(self.holdout._categories["concrete"])
-        # c1, c2 = torch.utils.data.random_split(
-        #     self.holdout._categories["concrete"],
-        #     (l // 2, l - l // 2),
-        #     generator=torch.Generator().manual_seed(42),
-        # )
-        # concretes.append(c1)
-        # self.holdout._categories["concrete"] = c2
-
-        # l = len(self.holdout._categories["grass"])
-        # c1, c2 = torch.utils.data.random_split(
-        #     self.holdout._categories["grass"],
-        #     (l // 2, l - l // 2),
-        #     generator=torch.Generator().manual_seed(42),
-        # )
-        # grasses.append(c1)
-        # self.holdout._categories["grass"] = c2
-
-        # l = len(self.holdout._categories["sml_rock"])
-        # c1, c2 = torch.utils.data.random_split(
-        #     self.holdout._categories["sml_rock"],
-        #     (l // 2, l - l // 2),
-        #     generator=torch.Generator().manual_seed(42),
-        # )
-        # sml_rocks.append(c1)
-        # self.holdout._categories["sml_rock"] = c2
-
-        self._categories: Dict[str, ConcatDataset[torch.Tensor]] = {}
-
-        self._categories["concrete"] = ConcatDataset(concretes)
-        self._categories["grass"] = ConcatDataset(grasses)
-        self._categories["sml_rock"] = ConcatDataset(sml_rocks)
-
-        for cat, ds in self._categories.items():
-            logger.info(f"{cat} data points: {len(ds)}")
-
-        self._cumulative_sizes: List[int] = np.cumsum(
-            [len(ds) for ds in self._categories.values()], dtype=np.int_
-        ).tolist()
-
-        self._rng = np.random.default_rng()
-
-    def _get_random_datum(self, cats: Sequence[str] = ()) -> torch.Tensor:
-        """Returns a random datum from the specified categories.
-
-        The category is chosen from the sequence with equal probability.
-
-        Args:
-            cats (tuple[str] | list[str]): A sequence containing the categories
-                to sample from. If the sequence is empty, all of the internal
-                categories are used instead.
-        """
-        if not cats:
-            cats = tuple(self._categories.keys())
-
-        cat: str = self._rng.choice(cats)
-        ds = self._categories[cat]
-        datum: torch.Tensor = ds[self._rng.integers(len(ds))]
-        return datum
 
     def __len__(self) -> int:
-        return self._cumulative_sizes[-1] * 3
-
-    def __getitem__(self, index: int) -> Triplet:
-        index = index % self._cumulative_sizes[-1]
-
-        cat_idx: int = np.searchsorted(
-            self._cumulative_sizes, index, side="right"
-        ).astype(int)
-
-        if cat_idx > 0:
-            index -= self._cumulative_sizes[cat_idx - 1]
-
-        cat_names = tuple(self._categories.keys())
-
-        anchor = self._categories[cat_names[cat_idx]][index]
-        pos = self._get_random_datum((cat_names[cat_idx],))
-        neg = self._get_random_datum((*cat_names[:cat_idx], *cat_names[cat_idx + 1 :]))
-
-        return anchor, pos, neg
+        k = len(self._categories)
+        k = k * (k - 1) // 2
+        return super().__len__() * k
 
 
 class ManualTripletHoldoutSet:
