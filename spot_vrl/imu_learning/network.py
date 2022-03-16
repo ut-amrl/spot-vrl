@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from typing import Any, List, Tuple
 
 import numpy as np
@@ -5,6 +6,15 @@ import torch
 from torch import nn
 
 from spot_vrl.imu_learning.datasets import Triplet
+
+
+class BaseEmbeddingNet(nn.Module, ABC):
+    def __init__(self) -> None:
+        super().__init__()
+
+    @abstractmethod
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        ...
 
 
 class EmbeddingNet(nn.Module):
