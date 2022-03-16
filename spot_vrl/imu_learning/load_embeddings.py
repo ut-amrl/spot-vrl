@@ -6,7 +6,7 @@ from spot_vrl.imu_learning.datasets import ManualTripletDataset, ManualTripletHo
 
 import torch
 from loguru import logger
-from spot_vrl.imu_learning.network import EmbeddingNet, TripletNet
+from spot_vrl.imu_learning.network import MlpEmbeddingNet, TripletNet
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -45,7 +45,7 @@ def main() -> None:
         if cuda:
             holdout_tensors[key] = holdout_tensors[key].cuda()
 
-    embedding_net = EmbeddingNet(train_ds[0][0].shape, embedding_dim)
+    embedding_net = MlpEmbeddingNet(train_ds[0][0].shape, embedding_dim)
     model = TripletNet(embedding_net)
 
     stime = time.strftime("%H-%M-%S")

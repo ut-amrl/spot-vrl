@@ -45,7 +45,7 @@ def fit(
         scheduler.step()
 
     stime = time.strftime("%H-%M-%S")
-    slayers = "-".join([str(x) for x in model._embedding_net.sizes])
+    slayers = model._embedding_net.arch()
     writer = SummaryWriter(
         log_dir=os.path.join(
             save_dir, f"tensorboard-{slayers}--{stime}--stats-only-dropout"

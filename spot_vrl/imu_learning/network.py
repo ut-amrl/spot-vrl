@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Tuple
+from typing import Tuple
 
 import numpy as np
 import torch
@@ -16,8 +16,12 @@ class BaseEmbeddingNet(nn.Module, ABC):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         ...
 
+    @abstractmethod
+    def arch(self) -> str:
+        ...
 
-class EmbeddingNet(nn.Module):
+
+class MlpEmbeddingNet(BaseEmbeddingNet):
     def __init__(self, input_shape: Tuple[int, ...], embedding_dim: int):
         super().__init__()
 
@@ -47,9 +51,12 @@ class EmbeddingNet(nn.Module):
         x = x.view(x.shape[0], -1)
         return self._fc.forward(x)  # type: ignore
 
+    def arch(self) -> str:
+        return "mlp" + "-".join(self.sizes)
+
 
 class TripletNet(nn.Module):
-    def __init__(self, embedding_net: EmbeddingNet):
+    def __init__(self, embedding_net: BaseEmbeddingNet):
         super().__init__()
         self._embedding_net = embedding_net
 

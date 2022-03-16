@@ -9,7 +9,7 @@ from torch.optim import lr_scheduler
 
 from spot_vrl.imu_learning.datasets import ManualTripletDataset
 from spot_vrl.imu_learning.losses import TripletLoss
-from spot_vrl.imu_learning.network import EmbeddingNet, TripletNet
+from spot_vrl.imu_learning.network import MlpEmbeddingNet, TripletNet
 from spot_vrl.imu_learning.trainer import fit
 
 
@@ -40,7 +40,7 @@ def main() -> None:
 
     # Set up the network and training parameters
     margin = 48.0
-    embedding_net = EmbeddingNet(triplet_dataset[0][0].shape, args.embedding_dim)
+    embedding_net = MlpEmbeddingNet(triplet_dataset[0][0].shape, args.embedding_dim)
     model = TripletNet(embedding_net)
     if cuda:
         model.cuda()
