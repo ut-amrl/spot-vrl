@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from typing import Dict, List, Sequence, Tuple, Union
 from pathlib import Path
 
@@ -66,6 +67,87 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
 
 Triplet = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
+
+class BaseTripletDataset(Dataset[Triplet], ABC):
+    """Base class for IMU Triplet Datasets
+
+    All derived classes must overload `__len__`, optionally using a scaling
+    multiplier to artificially increase the number of triplets to generate.
+
+    Example:
+    >>> class DerivedTripletDataset(BaseTripletDataset):
+    ...     def __init__(self) -> None:
+    ...         super().__init__()
+    ...         self._add_category("key1", (...))
+    ...         self._add_category("key2", (...))
+    ...         self._add_category("key3", (...))
+    ...
+    ...     def __len__(self) -> int:
+    ...         k = len(self._categories)
+    ...         k = k * (k - 1) // 2
+    ...         return super().__len__() * k
+    """
+
+    def __init__(self) -> None:
+        self._categories: Dict[str, ConcatDataset[torch.Tensor]] = {}
+        self._cumulative_sizes: List[int] = []
+        self._rng = np.random.default_rng()
+
+    def _add_category(self, key: str, datasets: Sequence[SingleTerrainDataset]) -> None:
+        self._categories[key] = ConcatDataset(datasets)
+        self._cumulative_sizes = np.cumsum(
+            [len(ds) for ds in self._categories.values()], dtype=np.int_
+        ).tolist()
+
+    def _get_random_datum(self, from_cats: Sequence[str] = ()) -> torch.Tensor:
+        """Returns a random datum from the specified categories.
+
+        Each category in the sequence has equal probability of being chosen.
+
+        Args:
+            from_cats (tuple[str] | list[str]): A sequence of strings containing
+                the categories to sample from. If the sequence is empty, all of
+                the internal categories are used instead.
+        """
+        if not from_cats:
+            from_cats = tuple(self._categories.keys())
+
+        cat: str = self._rng.choice(from_cats)
+        dataset = self._categories[cat]
+        datum: torch.Tensor = dataset[self._rng.integers(len(dataset))]
+        return datum
+
+    @abstractmethod
+    def __len__(self) -> int:
+        """
+        Subclasses should decide the artificial multiplier, e.g. based on the
+        number of terrain categories. The value returned by the subclass must
+        be a multiple of the default value below.
+        """
+        return self._cumulative_sizes[-1]
+
+    def __getitem__(self, index: int) -> Triplet:
+        index = index % self._cumulative_sizes[-1]
+
+        cat_idx: int = np.searchsorted(
+            self._cumulative_sizes, index, side="right"
+        ).astype(int)
+
+        if cat_idx > 0:
+            index -= self._cumulative_sizes[cat_idx - 1]
+
+        # Python spec enforces (iteration order == insertion order)
+        cat_names = tuple(self._categories.keys())
+
+        anchor = self._categories[cat_names[cat_idx]][index]
+        pos = self._get_random_datum((cat_names[cat_idx],))
+        neg = self._get_random_datum((*cat_names[:cat_idx], *cat_names[cat_idx + 1 :]))
+
+        return anchor, pos, neg
+
+    def log_category_sizes(self) -> None:
+        for cat, ds in self._categories.items():
+            logger.info(f"{cat} data points: {len(ds)}")
 
 class ManualTripletDataset(Dataset[Triplet]):
     """Hardcoded triplet training dataset using fixed log files and time
