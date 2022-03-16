@@ -209,101 +209,68 @@ class ManualTripletDataset(BaseTripletDataset):
         return super().__len__() * k
 
 
-class ManualTripletHoldoutSet:
+class ManualTripletHoldoutSet(BaseTripletDataset):
+    """Test set to generate embeddings and evaluate model generalizability."""
+
     def __init__(self) -> None:
-        concretes = [
-            # SingleTerrainDataset(
-            #     "data/2022-02-08/2022-02-08-17-52-06.bddf",
-            #     start=1644364331,
-            #     end=1644364350,
-            # ),
-            # SingleTerrainDataset(
-            #     "data/2022-02-08/2022-02-08-17-52-06.bddf",
-            #     start=1644364378,
-            #     end=1644364384,
-            # ),
-            # SingleTerrainDataset(
-            #     "data/2022-02-08/2022-02-08-17-48-11.bddf",
-            #     start=1644364103,
-            #     end=1644364131,
-            # ),
-            # SingleTerrainDataset(
-            #     "data/2022-02-27/2022-02-27-16-38-12.bddf",
-            #     start=1646001496,
-            #     end=1646001572,
-            # ),
-            SingleTerrainDataset(
-                "data/2022-03-06/2022-03-06-16-59-02.bddf",
-                start=1646607548,
-                end=1646607748,
-            ),
-            SingleTerrainDataset(
-                "data/2022-03-06/2022-03-06-17-12-30.bddf",
-                start=1646608354,
-                end=1646608594,
-            ),
-        ]
+        super().__init__()
 
-        grasses = [
-            # SingleTerrainDataset(
-            #     "data/2022-02-08/2022-02-08-17-52-06.bddf",
-            #     start=1644364352,
-            #     end=1644364374,
-            # ),
-            # SingleTerrainDataset(
-            #     "data/2022-02-08/2022-02-08-17-48-11.bddf",
-            #     start=1644364133,
-            #     end=1644364148,
-            # ),
-            # SingleTerrainDataset(
-            #     "data/2022-02-27/2022-02-27-16-43-41.bddf",
-            #     start=1646001826,
-            #     end=1646001946,
-            # ),
-            SingleTerrainDataset(
-                "data/2022-03-06/2022-03-06-16-37-14.bddf",
-                start=1646606240,
-                end=1646606437,
+        self._add_category(
+            "concrete",
+            (
+                SingleTerrainDataset(
+                    "data/2022-03-06/2022-03-06-16-59-02.bddf",
+                    start=1646607548,
+                    end=1646607748,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-03-06/2022-03-06-17-12-30.bddf",
+                    start=1646608354,
+                    end=1646608594,
+                ),
             ),
-            SingleTerrainDataset(
-                "data/2022-03-06/2022-03-06-16-48-07.bddf",
-                start=1646606892,
-                end=1646607107,
+        )
+        self._add_category(
+            "grass",
+            (
+                SingleTerrainDataset(
+                    "data/2022-03-06/2022-03-06-16-37-14.bddf",
+                    start=1646606240,
+                    end=1646606437,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-03-06/2022-03-06-16-48-07.bddf",
+                    start=1646606892,
+                    end=1646607107,
+                ),
             ),
-        ]
+        )
+        self._add_category(
+            "sml_rock",
+            (
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-17-40-02.bddf",
+                    start=1646005206,
+                    end=1646005254,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-02-27/2022-02-27-17-41-31.bddf",
+                    start=1646005295,
+                    end=1646005347,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-03-06/2022-03-06-17-39-58.bddf",
+                    start=1646610002,
+                    end=1646610098,
+                ),
+                SingleTerrainDataset(
+                    "data/2022-03-06/2022-03-06-17-42-14.bddf",
+                    start=1646610138,
+                    end=1646610231,
+                ),
+            ),
+        )
 
-        sml_rocks = [
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-17-40-02.bddf",
-                start=1646005206,
-                end=1646005254,
-            ),
-            SingleTerrainDataset(
-                "data/2022-02-27/2022-02-27-17-41-31.bddf",
-                start=1646005295,
-                end=1646005347,
-            ),
-            SingleTerrainDataset(
-                "data/2022-03-06/2022-03-06-17-39-58.bddf",
-                start=1646610002,
-                end=1646610098,
-            ),
-            SingleTerrainDataset(
-                "data/2022-03-06/2022-03-06-17-42-14.bddf",
-                start=1646610138,
-                end=1646610231,
-            ),
-        ]
-
-        self._categories: Dict[str, ConcatDataset[torch.Tensor]] = {}
-
-        self._categories["concrete"] = ConcatDataset(concretes)
-        self._categories["grass"] = ConcatDataset(grasses)
-        self._categories["sml_rock"] = ConcatDataset(sml_rocks)
-
-        for cat, ds in self._categories.items():
-            logger.info(f"{cat} data points: {len(ds)}")
-
-    def log_sizes(self) -> None:
-        for cat, ds in self._categories.items():
-            logger.info(f"{cat} data points: {len(ds)}")
+    def __len__(self) -> int:
+        """This class is not used for training."""
+        return 0
