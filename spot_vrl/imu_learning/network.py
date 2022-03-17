@@ -52,7 +52,7 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
         return self._fc.forward(x)  # type: ignore
 
     def arch(self) -> str:
-        return "mlp" + "-".join(self.sizes)
+        return "mlp" + "-".join(str(x) for x in self.sizes)
 
 
 class TripletNet(nn.Module):
