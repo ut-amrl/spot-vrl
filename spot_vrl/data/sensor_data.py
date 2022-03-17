@@ -20,7 +20,7 @@ class ImuData:
 
     The full sequence of each field can be accessed as numpy arrays using the
     property fields of the ImuData class. Each item in the sequence is
-    represented as a column vector.
+    represented as a row vector.
     """
 
     class Datum:
@@ -192,37 +192,37 @@ class ImuData:
 
     @cached_property
     def joint_pos(self) -> npt.NDArray[np.float32]:
-        tensor = np.empty((12, len(self._data)), dtype=np.float32)
+        tensor = np.empty((len(self._data), 12), dtype=np.float32)
         for i, d in enumerate(self._data):
-            tensor[:, i] = d.joint_pos
+            tensor[i] = d.joint_pos
         return tensor
 
     @cached_property
     def joint_vel(self) -> npt.NDArray[np.float32]:
-        tensor = np.empty((12, len(self._data)), dtype=np.float32)
+        tensor = np.empty((len(self._data), 12), dtype=np.float32)
         for i, d in enumerate(self._data):
-            tensor[:, i] = d.joint_vel
+            tensor[i] = d.joint_vel
         return tensor
 
     @cached_property
     def joint_acc(self) -> npt.NDArray[np.float32]:
-        tensor = np.empty((12, len(self._data)), dtype=np.float32)
+        tensor = np.empty((len(self._data), 12), dtype=np.float32)
         for i, d in enumerate(self._data):
-            tensor[:, i] = d.joint_acc
+            tensor[i] = d.joint_acc
         return tensor
 
     @cached_property
     def linear_vel(self) -> npt.NDArray[np.float32]:
-        tensor = np.empty((3, len(self._data)), dtype=np.float32)
+        tensor = np.empty((len(self._data), 3), dtype=np.float32)
         for i, d in enumerate(self._data):
-            tensor[:, i] = d.linear_vel
+            tensor[i] = d.linear_vel
         return tensor
 
     @cached_property
     def angular_vel(self) -> npt.NDArray[np.float32]:
-        tensor = np.empty((3, len(self._data)), dtype=np.float32)
+        tensor = np.empty((len(self._data), 3), dtype=np.float32)
         for i, d in enumerate(self._data):
-            tensor[:, i] = d.angular_vel
+            tensor[i] = d.angular_vel
         return tensor
 
     @cached_property
@@ -243,18 +243,18 @@ class ImuData:
 
     @cached_property
     def all_sensor_data(self) -> npt.NDArray[np.float32]:
-        return np.vstack(
+        return np.hstack(
             (
-                self.power,
+                self.power[:, np.newaxis],
                 self.joint_pos,
                 self.joint_vel,
                 self.joint_acc,
                 self.linear_vel,
                 self.angular_vel,
-                self.foot_slip_dist,
-                self.foot_slip_vel,
-                self.foot_depth_mean,
-                self.foot_depth_std,
+                self.foot_slip_dist[:, np.newaxis],
+                self.foot_slip_vel[:, np.newaxis],
+                self.foot_depth_mean[:, np.newaxis],
+                self.foot_depth_std[:, np.newaxis],
             )
         )
 
@@ -284,11 +284,11 @@ class ImuData:
         """
         if start > end:
             raise ValueError("start > end")
-        if prop.shape[-1] != len(self._data):
+        if prop.shape[0] != len(self._data):
             raise ValueError("Number of columns does not match internal list.")
 
         start_i = int(np.searchsorted(self.timestamp_sec, start))
         end_i = int(np.searchsorted(self.timestamp_sec, end))
         ts_range = self.timestamp_sec[start_i:end_i]
-        prop_range = prop[..., start_i:end_i]
+        prop_range = prop[start_i:end_i]
         return ts_range, prop_range

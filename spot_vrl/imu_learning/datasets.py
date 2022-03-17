@@ -17,12 +17,12 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
 
     Data are time windows as fixed-sized matrices in the layout:
 
-            *-------> time
-            |
-            |
-            |
-            V
-        data types
+          *-------> data types
+          |
+          |
+          |
+          V
+        time
     """
 
     def __init__(
@@ -35,33 +35,33 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
 
         ts, data = imu.query_time_range(imu.all_sensor_data, start, end)
         # Overlap windows for more data points
-        for i in range(0, data.shape[-1] - window_size + 1, window_size // 8):
-            window = data[:, i : i + window_size]
+        for i in range(0, data.shape[0] - window_size + 1, window_size // 8):
+            window = data[i : i + window_size]
 
             # compute ffts
             # ffts: List[npt.NDArray[np.float32]] = []
-            # all_joint_info = window[1:37]
+            # all_joint_info = window[:, 1:37]
             # for i in range(36):
-            #     fft = np.fft.fft(all_joint_info[i])
+            #     fft = np.fft.fft(all_joint_info[:, i])
             #     fft = np.abs(fft)
             #     fft /= np.max(fft)
             #     ffts.append(fft.astype(np.float32))
 
             # window = np.vstack((window, *ffts))
 
-            # Add statistical features as additional column vectors
-            mean = window.mean(axis=1)[:, np.newaxis]
-            std = window.std(axis=1)[:, np.newaxis]
-            skew = stats.skew(window, axis=1)[:, np.newaxis]
-            kurtosis = stats.kurtosis(window, axis=1)[:, np.newaxis]
-            med = np.median(window, axis=1)[:, np.newaxis]
-            q1 = np.quantile(window, 0.25, axis=1, keepdims=True).astype(np.float32)
-            q3 = np.quantile(window, 0.75, axis=1, keepdims=True).astype(np.float32)
+            # Add statistical features as additional row vectors
+            mean = window.mean(axis=0)
+            std = window.std(axis=0)
+            skew = stats.skew(window, axis=0)
+            kurtosis = stats.kurtosis(window, axis=0)
+            med = np.median(window, axis=0)
+            q1 = np.quantile(window, 0.25, axis=0).astype(np.float32)
+            q3 = np.quantile(window, 0.75, axis=0).astype(np.float32)
             # TODO(eyang): Joint data is periodic, so these features may not be
             # very useful. May want to use quantiles, IQR, min, max, etc.
 
-            # window = np.hstack((window, mean, std, skew, kurtosis, med, q1, q3))
-            window = np.hstack((mean, std, skew, kurtosis, med, q1, q3))
+            # window = np.vstack((window, mean, std, skew, kurtosis, med, q1, q3))
+            window = np.vstack((mean, std, skew, kurtosis, med, q1, q3))
             self.windows.append(torch.from_numpy(window))
 
     def __len__(self) -> int:

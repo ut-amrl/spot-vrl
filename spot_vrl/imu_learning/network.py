@@ -43,7 +43,7 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
         """
         Args:
             x (torch.Tensor): Tensor of shape
-                (batch size, imu categories, num observations)
+                (batch size, num observations, imu_categories)
 
         Returns:
             torch.Tensor: Tensor of shape (batch size, embedding dim)
