@@ -55,6 +55,50 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
         return "mlp" + "-".join(str(x) for x in self.sizes)
 
 
+class LstmEmbeddingNet(BaseEmbeddingNet):
+    def __init__(self, input_shape: Tuple[int, ...], embedding_dim: int):
+        super().__init__()
+
+        window_size = input_shape[0]
+        input_vec_size = input_shape[1]
+
+        self.num_blocks = 1
+        self.num_layers = 8
+
+        rnn_layers = torch.nn.ModuleList()
+
+        # TODO: specify correct input and hidden sizes for num_blocks > 1
+        for _ in range(self.num_blocks):
+            rnn_layers.append(
+                nn.LSTM(
+                    input_size=input_vec_size,
+                    hidden_size=embedding_dim,
+                    num_layers=self.num_layers,
+                    batch_first=True,
+                )  # type: ignore
+            )
+
+        self._rnn = torch.nn.Sequential(*rnn_layers)
+        self._fc = nn.Linear(window_size * embedding_dim, embedding_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): Tensor of shape
+                (batch size, num observations, imu_categories)
+
+        Returns:
+            torch.Tensor: Tensor of shape (batch size, embedding dim)
+        """
+        output: torch.Tensor
+        output, _ = self._rnn(x)
+        output = output.reshape(output.shape[0], -1)
+        return self._fc(output)  # type: ignore
+
+    def arch(self) -> str:
+        return f"lstm-nblk{self.num_blocks}-nlyr{self.num_layers}"
+
+
 class TripletNet(nn.Module):
     def __init__(self, embedding_net: BaseEmbeddingNet):
         super().__init__()
