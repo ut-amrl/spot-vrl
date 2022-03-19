@@ -1,18 +1,64 @@
 import os
-import time
-from typing import Any, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 import tqdm
 import torch
-from loguru import logger
 from spot_vrl.imu_learning.datasets import (
-    ManualTripletDataset,
+    BaseTripletDataset,
     Triplet,
 )
 from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import TripletNet
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
+
+
+class EmbeddingGenerator:
+    def __init__(
+        self,
+        device: torch.device,
+        train_set: BaseTripletDataset,
+        holdout_set: BaseTripletDataset,
+        tb_writer: SummaryWriter,
+    ):
+        self.tb_writer = tb_writer
+
+        self.tensors: Dict[str, torch.Tensor] = {}
+        """Dict[DatasetType -> Tensor]"""
+
+        self.labels: Dict[str, List[str]] = {}
+        """Dict[DatasetType -> List[str]]"""
+
+        for terrain, ds in train_set._categories.items():
+            t = self.tensors.get("train", torch.empty(0))
+            t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
+            self.tensors["train"] = torch.cat((t, t2), dim=0)
+            self.labels.setdefault("train", []).extend(
+                [terrain for _ in range(len(ds))]
+            )
+
+        for terrain, ds in holdout_set._categories.items():
+            t = self.tensors.get("holdout", torch.empty(0))
+            t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
+            self.tensors["holdout"] = torch.cat((t, t2), dim=0)
+            self.labels.setdefault("holdout", []).extend(
+                [terrain for _ in range(len(ds))]
+            )
+
+        for key, val in self.tensors.items():
+            self.tensors[key] = val.to(device)
+
+    def write(self, model: TripletNet, epoch: int) -> None:
+        model.eval()
+        with torch.no_grad():  # type: ignore
+            for dataset_type, tensor in self.tensors.items():
+                self.tb_writer.add_embedding(
+                    model.get_embedding(tensor),
+                    metadata=self.labels[dataset_type],
+                    tag=f"embed-{dataset_type}",
+                    global_step=epoch,
+                )  # type: ignore
 
 
 def fit(
@@ -24,7 +70,9 @@ def fit(
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     n_epochs: int,
     device: torch.device,
-    save_dir: str = "ckpt",
+    save_dir: Path,
+    tb_writer: SummaryWriter,
+    embedder: Optional[EmbeddingGenerator] = None,
     metrics: List[Any] = [],
     start_epoch: int = 0,
     loss_input: bool = False,
@@ -40,14 +88,6 @@ def fit(
     """
     for epoch in range(0, start_epoch):
         scheduler.step()
-
-    stime = time.strftime("%H-%M-%S")
-    slayers = model._embedding_net.arch()
-    writer = SummaryWriter(
-        log_dir=os.path.join(
-            save_dir, f"tensorboard-{slayers}--{stime}--stats-only-dropout"
-        )
-    )  # type: ignore
 
     pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Training")
     for epoch in pbar:
@@ -79,8 +119,11 @@ def fit(
         message += "\nEpoch: {}/{}. Validation set: Average loss: {:.4f}".format(
             epoch + 1, n_epochs, val_loss
         )
-        writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
-        writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
+
+        if embedder is not None:
+            embedder.write(model, epoch)
 
         for metric in metrics:
             message += "\t{}: {}".format(metric.name(), metric.value())
@@ -88,54 +131,6 @@ def fit(
         pbar.clear()
         print(message)
         scheduler.step()
-
-    model.eval()
-    logger.info("Generating embeddings for training set")
-    m_ds = ManualTripletDataset()
-    tensors = {}
-
-    for key, ds in m_ds._categories.items():
-        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0).to(
-            device
-        )
-
-    embeddings = []
-    labels = []
-
-    for key, t in tensors.items():
-        embeddings.append(model.get_embedding(t))
-        labels.extend([key for _ in range(t.shape[0])])
-
-    writer.add_embedding(
-        torch.cat(embeddings, dim=0),
-        metadata=labels,
-        tag="imu-embed",
-        global_step=epoch,
-    )  # type: ignore
-
-    logger.info("Generating embeddings for holdout set")
-    # h_ds = ManualTripletHoldoutSet()
-    h_ds = m_ds.holdout
-    tensors = {}
-
-    for key, ds in h_ds._categories.items():
-        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0).to(
-            device
-        )
-
-    embeddings = []
-    labels = []
-
-    for key, t in tensors.items():
-        embeddings.append(model.get_embedding(t))
-        labels.extend([key for _ in range(t.shape[0])])
-
-    writer.add_embedding(
-        torch.cat(embeddings, dim=0),
-        metadata=labels,
-        tag="imu-holdout-embed",
-        global_step=epoch,
-    )  # type: ignore
 
 
 def train_epoch(
