@@ -2,13 +2,11 @@ import os
 import time
 from typing import Any, List, Tuple
 
-import numpy as np
 import tqdm
 import torch
 from loguru import logger
 from spot_vrl.imu_learning.datasets import (
     ManualTripletDataset,
-    ManualTripletHoldoutSet,
     Triplet,
 )
 from spot_vrl.imu_learning.losses import TripletLoss
@@ -23,10 +21,9 @@ def fit(
     model: TripletNet,
     loss_fn: TripletLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.StepLR,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
     n_epochs: int,
-    cuda: bool,
-    log_interval: int,
+    device: torch.device,
     save_dir: str = "ckpt",
     metrics: List[Any] = [],
     start_epoch: int = 0,
@@ -52,7 +49,7 @@ def fit(
         )
     )  # type: ignore
 
-    pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Epoch")
+    pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Training")
     for epoch in pbar:
         # Train stage
         train_loss, metrics = train_epoch(
@@ -60,8 +57,7 @@ def fit(
             model,
             loss_fn,
             optimizer,
-            cuda,
-            log_interval,
+            device,
             metrics,
             loss_input,
         )
@@ -76,7 +72,7 @@ def fit(
             message += "\t{}: {}".format(metric.name(), metric.value())
 
         val_loss, metrics = test_epoch(
-            val_loader, model, loss_fn, cuda, metrics, loss_input
+            val_loader, model, loss_fn, device, metrics, loss_input
         )
         val_loss /= len(val_loader)
 
@@ -99,9 +95,9 @@ def fit(
     tensors = {}
 
     for key, ds in m_ds._categories.items():
-        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0)
-        if cuda:
-            tensors[key] = tensors[key].cuda()
+        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0).to(
+            device
+        )
 
     embeddings = []
     labels = []
@@ -123,9 +119,9 @@ def fit(
     tensors = {}
 
     for key, ds in h_ds._categories.items():
-        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0)
-        if cuda:
-            tensors[key] = tensors[key].cuda()
+        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0).to(
+            device
+        )
 
     embeddings = []
     labels = []
@@ -147,8 +143,7 @@ def train_epoch(
     model: TripletNet,
     loss_fn: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    cuda: bool,
-    log_interval: int,
+    device: torch.device,
     metrics: List[Any],
     loss_input: bool = False,
 ) -> Tuple[float, List[Any]]:
@@ -163,10 +158,10 @@ def train_epoch(
         target = None  # TODO(eyang): remove
         if not type(data) in (tuple, list):
             data = (data,)
-        if cuda:
-            data = tuple(d.cuda() for d in data)
-            if target is not None:
-                target = target.cuda()
+
+        data = tuple(d.to(device) for d in data)
+        if target is not None:
+            target = target.to(device)
 
         optimizer.zero_grad()
         outputs = model(data)
@@ -197,19 +192,6 @@ def train_epoch(
         for metric in metrics:
             metric(outputs, target, loss_outputs)
 
-        # if batch_idx % log_interval == 0:
-        #     message = "Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-        #         batch_idx * len(data[0]),
-        #         len(train_loader.dataset),
-        #         100.0 * batch_idx / len(train_loader),
-        #         np.mean(losses),
-        #     )
-        #     for metric in metrics:
-        #         message += "\t{}: {}".format(metric.name(), metric.value())
-
-        #     print(message)
-        #     losses = []
-
     total_loss /= batch_idx + 1
     return total_loss, metrics
 
@@ -218,7 +200,7 @@ def test_epoch(
     val_loader: DataLoader[Triplet],
     model: TripletNet,
     loss_fn: torch.nn.Module,
-    cuda: bool,
+    device: torch.device,
     metrics: List[Any],
     loss_input: bool = False,
 ) -> Tuple[float, List[Any]]:
@@ -231,10 +213,10 @@ def test_epoch(
             target = None  # TODO(eyang): remove
             if not type(data) in (tuple, list):
                 data = (data,)
-            if cuda:
-                data = tuple(d.cuda() for d in data)
-                if target is not None:
-                    target = target.cuda()
+
+            data = tuple(d.to(device) for d in data)
+            if target is not None:
+                target = target.to(device)
 
             outputs = model(data)
 
