@@ -34,6 +34,7 @@ def main() -> None:
     parser.add_argument("--bs", type=int, default=1)
     parser.add_argument("--steplr_step_size", type=int, default=10)
     parser.add_argument("--steplr_gamma", type=float, default=0.5)
+    parser.add_argument("--comment", type=str, default="")
 
     args = parser.parse_args()
 
@@ -46,6 +47,7 @@ def main() -> None:
     batch_size: int = args.bs
     steplr_step_size: int = args.steplr_step_size
     steplr_gamma: int = args.steplr_gamma
+    comment: str = args.comment
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -88,6 +90,8 @@ def main() -> None:
     tb_writer.add_text("bs", str(batch_size))  # type: ignore
     tb_writer.add_text("steplr_step_size", str(steplr_step_size))  # type: ignore
     tb_writer.add_text("steplr_gamma", str(steplr_gamma))  # type: ignore
+    if comment:
+        tb_writer.add_text("comment", comment)  # type: ignore
 
     embedder = EmbeddingGenerator(
         device, triplet_dataset, ManualTripletHoldoutSet(), tb_writer
