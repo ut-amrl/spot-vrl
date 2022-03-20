@@ -25,15 +25,15 @@ from spot_vrl.imu_learning.trainer import EmbeddingGenerator, fit
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt_dir", type=Path, required=True)
-    parser.add_argument("--embedding_dim", type=int, required=True)
+    parser.add_argument("--ckpt-dir", type=Path, required=True)
+    parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument("--model", type=str, required=True, choices=("mlp", "lstm"))
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=int, default=48)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--bs", type=int, default=1)
-    parser.add_argument("--steplr_step_size", type=int, default=10)
-    parser.add_argument("--steplr_gamma", type=float, default=0.5)
+    parser.add_argument("--steplr-step-size", type=int, default=10)
+    parser.add_argument("--steplr-gamma", type=float, default=0.5)
     parser.add_argument("--comment", type=str, default="")
 
     args = parser.parse_args()
