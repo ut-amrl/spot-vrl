@@ -3,6 +3,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
 import torch
 import torch.optim as optim
@@ -12,7 +13,11 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-from spot_vrl.imu_learning.datasets import ManualTripletDataset, ManualTripletHoldoutSet
+from spot_vrl.imu_learning.datasets import (
+    ManualTripletDataset,
+    ManualTripletHoldoutSet,
+    SingleTerrainDataset,
+)
 from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import (
     BaseEmbeddingNet,
@@ -34,6 +39,9 @@ def main() -> None:
     parser.add_argument("--bs", type=int, default=1)
     parser.add_argument("--steplr-step-size", type=int, default=10)
     parser.add_argument("--steplr-gamma", type=float, default=0.5)
+    parser.add_argument(
+        "--window-size", type=int, default=SingleTerrainDataset.window_size
+    )
     parser.add_argument("--comment", type=str, default="")
 
     args = parser.parse_args()
@@ -47,11 +55,13 @@ def main() -> None:
     batch_size: int = args.bs
     steplr_step_size: int = args.steplr_step_size
     steplr_gamma: int = args.steplr_gamma
+    window_size: int = args.window_size
     comment: str = args.comment
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Set up data loaders
+    SingleTerrainDataset.set_global_window_size(window_size)
     triplet_dataset = ManualTripletDataset()
     train_size = int(len(triplet_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
@@ -90,6 +100,7 @@ def main() -> None:
     tb_writer.add_text("bs", str(batch_size))  # type: ignore
     tb_writer.add_text("steplr_step_size", str(steplr_step_size))  # type: ignore
     tb_writer.add_text("steplr_gamma", str(steplr_gamma))  # type: ignore
+    tb_writer.add_text("window size", str(window_size))  # type: ignore
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 

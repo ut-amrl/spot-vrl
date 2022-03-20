@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, List, Sequence, Tuple, Union
+from typing import ClassVar, Dict, List, Sequence, Tuple, Union
 from pathlib import Path
 
 import numpy as np
@@ -25,12 +25,24 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         time
     """
 
+    window_size: ClassVar[int] = 40
+
+    @classmethod
+    def set_global_window_size(cls, new_size: int) -> None:
+        """Sets the window size to be used by future instances of this class.
+
+        Has no effect on existing instances.
+        """
+        if new_size < 1:
+            raise ValueError("Window size must be positive")
+        cls.window_size = new_size
+
     def __init__(
         self, path: Union[str, Path], start: float = 0, end: float = np.inf
     ) -> None:
         imu = ImuData(path)
 
-        window_size = 40
+        window_size = self.window_size
         self.windows: List[torch.Tensor] = []
 
         ts, data = imu.query_time_range(imu.all_sensor_data, start, end)
