@@ -1,14 +1,11 @@
 import os
-import time
-from typing import Any, List, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import tqdm
 import torch
-from loguru import logger
 from spot_vrl.imu_learning.datasets import (
-    ManualTripletDataset,
-    ManualTripletHoldoutSet,
+    BaseTripletDataset,
     Triplet,
 )
 from spot_vrl.imu_learning.losses import TripletLoss
@@ -17,17 +14,65 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
 
+class EmbeddingGenerator:
+    def __init__(
+        self,
+        device: torch.device,
+        train_set: BaseTripletDataset,
+        holdout_set: BaseTripletDataset,
+        tb_writer: SummaryWriter,
+    ):
+        self.tb_writer = tb_writer
+
+        self.tensors: Dict[str, torch.Tensor] = {}
+        """Dict[DatasetType -> Tensor]"""
+
+        self.labels: Dict[str, List[str]] = {}
+        """Dict[DatasetType -> List[str]]"""
+
+        for terrain, ds in train_set._categories.items():
+            t = self.tensors.get("train", torch.empty(0))
+            t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
+            self.tensors["train"] = torch.cat((t, t2), dim=0)
+            self.labels.setdefault("train", []).extend(
+                [terrain for _ in range(len(ds))]
+            )
+
+        for terrain, ds in holdout_set._categories.items():
+            t = self.tensors.get("holdout", torch.empty(0))
+            t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
+            self.tensors["holdout"] = torch.cat((t, t2), dim=0)
+            self.labels.setdefault("holdout", []).extend(
+                [terrain for _ in range(len(ds))]
+            )
+
+        for key, val in self.tensors.items():
+            self.tensors[key] = val.to(device)
+
+    def write(self, model: TripletNet, epoch: int) -> None:
+        model.eval()
+        with torch.no_grad():  # type: ignore
+            for dataset_type, tensor in self.tensors.items():
+                self.tb_writer.add_embedding(
+                    model.get_embedding(tensor),
+                    metadata=self.labels[dataset_type],
+                    tag=f"embed-{dataset_type}",
+                    global_step=epoch,
+                )  # type: ignore
+
+
 def fit(
     train_loader: DataLoader[Triplet],
     val_loader: DataLoader[Triplet],
     model: TripletNet,
     loss_fn: TripletLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler.StepLR,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
     n_epochs: int,
-    cuda: bool,
-    log_interval: int,
-    save_dir: str = "ckpt",
+    device: torch.device,
+    save_dir: Path,
+    tb_writer: SummaryWriter,
+    embedder: Optional[EmbeddingGenerator] = None,
     metrics: List[Any] = [],
     start_epoch: int = 0,
     loss_input: bool = False,
@@ -44,15 +89,7 @@ def fit(
     for epoch in range(0, start_epoch):
         scheduler.step()
 
-    stime = time.strftime("%H-%M-%S")
-    slayers = "-".join([str(x) for x in model._embedding_net.sizes])
-    writer = SummaryWriter(
-        log_dir=os.path.join(
-            save_dir, f"tensorboard-{slayers}--{stime}--stats-only-dropout"
-        )
-    )  # type: ignore
-
-    pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Epoch")
+    pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Training")
     for epoch in pbar:
         # Train stage
         train_loss, metrics = train_epoch(
@@ -60,8 +97,7 @@ def fit(
             model,
             loss_fn,
             optimizer,
-            cuda,
-            log_interval,
+            device,
             metrics,
             loss_input,
         )
@@ -76,15 +112,18 @@ def fit(
             message += "\t{}: {}".format(metric.name(), metric.value())
 
         val_loss, metrics = test_epoch(
-            val_loader, model, loss_fn, cuda, metrics, loss_input
+            val_loader, model, loss_fn, device, metrics, loss_input
         )
         val_loss /= len(val_loader)
 
         message += "\nEpoch: {}/{}. Validation set: Average loss: {:.4f}".format(
             epoch + 1, n_epochs, val_loss
         )
-        writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
-        writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
+
+        if embedder is not None:
+            embedder.write(model, epoch)
 
         for metric in metrics:
             message += "\t{}: {}".format(metric.name(), metric.value())
@@ -93,62 +132,13 @@ def fit(
         print(message)
         scheduler.step()
 
-    model.eval()
-    logger.info("Generating embeddings for training set")
-    m_ds = ManualTripletDataset()
-    tensors = {}
-
-    for key, ds in m_ds._categories.items():
-        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0)
-        if cuda:
-            tensors[key] = tensors[key].cuda()
-
-    embeddings = []
-    labels = []
-
-    for key, t in tensors.items():
-        embeddings.append(model.get_embedding(t))
-        labels.extend([key for _ in range(t.shape[0])])
-
-    writer.add_embedding(
-        torch.cat(embeddings, dim=0),
-        metadata=labels,
-        tag="imu-embed",
-        global_step=epoch,
-    )  # type: ignore
-
-    logger.info("Generating embeddings for holdout set")
-    # h_ds = ManualTripletHoldoutSet()
-    h_ds = m_ds.holdout
-    tensors = {}
-
-    for key, ds in h_ds._categories.items():
-        tensors[key] = torch.cat([ds[i][None, :] for i in range(len(ds))], dim=0)
-        if cuda:
-            tensors[key] = tensors[key].cuda()
-
-    embeddings = []
-    labels = []
-
-    for key, t in tensors.items():
-        embeddings.append(model.get_embedding(t))
-        labels.extend([key for _ in range(t.shape[0])])
-
-    writer.add_embedding(
-        torch.cat(embeddings, dim=0),
-        metadata=labels,
-        tag="imu-holdout-embed",
-        global_step=epoch,
-    )  # type: ignore
-
 
 def train_epoch(
     train_loader: DataLoader[Triplet],
     model: TripletNet,
     loss_fn: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
-    cuda: bool,
-    log_interval: int,
+    device: torch.device,
     metrics: List[Any],
     loss_input: bool = False,
 ) -> Tuple[float, List[Any]]:
@@ -163,10 +153,10 @@ def train_epoch(
         target = None  # TODO(eyang): remove
         if not type(data) in (tuple, list):
             data = (data,)
-        if cuda:
-            data = tuple(d.cuda() for d in data)
-            if target is not None:
-                target = target.cuda()
+
+        data = tuple(d.to(device) for d in data)
+        if target is not None:
+            target = target.to(device)
 
         optimizer.zero_grad()
         outputs = model(data)
@@ -197,19 +187,6 @@ def train_epoch(
         for metric in metrics:
             metric(outputs, target, loss_outputs)
 
-        # if batch_idx % log_interval == 0:
-        #     message = "Train: [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
-        #         batch_idx * len(data[0]),
-        #         len(train_loader.dataset),
-        #         100.0 * batch_idx / len(train_loader),
-        #         np.mean(losses),
-        #     )
-        #     for metric in metrics:
-        #         message += "\t{}: {}".format(metric.name(), metric.value())
-
-        #     print(message)
-        #     losses = []
-
     total_loss /= batch_idx + 1
     return total_loss, metrics
 
@@ -218,7 +195,7 @@ def test_epoch(
     val_loader: DataLoader[Triplet],
     model: TripletNet,
     loss_fn: torch.nn.Module,
-    cuda: bool,
+    device: torch.device,
     metrics: List[Any],
     loss_input: bool = False,
 ) -> Tuple[float, List[Any]]:
@@ -231,10 +208,10 @@ def test_epoch(
             target = None  # TODO(eyang): remove
             if not type(data) in (tuple, list):
                 data = (data,)
-            if cuda:
-                data = tuple(d.cuda() for d in data)
-                if target is not None:
-                    target = target.cuda()
+
+            data = tuple(d.to(device) for d in data)
+            if target is not None:
+                target = target.to(device)
 
             outputs = model(data)
 
