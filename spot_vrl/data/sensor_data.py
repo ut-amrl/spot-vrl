@@ -282,8 +282,8 @@ class ImuData:
             >>> timestamps, data = imu.query_time_range(imu.all_sensor_data, 1000, 2000)
             >>> timestamps, power = imu.query_time_range(imu.power, 1000, 2000)
         """
-        if start > end:
-            raise ValueError("start > end")
+        if start >= end:
+            raise ValueError("start >= end")
         if prop.shape[0] != len(self._data):
             raise ValueError("Number of rows does not match internal list.")
 
