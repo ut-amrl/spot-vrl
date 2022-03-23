@@ -285,7 +285,7 @@ class ImuData:
         if start > end:
             raise ValueError("start > end")
         if prop.shape[0] != len(self._data):
-            raise ValueError("Number of columns does not match internal list.")
+            raise ValueError("Number of rows does not match internal list.")
 
         start_i = int(np.searchsorted(self.timestamp_sec, start))
         end_i = int(np.searchsorted(self.timestamp_sec, end))
