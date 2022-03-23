@@ -3,7 +3,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 import torch
 import torch.optim as optim
@@ -14,9 +13,9 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
 from spot_vrl.imu_learning.datasets import (
-    ManualTripletDataset,
-    ManualTripletHoldoutSet,
     SingleTerrainDataset,
+    TripletHoldoutDataset,
+    TripletTrainingDataset,
 )
 from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import (
@@ -33,6 +32,9 @@ def main() -> None:
     parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument("--model", type=str, required=True, choices=("mlp", "lstm"))
+    parser.add_argument(
+        "--dataset", type=str, required=True, choices=("0.5", "1.0", "1.5")
+    )
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=int, default=48)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -49,6 +51,7 @@ def main() -> None:
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
     model_type: str = args.model
+    dataset_dir: Path = Path("imu_datasets") / args.dataset
     epochs: int = args.epochs
     margin: int = args.margin
     lr: float = args.lr
@@ -62,7 +65,9 @@ def main() -> None:
 
     # Set up data loaders
     SingleTerrainDataset.set_global_window_size(window_size)
-    triplet_dataset = ManualTripletDataset()
+    triplet_dataset = TripletTrainingDataset().init_from_json(
+        dataset_dir / "train.json"
+    )
     train_size = int(len(triplet_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
         triplet_dataset, (train_size, len(triplet_dataset) - train_size)
@@ -105,7 +110,10 @@ def main() -> None:
         tb_writer.add_text("comment", comment)  # type: ignore
 
     embedder = EmbeddingGenerator(
-        device, triplet_dataset, ManualTripletHoldoutSet(), tb_writer
+        device,
+        triplet_dataset,
+        TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
+        tb_writer,
     )
 
     fit(

@@ -1,6 +1,7 @@
+import json
 from abc import ABC, abstractmethod
-from typing import ClassVar, Dict, List, Sequence, Tuple, Union
 from pathlib import Path
+from typing import ClassVar, Dict, List, Sequence, Tuple, Union
 
 import numpy as np
 import scipy.stats as stats
@@ -111,6 +112,37 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
         self._cumulative_sizes: List[int] = []
         self._rng = np.random.default_rng()
 
+    def init_from_json(self, spec: Union[str, Path]) -> "BaseTripletDataset":
+        """Initializes/overwrites this dataset using a JSON specification file.
+
+        The JSON file is expected to contain the following format:
+
+        {
+            "categories": {
+                "name-of-terrain-1": [
+                    {
+                        "path": "relative/to/project/root",
+                        "start": 1646607548,
+                        "end": 1646607748
+                    },
+                    ...
+                ],
+                ...
+            }
+        }
+        """
+        with open(spec) as f:
+            for category, datafiles in json.load(f)["categories"].items():
+                datasets: List[SingleTerrainDataset] = []
+                for dataset_spec in datafiles:
+                    path: str = dataset_spec["path"]
+                    start: float = dataset_spec["start"]
+                    end: float = dataset_spec["end"]
+
+                    datasets.append(SingleTerrainDataset(path, start, end))
+                self._add_category(category, datasets)
+        return self
+
     def _add_category(self, key: str, datasets: Sequence[SingleTerrainDataset]) -> None:
         self._categories[key] = ConcatDataset(datasets)
         self._cumulative_sizes = np.cumsum(
@@ -168,58 +200,9 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
             logger.info(f"{cat} data points: {len(ds)}")
 
 
-class ManualTripletDataset(BaseTripletDataset):
+class TripletTrainingDataset(BaseTripletDataset):
     def __init__(self) -> None:
         super().__init__()
-
-        self._add_category(
-            "concrete",
-            (
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-16-31-16.bddf",
-                    start=1646001080,
-                    end=1646001382,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-17-55-35.bddf",
-                    start=1646006138,
-                    end=1646006272,
-                ),
-            ),
-        )
-        self._add_category(
-            "grass",
-            (
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-16-47-20.bddf",
-                    start=1646002045,
-                    end=1646002323,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-17-50-10.bddf",
-                    start=1646005815,
-                    end=1646006071,
-                ),
-            ),
-        )
-        self._add_category(
-            "sml_rock",
-            (
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-17-24-55.bddf",
-                    start=1646004299,
-                    end=1646004528,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-17-32-28.bddf",
-                    start=1646004753,
-                    end=1646005015,
-                ),
-            ),
-        )
-
-        # debug: extend with holdout sets
-        self.holdout = ManualTripletHoldoutSet()
 
     def __len__(self) -> int:
         k = len(self._categories)
@@ -227,68 +210,10 @@ class ManualTripletDataset(BaseTripletDataset):
         return super().__len__() * k
 
 
-class ManualTripletHoldoutSet(BaseTripletDataset):
-    """Test set to generate embeddings and evaluate model generalizability."""
-
+class TripletHoldoutDataset(BaseTripletDataset):
     def __init__(self) -> None:
         super().__init__()
 
-        self._add_category(
-            "concrete",
-            (
-                SingleTerrainDataset(
-                    "data/2022-03-06/2022-03-06-16-59-02.bddf",
-                    start=1646607548,
-                    end=1646607748,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-03-06/2022-03-06-17-12-30.bddf",
-                    start=1646608354,
-                    end=1646608594,
-                ),
-            ),
-        )
-        self._add_category(
-            "grass",
-            (
-                SingleTerrainDataset(
-                    "data/2022-03-06/2022-03-06-16-37-14.bddf",
-                    start=1646606240,
-                    end=1646606437,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-03-06/2022-03-06-16-48-07.bddf",
-                    start=1646606892,
-                    end=1646607107,
-                ),
-            ),
-        )
-        self._add_category(
-            "sml_rock",
-            (
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-17-40-02.bddf",
-                    start=1646005206,
-                    end=1646005254,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-02-27/2022-02-27-17-41-31.bddf",
-                    start=1646005295,
-                    end=1646005347,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-03-06/2022-03-06-17-39-58.bddf",
-                    start=1646610002,
-                    end=1646610098,
-                ),
-                SingleTerrainDataset(
-                    "data/2022-03-06/2022-03-06-17-42-14.bddf",
-                    start=1646610138,
-                    end=1646610231,
-                ),
-            ),
-        )
-
     def __len__(self) -> int:
-        """This class is not used for training."""
+        """Prevent this class from being used for training."""
         return 0
