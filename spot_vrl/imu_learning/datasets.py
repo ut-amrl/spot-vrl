@@ -1,6 +1,7 @@
+import json
 from abc import ABC, abstractmethod
-from typing import ClassVar, Dict, List, Sequence, Tuple, Union
 from pathlib import Path
+from typing import ClassVar, Dict, List, Sequence, Tuple, Union
 
 import numpy as np
 import scipy.stats as stats
@@ -111,6 +112,37 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
         self._cumulative_sizes: List[int] = []
         self._rng = np.random.default_rng()
 
+    def init_from_json(self, spec: Union[str, Path]) -> "BaseTripletDataset":
+        """Initializes/overwrites this dataset using a JSON specification file.
+
+        The JSON file is expected to contain the following format:
+
+        {
+            "categories": {
+                "name-of-terrain-1": [
+                    {
+                        "path": "relative/to/project/root",
+                        "start": 1646607548,
+                        "end": 1646607748
+                    },
+                    ...
+                ],
+                ...
+            }
+        }
+        """
+        with open(spec) as f:
+            for category, datafiles in json.load(f)["categories"].items():
+                datasets: List[SingleTerrainDataset] = []
+                for dataset_spec in datafiles:
+                    path: str = dataset_spec["path"]
+                    start: float = dataset_spec["start"]
+                    end: float = dataset_spec["end"]
+
+                    datasets.append(SingleTerrainDataset(path, start, end))
+                self._add_category(category, datasets)
+        return self
+
     def _add_category(self, key: str, datasets: Sequence[SingleTerrainDataset]) -> None:
         self._categories[key] = ConcatDataset(datasets)
         self._cumulative_sizes = np.cumsum(
@@ -166,6 +198,25 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
     def log_category_sizes(self) -> None:
         for cat, ds in self._categories.items():
             logger.info(f"{cat} data points: {len(ds)}")
+
+
+class TripletTrainingDataset(BaseTripletDataset):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __len__(self) -> int:
+        k = len(self._categories)
+        k = k * (k - 1) // 2
+        return super().__len__() * k
+
+
+class TripletHoldoutDataset(BaseTripletDataset):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __len__(self) -> int:
+        """Prevent this class from being used for training."""
+        return 0
 
 
 class ManualTripletDataset(BaseTripletDataset):
