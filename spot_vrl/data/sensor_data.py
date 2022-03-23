@@ -144,6 +144,7 @@ class ImuData:
         """
         self._data: List["ImuData.Datum"] = []
 
+        self.path: Path = Path(filename)
         data_reader = DataReader(None, str(filename))
         proto_reader = ProtobufReader(data_reader)
 
@@ -287,8 +288,16 @@ class ImuData:
         if prop.shape[0] != len(self._data):
             raise ValueError("Number of rows does not match internal list.")
 
+        if start > self.timestamp_sec[-1] or end < self.timestamp_sec[0]:
+            logger.warning(
+                f"Specified time range ({start}, {end}) and dataset ({self.path}) are disjoint "
+            )
+
         start_i = int(np.searchsorted(self.timestamp_sec, start))
         end_i = int(np.searchsorted(self.timestamp_sec, end))
         ts_range = self.timestamp_sec[start_i:end_i]
         prop_range = prop[start_i:end_i]
+
+        if ts_range.size == 0:
+            logger.warning("Returning empty arrays")
         return ts_range, prop_range
