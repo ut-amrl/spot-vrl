@@ -4,6 +4,7 @@ from typing import Tuple
 import numpy as np
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 from spot_vrl.imu_learning.datasets import Triplet
 
@@ -49,7 +50,8 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
             torch.Tensor: Tensor of shape (batch size, embedding dim)
         """
         x = x.view(x.shape[0], -1)
-        return self._fc.forward(x)  # type: ignore
+        out = self._fc(x)
+        return F.normalize(out, p=2, dim=1)
 
     def arch(self) -> str:
         return "mlp" + "-".join(str(x) for x in self.sizes)
@@ -93,7 +95,8 @@ class LstmEmbeddingNet(BaseEmbeddingNet):
         output: torch.Tensor
         output, _ = self._rnn(x)
         output = output.reshape(output.shape[0], -1)
-        return self._fc(output)  # type: ignore
+        output = self._fc(output)
+        return F.normalize(output, p=2, dim=1)
 
     def arch(self) -> str:
         return f"lstm-nblk{self.num_blocks}-nlyr{self.num_layers}"

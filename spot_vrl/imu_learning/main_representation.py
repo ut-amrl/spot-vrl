@@ -36,7 +36,7 @@ def main() -> None:
         "--dataset", type=str, required=True, choices=("0.5", "1.0", "1.5")
     )
     parser.add_argument("--epochs", type=int, default=40)
-    parser.add_argument("--margin", type=int, default=48)
+    parser.add_argument("--margin", type=int, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--bs", type=int, default=1)
     parser.add_argument("--steplr-step-size", type=int, default=10)
