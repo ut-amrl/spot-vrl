@@ -17,7 +17,6 @@ from spot_vrl.imu_learning.datasets import (
     TripletHoldoutDataset,
     TripletTrainingDataset,
 )
-from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import (
     BaseEmbeddingNet,
     LstmEmbeddingNet,
@@ -89,7 +88,7 @@ def main() -> None:
 
     model = TripletNet(embedding_net)
     model = model.to(device)
-    loss_fn = TripletLoss(margin)
+    loss_fn = torch.nn.TripletMarginLoss(margin=margin, swap=True)
     optimizer = optim.Adam(model.parameters(), lr=lr)
     scheduler = lr_scheduler.StepLR(
         optimizer, steplr_step_size, gamma=steplr_gamma, last_epoch=-1

@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 import tqdm
 import torch
@@ -8,7 +8,6 @@ from spot_vrl.imu_learning.datasets import (
     BaseTripletDataset,
     Triplet,
 )
-from spot_vrl.imu_learning.losses import TripletLoss
 from spot_vrl.imu_learning.network import TripletNet
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
@@ -65,7 +64,7 @@ def fit(
     train_loader: DataLoader[Triplet],
     val_loader: DataLoader[Triplet],
     model: TripletNet,
-    loss_fn: TripletLoss,
+    loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     n_epochs: int,
@@ -73,9 +72,7 @@ def fit(
     save_dir: Path,
     tb_writer: SummaryWriter,
     embedder: Optional[EmbeddingGenerator] = None,
-    metrics: List[Any] = [],
     start_epoch: int = 0,
-    loss_input: bool = False,
 ) -> None:
     """
     Loaders, model, loss function and metrics should work together for a given task,
@@ -92,14 +89,12 @@ def fit(
     pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Training")
     for epoch in pbar:
         # Train stage
-        train_loss, metrics = train_epoch(
+        train_loss = train_epoch(
             train_loader,
             model,
             loss_fn,
             optimizer,
             device,
-            metrics,
-            loss_input,
         )
         torch.save(
             model.state_dict(),
@@ -108,12 +103,8 @@ def fit(
         message = "Epoch: {}/{}. Train set: Average loss: {:.4f}".format(
             epoch + 1, n_epochs, train_loss
         )
-        for metric in metrics:
-            message += "\t{}: {}".format(metric.name(), metric.value())
 
-        val_loss, metrics = test_epoch(
-            val_loader, model, loss_fn, device, metrics, loss_input
-        )
+        val_loss = test_epoch(val_loader, model, loss_fn, device)
         val_loss /= len(val_loader)
 
         message += "\nEpoch: {}/{}. Validation set: Average loss: {:.4f}".format(
@@ -125,9 +116,6 @@ def fit(
         if embedder is not None:
             embedder.write(model, epoch)
 
-        for metric in metrics:
-            message += "\t{}: {}".format(metric.name(), metric.value())
-
         pbar.clear()
         print(message)
         scheduler.step()
@@ -136,27 +124,19 @@ def fit(
 def train_epoch(
     train_loader: DataLoader[Triplet],
     model: TripletNet,
-    loss_fn: torch.nn.Module,
+    loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
-    metrics: List[Any],
-    loss_input: bool = False,
-) -> Tuple[float, List[Any]]:
-    for metric in metrics:
-        metric.reset()
-
+) -> float:
     model.train()
     losses = []
     total_loss = 0.0
 
     for batch_idx, data in enumerate(train_loader):
-        target = None  # TODO(eyang): remove
         if not type(data) in (tuple, list):
             data = (data,)
 
         data = tuple(d.to(device) for d in data)
-        if target is not None:
-            target = target.to(device)
 
         optimizer.zero_grad()
         outputs = model(data)
@@ -167,13 +147,8 @@ def train_epoch(
             outputs = (outputs,)
 
         loss_inputs = outputs
-        if target is not None:
-            target = (target,)
-            loss_inputs += target
-            if loss_input:
-                loss_inputs += data
 
-        loss_outputs = loss_fn(loss_inputs)
+        loss_outputs = loss_fn(*loss_inputs)
         loss = (
             torch.sum(torch.stack(loss_outputs))
             if type(loss_outputs) in (tuple, list)
@@ -184,34 +159,24 @@ def train_epoch(
         loss.backward()
         optimizer.step()
 
-        for metric in metrics:
-            metric(outputs, target, loss_outputs)
-
     total_loss /= batch_idx + 1
-    return total_loss, metrics
+    return total_loss
 
 
 def test_epoch(
     val_loader: DataLoader[Triplet],
     model: TripletNet,
-    loss_fn: torch.nn.Module,
+    loss_fn: torch.nn.TripletMarginLoss,
     device: torch.device,
-    metrics: List[Any],
-    loss_input: bool = False,
-) -> Tuple[float, List[Any]]:
+) -> float:
     with torch.no_grad():  # type: ignore
-        for metric in metrics:
-            metric.reset()
         model.eval()
         val_loss = 0.0
         for batch_idx, data in enumerate(val_loader):
-            target = None  # TODO(eyang): remove
             if not type(data) in (tuple, list):
                 data = (data,)
 
             data = tuple(d.to(device) for d in data)
-            if target is not None:
-                target = target.to(device)
 
             outputs = model(data)
 
@@ -220,12 +185,8 @@ def test_epoch(
                     outputs = outputs.squeeze()
                 outputs = (outputs,)
             loss_inputs = outputs
-            if target is not None:
-                target = (target,)
-                loss_inputs += target
-                if loss_input:
-                    loss_inputs += data
-            loss_outputs = loss_fn(loss_inputs)
+
+            loss_outputs = loss_fn(*loss_inputs)
             loss = (
                 torch.sum(torch.stack(loss_outputs))
                 if type(loss_outputs) in (tuple, list)
@@ -233,7 +194,4 @@ def test_epoch(
             )
             val_loss += loss.item()
 
-            for metric in metrics:
-                metric(outputs, target, loss_outputs)
-
-    return val_loss, metrics
+    return val_loss
