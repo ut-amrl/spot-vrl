@@ -35,9 +35,9 @@ def main() -> None:
         "--dataset", type=str, required=True, choices=("0.5", "1.0", "1.5")
     )
     parser.add_argument("--epochs", type=int, default=40)
-    parser.add_argument("--margin", type=int, default=1)
+    parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
-    parser.add_argument("--bs", type=int, default=1)
+    parser.add_argument("--bs", type=int, default=32)
     parser.add_argument("--steplr-step-size", type=int, default=10)
     parser.add_argument("--steplr-gamma", type=float, default=0.5)
     parser.add_argument(
@@ -89,7 +89,7 @@ def main() -> None:
     model = TripletNet(embedding_net)
     model = model.to(device)
     loss_fn = torch.nn.TripletMarginLoss(margin=margin, swap=True)
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    optimizer = optim.AdamW(model.parameters(), lr=lr)
     scheduler = lr_scheduler.StepLR(
         optimizer, steplr_step_size, gamma=steplr_gamma, last_epoch=-1
     )
