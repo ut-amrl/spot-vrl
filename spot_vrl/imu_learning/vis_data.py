@@ -85,7 +85,7 @@ def vis_data(path: Path) -> None:
             continue
 
         if linear_vels.ndim > 1:
-            linear_vels = linear_vels[:, 0]
+            linear_vels = linear_vels[0]
 
         linear_spd = np.linalg.norm(linear_vels)
         foot_depth = foot_depths[0]
