@@ -27,14 +27,16 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
         super().__init__()
 
         input_dim = np.prod(input_shape)
-        self.sizes = [input_dim, 256, 128, embedding_dim]
+        self.sizes = [input_dim, 64, 32, embedding_dim]
+        # self.sizes = [input_dim, 1024, 256, embedding_dim]
+        # self.sizes = [input_dim, 1024, 1024, 256, embedding_dim]
 
         layers = torch.nn.ModuleList()
 
-        layers.append(nn.Dropout(0.2))
+        # layers.append(nn.Dropout(0.2))
         for i in range(len(self.sizes) - 1):
             if i > 0:
-                layers.append(nn.Dropout(0.2))
+                # layers.append(nn.Dropout(0.2))
                 layers.append(nn.PReLU())
             layers.append(nn.Linear(self.sizes[i], self.sizes[i + 1]))
 

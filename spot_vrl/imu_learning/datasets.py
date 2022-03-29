@@ -46,9 +46,9 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         window_size = self.window_size
         self.windows: List[torch.Tensor] = []
 
-        ts, data = imu.query_time_range(imu.all_sensor_data, start, end)
+        ts, data = imu.query_time_range(imu.all_sensor_data[:, -4:], start, end)
         # Overlap windows for more data points
-        for i in range(0, data.shape[0] - window_size + 1, window_size // 8):
+        for i in range(0, data.shape[0] - window_size + 1, 5):
             window = data[i : i + window_size]
 
             # compute ffts
@@ -74,7 +74,9 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
             # very useful. May want to use quantiles, IQR, min, max, etc.
 
             # window = np.vstack((window, mean, std, skew, kurtosis, med, q1, q3))
-            window = np.vstack((mean, std, skew, kurtosis, med, q1, q3))
+            window = np.vstack((mean, std, skew, kurtosis, med, q1, q3)).astype(
+                np.float32
+            )
             self.windows.append(torch.from_numpy(window))
 
     def __len__(self) -> int:
