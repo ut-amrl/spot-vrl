@@ -76,14 +76,11 @@ class ImuData:
             robot_state = response.robot_state
             kinematic_state = robot_state.kinematic_state
 
-            # TODO(eyang): should this be the kinematic state acquisition
-            # timestamp rather than the response timestamp? The kinematic state
-            # seems to be acquired at about 12 Hz, so RobotStateResponses
-            # acquired at a higher frequency may contain the same data.
             self.ts = (
-                response.header.response_timestamp.seconds
-                + response.header.response_timestamp.nanos * 1e-9
+                kinematic_state.acquisition_timestamp.seconds
+                + kinematic_state.acquisition_timestamp.nanos * 1e-9
             )
+
             self.power = np.float32(0)
             for battery in robot_state.battery_states:
                 if battery.current.value >= 0:
