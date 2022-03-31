@@ -3,6 +3,12 @@ This script generates a video visualization of the top-down images generated
 from all images in a BDDF
 """
 
+# Disable numpy multithreading
+if True:
+    import spot_vrl
+
+    spot_vrl._set_omp_num_threads(1)
+
 import argparse
 from pathlib import Path
 from typing import Optional
