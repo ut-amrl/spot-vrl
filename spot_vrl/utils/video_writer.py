@@ -9,6 +9,34 @@ import numpy.typing as npt
 from loguru import logger
 
 
+class ImageWithText:
+    """
+    Helper class to add text lines to the top left corner of an RGB image.
+    """
+
+    def __init__(self, img: npt.NDArray[np.uint8]) -> None:
+        self.img = img
+        self._y = 0
+
+    def add_line(self, text: str, color: Tuple[int, int, int] = (0, 0, 255)) -> None:
+        """Adds a text line to the image and issues a virtual CRLF."""
+        face = cv2.FONT_HERSHEY_SIMPLEX
+        scale = 1
+        thickness = 2
+
+        text_size = cv2.getTextSize(text, face, scale, thickness)[0]
+        self.img = cv2.putText(
+            self.img,
+            text,
+            (0, self._y + text_size[1]),
+            face,
+            scale,
+            color,
+            thickness=thickness,
+        )
+        self._y += text_size[1] + 5
+
+
 class VideoWriter:
     """
     Creates a video from image frames.
