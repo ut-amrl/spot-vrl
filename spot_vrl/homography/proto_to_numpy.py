@@ -3,6 +3,8 @@ This module provides helper functions to convert bosdyn.api proto structs to
 numpy matrices.
 """
 
+from typing import ClassVar, Dict
+
 import cv2
 import numpy as np
 import numpy.typing as npt
@@ -92,6 +94,15 @@ def camera_intrinsic_matrix(
 
 
 class SpotImage:
+    _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
+    """Cache for the image mask of the sky for each camera.
+
+    Usage of this cache assumes the following are static:
+      - Image Sizes
+      - Camera-to-body transforms
+      - The ground is always flat
+    """
+
     def __init__(self, image_response: image_pb2.ImageResponse) -> None:
         image_capture = image_response.shot
         image_source = image_response.source
@@ -128,6 +139,35 @@ class SpotImage:
         assert img.shape == (self.height, self.width)
         return img
 
+    def _sky_mask(self) -> npt.NDArray[np.bool_]:
+        """Calculates the image mask of the sky for the camera corresponding to
+        this image.
+
+        Returns:
+            npt.NDArray[np.bool_]: A 2D matrix of size (self.height, self.width)
+                containing a boolean bitmask where True represents the sky.
+        """
+        if self.frame_name not in self._sky_masks:
+            # Generate a 2xN matrix of all integer image coordinates [x, y]
+            image_coords = np.indices((self.width, self.height))
+            image_coords = np.moveaxis(image_coords, 0, -1)
+            image_coords = image_coords.reshape(self.width * self.height, 2)
+            image_coords = image_coords.transpose()
+
+            rays = camera_transform.camera_rays(
+                image_coords, self.body_tform_camera, self.camera_matrix
+            )
+
+            # Mark the indices of the rays that point above the horizon
+            is_sky: npt.NDArray[np.bool_] = rays[2] >= 0
+            # Convert flat array to (y, x) image coords
+            is_sky = is_sky.reshape(self.width, self.height).T
+
+            assert is_sky.shape == (self.height, self.width)
+            self._sky_masks[self.frame_name] = is_sky
+
+        return self._sky_masks[self.frame_name]
+
     def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
         """Removes the sky from the image returned by self.decoded_image.
 
@@ -140,27 +180,7 @@ class SpotImage:
         """
         img = self.decoded_image()
 
-        # Implementation note: Python for-loops are pretty slow, so we want to
-        #  perform as much computation as possible in numpy at the cost of
-        #  space complexity.
         img[img == 0] = 1
-
-        # Generate a 2xN matrix of all integer image coordinates [x, y]
-        image_coords = np.indices((self.width, self.height))
-        image_coords = np.moveaxis(image_coords, 0, -1)
-        image_coords = image_coords.reshape(self.width * self.height, 2)
-        image_coords = image_coords.transpose()
-
-        rays = camera_transform.camera_rays(
-            image_coords, self.body_tform_camera, self.camera_matrix
-        )
-
-        # Find the indices of the rays that point above the horizon
-        is_sky: npt.NDArray[np.bool_] = (rays[2] >= 0)
-
-        # Reshape the matrix to avoid computing (x, y) coordinates from flat
-        # indices inside a for-loop.
-        is_sky = is_sky.reshape(self.width, self.height)
-        img[is_sky.T] = 0
+        img[self._sky_mask()] = 0
 
         return img

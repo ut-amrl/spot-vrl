@@ -131,7 +131,7 @@ class VideoWriter:
             raise ChildProcessError("The ffmpeg process has terminated.")
 
         img_buf: npt.NDArray[np.uint8]
-        success, img_buf = cv2.imencode(".png", frame)
+        success, img_buf = cv2.imencode(".bmp", frame)
         if not success:
             raise ValueError("The image could not be encoded.")
 
