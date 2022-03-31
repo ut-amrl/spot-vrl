@@ -1,6 +1,6 @@
 """
-This module provides helper functions to convert bosdyn.api proto structs to
-numpy matrices.
+This module provides helper functions to convert bosdyn.api protobuf objects to
+numpy structures.
 """
 
 from typing import ClassVar, Dict
@@ -10,10 +10,8 @@ import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
-import bosdyn.api.geometry_pb2 as geometry_pb2
-import bosdyn.api.image_pb2 as image_pb2
-
-from spot_vrl.homography import transform as camera_transform
+from bosdyn.api import geometry_pb2, image_pb2
+from spot_vrl.homography import camera_transform
 
 
 def se3pose_to_affine(pose: geometry_pb2.SE3Pose) -> npt.NDArray[np.float64]:

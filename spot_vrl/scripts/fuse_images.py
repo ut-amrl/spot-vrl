@@ -16,12 +16,10 @@ from typing import Optional
 import cv2
 import numpy as np
 import tqdm
-import spot_vrl.homography.perspective_transform as perspective_transform
-import spot_vrl.homography.transform
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
-from spot_vrl.homography import proto_to_numpy
+from spot_vrl.homography import camera_transform, perspective_transform, proto_to_numpy
 from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
 
 # TODO(eyang): use values from robot states
@@ -58,9 +56,7 @@ def fuse_images(filename: str) -> None:
     series_block_index: SeriesBlockIndex = data_reader.series_block_index(series_index)
     num_msgs = len(series_block_index.block_entries)
 
-    ground_tform_body = spot_vrl.homography.transform.affine3d(
-        [0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST]
-    )
+    ground_tform_body = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
 
     start_ts: Optional[float] = None
 

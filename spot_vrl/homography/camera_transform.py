@@ -1,4 +1,6 @@
-"""This module provides functions to compute homography transforms."""
+"""This module provides utility functions for single-camera coordinate
+transforms.
+"""
 
 import numpy as np
 import numpy.typing as npt
@@ -192,8 +194,8 @@ def visible_ground_plane_limits(
 
     # fmt: off
     image_limits = np.array([
-        [0, img_width - 1,              0, img_width - 1],
-        [0,             0, img_height - 1, img_height - 1]
+        [0, img_width - 1,              0, img_width - 1],  # noqa: E241
+        [0,             0, img_height - 1, img_height - 1]  # noqa: E241
     ])
     # fmt: on
     image_limits_in_plane = image_to_ground(
@@ -236,12 +238,14 @@ def visible_ground_plane_limits(
         low = 0.0
         high = 999.0
 
-        while (high - low > EPSILON):
+        while high - low > EPSILON:
             mid = (low + high) * 0.5
 
             ground_coord = horizon_point + mid * orthogonal
-            image_coord = ground_to_image(ground_coord, camera_tform_ground, camera_matrix)
-            if (out_of_image(image_coord[0], image_coord[1])):
+            image_coord = ground_to_image(
+                ground_coord, camera_tform_ground, camera_matrix
+            )
+            if out_of_image(image_coord[0], image_coord[1]):
                 high = mid - EPSILON
             else:
                 low = mid
