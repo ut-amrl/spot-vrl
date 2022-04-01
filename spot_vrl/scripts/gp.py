@@ -23,10 +23,7 @@ from bosdyn.api.robot_id_pb2 import RobotIdResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 
 from spot_vrl.data import ImuData
-import spot_vrl.homography
-import spot_vrl.homography.transform
-from spot_vrl.homography import proto_to_numpy
-import spot_vrl.homography.perspective_transform as perspective_transform
+from spot_vrl.homography import camera_transform, perspective_transform, proto_to_numpy
 from spot_vrl.utils.video_writer import VideoWriter
 
 # TODO(eyang): use values from robot states
@@ -118,7 +115,7 @@ class SensorData:
         )
         num_msgs = len(series_block_index.block_entries)
 
-        ground_tform_body = spot_vrl.homography.transform.affine3d(
+        ground_tform_body = camera_transform.affine3d(
             [0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST]
         )
 

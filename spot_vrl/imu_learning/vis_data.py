@@ -42,7 +42,7 @@ class ImageIterator:
         self.num_msgs = len(series_block_index.block_entries)
         self._iter_idx = 0
 
-        self._ground_tform_body = homography.transform.affine3d(
+        self._ground_tform_body = homography.camera_transform.affine3d(
             [0, 0, 0, 1], [0, 0, 0.48938]
         )
 

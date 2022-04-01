@@ -1,3 +1,4 @@
 [flake8]
 # Defer to Black formatter's line length decisions
+ignore = E203, W503
 max-line-length = 999

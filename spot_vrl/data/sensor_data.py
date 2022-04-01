@@ -1,4 +1,4 @@
-from functools import cached_property
+from functools import lru_cache, cached_property
 from pathlib import Path
 from typing import Dict, Iterator, List, Tuple, Union, overload
 
@@ -6,9 +6,11 @@ import numpy as np
 import numpy.typing as npt
 from bosdyn.api import geometry_pb2
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
+from bosdyn.api.geometry_pb2 import FrameTreeSnapshot
 from bosdyn.api.robot_state_pb2 import FootState, RobotStateResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
+from spot_vrl.homography import proto_to_numpy
 
 
 class ImuData:
@@ -24,6 +26,8 @@ class ImuData:
     """
 
     class Datum:
+        """Deconstructed RobotStateResponse instance."""
+
         joint_order: Dict[str, int] = {
             "fl.hx": 0,
             "fl.hy": 1,
@@ -42,6 +46,9 @@ class ImuData:
         def __init__(self, response: RobotStateResponse) -> None:
             self.ts: np.float64 = np.float64(0)
             """Robot system timestamp of the data in seconds."""
+
+            self.tf_tree: FrameTreeSnapshot = FrameTreeSnapshot()
+            """The transform tree from this state."""
 
             self.power: np.float32 = np.float32(0)
             """Power consumption measured by battery discharge."""
@@ -71,7 +78,7 @@ class ImuData:
             """Mean of foot depth values in the ground plane estimate."""
 
             self.foot_depth_std: np.float32 = np.float32(0)
-            """Mean of foot depth uncertainties in the ground plane estimate. """
+            """Mean of foot depth uncertainties in the ground plane estimate."""
 
             robot_state = response.robot_state
             kinematic_state = robot_state.kinematic_state
@@ -80,6 +87,8 @@ class ImuData:
                 kinematic_state.acquisition_timestamp.seconds
                 + kinematic_state.acquisition_timestamp.nanos * 1e-9
             )
+
+            self.tf_tree = kinematic_state.transforms_snapshot
 
             self.power = np.float32(0)
             for battery in robot_state.battery_states:
@@ -256,6 +265,54 @@ class ImuData:
             )
         )
 
+    @lru_cache(maxsize=None)
+    def tforms(
+        self,
+        reference_frame: str,
+        frame_of_interest: str,
+    ) -> npt.NDArray[np.float32]:
+        """Computes the 3D affine transforms between two frames.
+
+        Specifically, this function computes the transforms A_tform_B, where
+            A = reference_frame
+            B = frame_of_interest
+
+            A_tform_B @ (point in frame B) => (point in frame A)
+            inv(A_tform_B) @ (point in frame A) => (point in frame B)
+            A_tform_B @ B_tform_C => A_tform_C
+
+        Args:
+            reference_frame (str): The name of the reference frame.
+            frame_of_interest (str): The name of the frame of interest.
+
+            RobotStateResponses do not contain the full transform tree.
+            In general, these frame names are present:
+                "odom"
+                "gpe"
+                "body"
+
+        Returns:
+            npt.NDArray[np.float32]:
+                An (N, 4, 4) array of 3D affine transformation matrices,
+                where N is the number of state observations.
+        """
+        transforms: npt.NDArray[np.float32] = np.empty(
+            (len(self), 4, 4), dtype=np.float32
+        )
+
+        for i, datum in enumerate(self._data):
+            # "body" is the root of the transform tree
+            body_tform_ref = proto_to_numpy.body_tform_frame(
+                datum.tf_tree, reference_frame
+            )
+            body_tform_interest = proto_to_numpy.body_tform_frame(
+                datum.tf_tree, frame_of_interest
+            )
+            ref_tform_interest = np.linalg.inv(body_tform_ref) @ body_tform_interest
+            transforms[i] = ref_tform_interest.astype(np.float32)
+
+        return transforms
+
     def query_time_range(
         self, prop: npt.NDArray[np.float32], start: float = 0, end: float = np.inf
     ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float32]]:
@@ -285,7 +342,7 @@ class ImuData:
         if prop.shape[0] != len(self._data):
             raise ValueError("Number of rows does not match internal list.")
 
-        if start > self.timestamp_sec[-1] or end < self.timestamp_sec[0]:
+        if start > self.timestamp_sec[-1] + 1 or end < self.timestamp_sec[0] - 1:
             logger.warning(
                 f"Specified time range ({start}, {end}) and dataset ({self.path}) are disjoint "
             )
