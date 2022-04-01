@@ -15,10 +15,12 @@ from typing import Optional
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import tqdm
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
+from spot_vrl.data.sensor_data import ImuData
 from spot_vrl.homography import camera_transform, perspective_transform, proto_to_numpy
 from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
 
@@ -51,6 +53,7 @@ def fuse_images(filename: str) -> None:
 
     data_reader = DataReader(None, filename)
     proto_reader = ProtobufReader(data_reader)
+    imu = ImuData(filepath)
 
     series_index: int = proto_reader.series_index("bosdyn.api.GetImageResponse")
     series_block_index: SeriesBlockIndex = data_reader.series_block_index(series_index)
@@ -59,6 +62,7 @@ def fuse_images(filename: str) -> None:
     ground_tform_body = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
 
     start_ts: Optional[float] = None
+    start_tform_odom: npt.NDArray[np.float32] = imu.tforms("body", "odom")[0]
 
     fps = estimate_fps(proto_reader, series_index, num_msgs)
 
@@ -72,6 +76,12 @@ def fuse_images(filename: str) -> None:
         if start_ts is None:
             start_ts = ts_sec
 
+        _, odom_poses = imu.query_time_range(imu.tforms("odom", "body"), ts_sec)
+        displacement = np.zeros(3, dtype=np.float32)
+        if len(odom_poses) > 0:
+            pose = odom_poses[0]
+            displacement = (start_tform_odom @ pose)[:3, 3]
+
         images = []
         for image_response in response.image_responses:
             images.append(proto_to_numpy.SpotImage(image_response))
@@ -82,6 +92,12 @@ def fuse_images(filename: str) -> None:
         img_wrapper.add_line(f"seq: {msg_index}")
         img_wrapper.add_line(f"ts: {ts_sec - start_ts:.3f}")
         img_wrapper.add_line(f"unix: {ts_sec:.3f}")
+
+        img_wrapper.add_line("odom:")
+        x, y, z = displacement
+        img_wrapper.add_line(f" {x:.2f}")
+        img_wrapper.add_line(f" {y:.2f}")
+        img_wrapper.add_line(f" {z:.2f}")
 
         video_writer.add_frame(img_wrapper.img)
 
