@@ -342,7 +342,7 @@ class ImuData:
         if prop.shape[0] != len(self._data):
             raise ValueError("Number of rows does not match internal list.")
 
-        if start > self.timestamp_sec[-1] or end < self.timestamp_sec[0]:
+        if start > self.timestamp_sec[-1] + 1 or end < self.timestamp_sec[0] - 1:
             logger.warning(
                 f"Specified time range ({start}, {end}) and dataset ({self.path}) are disjoint "
             )
