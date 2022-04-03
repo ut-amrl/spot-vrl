@@ -1,14 +1,110 @@
 from pathlib import Path
-from typing import Iterator, List, Tuple, Union, overload
+from typing import ClassVar, Dict, Iterator, List, Tuple, Union, overload
 
+import cv2
 import numpy as np
 import numpy.typing as npt
+from bosdyn.api import image_pb2
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
 
-from spot_vrl.homography.proto_to_numpy import SpotImage
+from spot_vrl.data import proto_to_numpy
+from spot_vrl.homography import camera_transform
+
+
+class SpotImage:
+    _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
+    """Cache for the image mask of the sky for each camera.
+
+    Usage of this cache assumes the following are static:
+      - Image Sizes
+      - Camera-to-body transforms
+      - The ground is always flat
+    """
+
+    def __init__(self, image_response: image_pb2.ImageResponse) -> None:
+        image_capture = image_response.shot
+        image_source = image_response.source
+        image = image_capture.image
+
+        assert image_response.status == image_pb2.ImageResponse.Status.STATUS_OK
+        assert (
+            image_source.image_type == image_pb2.ImageSource.ImageType.IMAGE_TYPE_VISUAL
+        )
+        assert image.format == image_pb2.Image.Format.FORMAT_JPEG
+        assert (
+            image.pixel_format == image_pb2.Image.PixelFormat.PIXEL_FORMAT_GREYSCALE_U8
+        )
+
+        self.frame_name = image_capture.frame_name_image_sensor
+        self.body_tform_camera = proto_to_numpy.body_tform_frame(
+            image_capture.transforms_snapshot, self.frame_name
+        )
+        self.camera_matrix = proto_to_numpy.camera_intrinsic_matrix(image_source)
+        self.width = image.cols
+        self.height = image.rows
+        self.imgbuf: npt.NDArray[np.uint8] = np.frombuffer(image.data, dtype=np.uint8)
+
+    def decoded_image(self) -> npt.NDArray[np.uint8]:
+        """Decodes the raw bytes stored in self.imgbuf as an image.
+
+        Assumes the image is grayscale.
+
+        Returns:
+            npt.NDArray[np.uint8]: A 2D matrix of size (self.height, self.width)
+                containing a single-channel image.
+        """
+        img: npt.NDArray[np.uint8] = cv2.imdecode(self.imgbuf, cv2.IMREAD_UNCHANGED)
+        assert img.shape == (self.height, self.width)
+        return img
+
+    def _sky_mask(self) -> npt.NDArray[np.bool_]:
+        """Calculates the image mask of the sky for the camera corresponding to
+        this image.
+
+        Returns:
+            npt.NDArray[np.bool_]: A 2D matrix of size (self.height, self.width)
+                containing a boolean bitmask where True represents the sky.
+        """
+        if self.frame_name not in self._sky_masks:
+            # Generate a 2xN matrix of all integer image coordinates [x, y]
+            image_coords = np.indices((self.width, self.height))
+            image_coords = np.moveaxis(image_coords, 0, -1)
+            image_coords = image_coords.reshape(self.width * self.height, 2)
+            image_coords = image_coords.transpose()
+
+            rays = camera_transform.camera_rays(
+                image_coords, self.body_tform_camera, self.camera_matrix
+            )
+
+            # Mark the indices of the rays that point above the horizon
+            is_sky: npt.NDArray[np.bool_] = rays[2] >= 0
+            # Convert flat array to (y, x) image coords
+            is_sky = is_sky.reshape(self.width, self.height).T
+
+            assert is_sky.shape == (self.height, self.width)
+            self._sky_masks[self.frame_name] = is_sky
+
+        return self._sky_masks[self.frame_name]
+
+    def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
+        """Removes the sky from the image returned by self.decoded_image.
+
+        Zero pixels in the original image (which are quite rare) are set to one.
+        Pixels are then "cleared" by setting their values to zero.
+
+        Returns:
+            npt.NDArray[np.uint8]: A 2D matrix of size (self.height, self.width)
+                containing a single-channel image of the visible ground plane.
+        """
+        img = self.decoded_image()
+
+        img[img == 0] = 1
+        img[self._sky_mask()] = 0
+
+        return img
 
 
 class ImageData:

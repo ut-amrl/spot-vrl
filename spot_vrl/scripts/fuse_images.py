@@ -20,8 +20,8 @@ import tqdm
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
-from spot_vrl.data.sensor_data import ImuData
-from spot_vrl.homography import camera_transform, perspective_transform, proto_to_numpy
+from spot_vrl.data import ImuData, SpotImage
+from spot_vrl.homography import camera_transform, perspective_transform
 from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
 
 # TODO(eyang): use values from robot states
@@ -84,7 +84,7 @@ def fuse_images(filename: str) -> None:
 
         images = []
         for image_response in response.image_responses:
-            images.append(proto_to_numpy.SpotImage(image_response))
+            images.append(SpotImage(image_response))
 
         td = perspective_transform.TopDown(images, ground_tform_body)
 

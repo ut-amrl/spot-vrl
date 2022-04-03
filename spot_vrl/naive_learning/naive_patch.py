@@ -14,8 +14,8 @@ from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.api.robot_id_pb2 import RobotIdResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 
-from spot_vrl.data import ImuData
-from spot_vrl.homography import proto_to_numpy, camera_transform, perspective_transform
+from spot_vrl.data import ImuData, SpotImage, proto_to_numpy
+from spot_vrl.homography import camera_transform, perspective_transform
 
 
 # TODO(eyang): use values from robot states
@@ -141,9 +141,9 @@ class SensorData:
             )
             ts = float(ts) * 1e-9 - self._start_ts
 
-            images: List[proto_to_numpy.SpotImage] = []
+            images: List[SpotImage] = []
             for image_response in response.image_responses:
-                image = proto_to_numpy.SpotImage(image_response)
+                image = SpotImage(image_response)
                 if image.frame_name.startswith("front"):
                     images.append(image)
                     # image_save_path = (

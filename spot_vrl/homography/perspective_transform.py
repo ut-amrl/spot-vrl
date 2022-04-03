@@ -6,7 +6,7 @@ import numpy as np
 import numpy.typing as npt
 import cv2
 
-from spot_vrl.homography.proto_to_numpy import SpotImage
+from spot_vrl.data import SpotImage
 from spot_vrl.homography import camera_transform
 
 
