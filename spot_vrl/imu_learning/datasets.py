@@ -26,7 +26,8 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         time
     """
 
-    window_size: ClassVar[int] = 40
+    window_size: ClassVar[float] = 3.0
+    """seconds"""
 
     @classmethod
     def set_global_window_size(cls, new_size: int) -> None:
@@ -46,10 +47,12 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         window_size = self.window_size
         self.windows: List[torch.Tensor] = []
 
-        ts, data = imu.query_time_range(imu.all_sensor_data[:, -4:], start, end)
+        ts, _ = imu.query_time_range(imu.all_sensor_data, start, end)
         # Overlap windows for more data points
-        for i in range(0, data.shape[0] - window_size + 1, 5):
-            window = data[i : i + window_size]
+        for window_start in np.arange(ts[0], ts[-1] - window_size, 0.5):
+            _, window = imu.query_time_range(
+                imu.all_sensor_data[:, -4:], window_start, window_start + window_size
+            )
 
             # compute ffts
             # ffts: List[npt.NDArray[np.float32]] = []
