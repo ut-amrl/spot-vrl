@@ -41,7 +41,7 @@ def main() -> None:
     parser.add_argument("--steplr-step-size", type=int, default=10)
     parser.add_argument("--steplr-gamma", type=float, default=0.5)
     parser.add_argument(
-        "--window-size", type=int, default=SingleTerrainDataset.window_size
+        "--window-size", type=float, default=SingleTerrainDataset.window_size
     )
     parser.add_argument("--comment", type=str, default="")
 
