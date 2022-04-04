@@ -249,7 +249,9 @@ class ImageData:
         return self._Iterator(self)
 
     def query_time_range(
-        self, start: float = 0, end: float = np.inf
+        self,
+        start: Union[float, np.float_] = 0,
+        end: Union[float, np.float_] = np.inf,
     ) -> Tuple[npt.NDArray[np.float64], List[List[SpotImage]]]:
         """Queries a time range.
 

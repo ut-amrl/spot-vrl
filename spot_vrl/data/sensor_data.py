@@ -314,7 +314,10 @@ class ImuData:
         return transforms
 
     def query_time_range(
-        self, prop: npt.NDArray[np.float32], start: float = 0, end: float = np.inf
+        self,
+        prop: npt.NDArray[np.float32],
+        start: Union[float, np.float_] = 0,
+        end: Union[float, np.float_] = np.inf,
     ) -> Tuple[npt.NDArray[np.float64], npt.NDArray[np.float32]]:
         """Queries a time range of the specified property.
 
