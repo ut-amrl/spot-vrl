@@ -1,15 +1,17 @@
+import json
 import os
 import pickle
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import ClassVar, Dict, Tuple, Union, Optional
+from typing import Any, ClassVar, Dict, List, Sequence, Tuple, Union, Optional
 
 import cv2
 import numpy as np
 import torch
 import tqdm
 from loguru import logger
-from torch.utils.data import Dataset
+from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data import ImuData, ImageData
 from spot_vrl.homography import camera_transform
@@ -168,7 +170,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         return len(self.keys)
 
     def __getitem__(self, idx: int) -> Tuple[Patch, Patch]:
-        """Return an anchor and similar patch."""
+        """Return an anchor and positive patch."""
 
         viewpoint = self.keys[idx]
         patch_ids = tuple(self.patches[viewpoint].keys())
@@ -176,3 +178,137 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
 
         return self.patches[viewpoint][a_id], self.patches[viewpoint][s_id]
+
+
+class BaseTripletDataset(Dataset[Triplet], ABC):
+    """Base class for Visual Triplet Datasets
+
+    All derived classes must overload `__len__`, optionally using a scaling
+    multiplier to artificially increase the number of triplets to generate.
+
+    Example:
+    >>> class DerivedTripletDataset(BaseTripletDataset):
+    ...     def __init__(self) -> None:
+    ...         super().__init__()
+    ...
+    ...     def __len__(self) -> int:
+    ...         k = len(self._categories)
+    ...         k = k * (k - 1) // 2
+    ...         return super().__len__() * k
+    """
+
+    def __init__(self) -> None:
+        self._categories: Dict[str, ConcatDataset[Tuple[Patch, Patch]]] = {}
+        self._cumulative_sizes: List[int] = []
+        self._rng = np.random.default_rng()
+
+    def init_from_json(self, filename: Union[str, Path]) -> "BaseTripletDataset":
+        """Initializes/overwrites this dataset using a JSON specification file.
+
+        The JSON file is expected to contain the following format:
+
+        {
+            "categories": {
+                "name-of-terrain-1": [
+                    {
+                        "path": "relative/to/project/root",
+                        "start": 1646607548,
+                        "end": 1646607748
+                    },
+                    ...
+                ],
+                ...
+            }
+        }
+        """
+        with open(filename) as f:
+            category: str
+            datafiles: List[Dict[str, Any]]
+            for category, datafiles in json.load(f)["categories"].items():
+                datasets: List[SingleTerrainDataset] = []
+                for dataset_spec in datafiles:
+                    path: str = dataset_spec["path"]
+                    start: float = dataset_spec["start"]
+                    end: float = dataset_spec["end"]
+
+                    try:
+                        dataset = SingleTerrainDataset.load(path)
+                    except FileNotFoundError:
+                        dataset = SingleTerrainDataset(path, start, end, False)
+                        dataset.save()
+
+                    datasets.append(dataset)
+                self._add_category(category, datasets)
+        return self
+
+    def _add_category(self, key: str, datasets: List[SingleTerrainDataset]) -> None:
+        self._categories[key] = ConcatDataset(datasets)
+        self._cumulative_sizes = np.cumsum(
+            [len(ds) for ds in self._categories.values()], dtype=np.int_
+        ).tolist()
+
+    def _get_random_datum(self, from_cats: Sequence[str] = ()) -> Tuple[Patch, Patch]:
+        """Returns a random (anchor, positive) pair from one of the specified
+        categories.
+
+        Each category in the sequence has equal probability of being chosen.
+
+        Args:
+            from_cats (tuple[str] | list[str]): A sequence of strings containing
+                the categories to sample from. If the sequence is empty, all of
+                the internal categories are used instead.
+        """
+        if not from_cats:
+            from_cats = tuple(self._categories.keys())
+
+        cat: str = self._rng.choice(from_cats)
+        dataset = self._categories[cat]
+        datum: Tuple[Patch, Patch] = dataset[self._rng.integers(len(dataset))]
+        return datum
+
+    @abstractmethod
+    def __len__(self) -> int:
+        return self._cumulative_sizes[-1]
+
+    def __getitem__(self, index: int) -> Triplet:
+        index = index % self._cumulative_sizes[-1]
+
+        cat_idx: int = np.searchsorted(
+            self._cumulative_sizes, index, side="right"
+        ).astype(int)
+
+        if cat_idx > 0:
+            index -= self._cumulative_sizes[cat_idx - 1]
+
+        # Python spec enforces (iteration order == insertion order)
+        cat_names = tuple(self._categories.keys())
+
+        anchor, pos = self._categories[cat_names[cat_idx]][index]
+        neg, _ = self._get_random_datum(
+            (*cat_names[:cat_idx], *cat_names[cat_idx + 1 :])
+        )
+
+        return anchor, pos, neg
+
+    def log_category_sizes(self) -> None:
+        for cat, ds in self._categories.items():
+            logger.info(f"{cat} data points: {len(ds)}")
+
+
+class TripletTrainingDataset(BaseTripletDataset):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __len__(self) -> int:
+        k = len(self._categories)
+        k = k * (k - 1) // 2
+        return super().__len__() * k
+
+
+class TripletHoldoutDataset(BaseTripletDataset):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __len__(self) -> int:
+        """Prevent this class from being used for training."""
+        return 0
