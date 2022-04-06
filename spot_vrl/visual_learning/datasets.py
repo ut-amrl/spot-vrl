@@ -78,7 +78,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             img_ts, images = img_data[i]
             if img_ts < start:
                 continue
-            elif img_ts > end:
+            elif img_ts > end or img_ts > imu_data.timestamp_sec[-1]:
                 break
 
             imu_ts, poses = imu_data.query_time_range(
