@@ -57,6 +57,8 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         """
 
         self.path = Path(path)
+        self.start = start
+        self.end = end
         self.patches: Dict[int, Dict[int, Patch]] = defaultdict(dict)
         """Mapping of image sequence numbers to patches from previous
         viewpoints."""
@@ -137,13 +139,24 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
 
         self.keys = list(self.patches.keys())
 
+    @staticmethod
+    def get_serialized_filename(
+        bddf_path: Union[str, Path], start: float, end: float
+    ) -> str:
+        bddf_path = Path(bddf_path)
+        return f"{bddf_path.stem}-{start:.0f}-to-{end:.0f}.pkl"
+
     @classmethod
-    def load(cls, path: Union[Path, str]) -> "SingleTerrainDataset":
+    def load(
+        cls, path: Union[Path, str], start: float, end: float
+    ) -> "SingleTerrainDataset":
         """Load a preprocessed dataset from a pickle file.
 
         Args:
             path (str | Path): Path to the original data file or the
                 preprocessed dataset pickle file.
+            start (float): First unix timestamp to start reading from.
+            end (float): Last unix timestamp to end reading.
 
         Raises:
             FileNotFoundError
@@ -151,7 +164,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
 
         path = Path(path)
         if path.suffix == ".bddf":
-            path = cls.output_dir / f"{path.stem}.pkl"
+            path = cls.output_dir / cls.get_serialized_filename(path, start, end)
 
         with open(path, "rb") as f:
             obj: SingleTerrainDataset = pickle.load(f)
@@ -163,7 +176,10 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         """Serialize this dataset to disk."""
 
         os.makedirs(self.output_dir, exist_ok=True)
-        with open(self.output_dir / f"{self.path.stem}.pkl", "wb") as f:
+        save_path = self.output_dir / self.get_serialized_filename(
+            self.path, self.start, self.end
+        )
+        with open(save_path, "wb") as f:
             pickle.dump(self, f, protocol=5)
 
     def __len__(self) -> int:
@@ -232,7 +248,7 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
                     end: float = dataset_spec["end"]
 
                     try:
-                        dataset = SingleTerrainDataset.load(path)
+                        dataset = SingleTerrainDataset.load(path, start, end)
                     except FileNotFoundError:
                         dataset = SingleTerrainDataset(path, start, end, False)
                         dataset.save()
