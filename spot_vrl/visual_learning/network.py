@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 from spot_vrl.visual_learning.datasets import Triplet
@@ -31,11 +32,12 @@ class EmbeddingNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # input is BxHxW, convnet wants BxCxHxW
+        # TODO: do input scaling outside of network?
         x = x[:, None, :, :].float() / 255
         output: torch.Tensor = self.convnet(x)
         output = output.squeeze()
         output = self.fc(output)
-        return output  # type: ignore
+        return F.normalize(output, p=2, dim=1)
 
 
 class TripletNet(nn.Module):
