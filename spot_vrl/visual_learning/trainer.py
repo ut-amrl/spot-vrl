@@ -31,7 +31,7 @@ class EmbeddingGenerator:
 
         for terrain, ds in train_set._categories.items():
             t = self.tensors.get("train", torch.empty(0))
-            t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
+            t2 = torch.cat([ds[i][0][None, ...] for i in range(len(ds))], dim=0)
             self.tensors["train"] = torch.cat((t, t2), dim=0)
             self.labels.setdefault("train", []).extend(
                 [terrain for _ in range(len(ds))]
@@ -39,18 +39,18 @@ class EmbeddingGenerator:
 
         for terrain, ds in holdout_set._categories.items():
             t = self.tensors.get("holdout", torch.empty(0))
-            t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
+            t2 = torch.cat([ds[i][0][None, ...] for i in range(len(ds))], dim=0)
             self.tensors["holdout"] = torch.cat((t, t2), dim=0)
             self.labels.setdefault("holdout", []).extend(
                 [terrain for _ in range(len(ds))]
             )
 
         for key, val in self.tensors.items():
-            self.tensors[key] = val.to(device)
+            self.tensors[key] = val.detach().to(device)
 
     def write(self, model: TripletNet, epoch: int) -> None:
-        model.eval()
         with torch.no_grad():  # type: ignore
+            model.eval()
             for dataset_type, tensor in self.tensors.items():
                 self.tb_writer.add_embedding(
                     model.get_embedding(tensor),

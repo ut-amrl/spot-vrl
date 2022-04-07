@@ -93,12 +93,12 @@ def main() -> None:
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 
-    # embedder = EmbeddingGenerator(
-    #     device,
-    #     triplet_dataset,
-    #     TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
-    #     tb_writer,
-    # )
+    embedder = EmbeddingGenerator(
+        device,
+        triplet_dataset,
+        TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
+        tb_writer,
+    )
 
     fit(
         train_loader,
@@ -111,7 +111,7 @@ def main() -> None:
         device,
         save_dir,
         tb_writer,
-        embedder=None,
+        embedder=embedder,
     )
 
 
