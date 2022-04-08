@@ -64,6 +64,9 @@ class SynchronizedData:
             if image_timestamp - imu_history_sec < imu_container.timestamp_sec[0]:
                 continue
 
+            if image_timestamp > imu_container.timestamp_sec[-1]:
+                break
+
             # Compute the top-down view of only the front two cameras.
             front_images = [img for img in image_list if "front" in img.frame_name]
             top_down_view = TopDown(front_images, GROUND_TFORM_BODY).get_view(
