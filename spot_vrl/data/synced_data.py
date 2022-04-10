@@ -64,6 +64,9 @@ class SynchronizedData:
             if image_timestamp - imu_history_sec < imu_container.timestamp_sec[0]:
                 continue
 
+            if image_timestamp > imu_container.timestamp_sec[-1]:
+                break
+
             # Compute the top-down view of only the front two cameras.
             front_images = [img for img in image_list if "front" in img.frame_name]
             top_down_view = TopDown(front_images, GROUND_TFORM_BODY).get_view(
@@ -81,6 +84,6 @@ class SynchronizedData:
             _, odom_poses = imu_container.query_time_range(
                 imu_container.tforms("odom", "body"), start=image_timestamp
             )
-            this_odom_pose = odom_poses[0]
 
+            this_odom_pose = odom_poses[0]
             self.data.append(Datum(top_down_view, this_odom_pose, imu_history))
