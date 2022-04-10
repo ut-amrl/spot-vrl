@@ -39,7 +39,7 @@ class CustomDataset(Dataset):
 		patch = patch[np.random.randint(0, len(patch))]
 		patch = patch / 255.0
 
-		imu = self.data[idx]['inertial'][-14:, 1:-5]
+		imu = self.data[idx]['inertial'][-14:, 1:-5].flatten()
 		return patch, imu
 
 class MyDataLoader(pl.LightningDataModule):
@@ -205,18 +205,17 @@ class DualAEModel(pl.LightningModule):
 
 			if batch_idx == 0:
 				self.visual_encoding = visual_encoding
-				self.visual_patch = visual_patch
+				self.visual_patch = visual_patch[:20, :, :, :]
 				self.grid_img_visual_patch = grid_img_visual_patch
 			else:
 				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding), dim=0)
-				self.visual_patch = torch.cat((self.visual_patch, visual_patch), dim=0)
+				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:20, :, :, :]), dim=0)
 
 
 	def on_validation_end(self) -> None:
 		if self.current_epoch % 10 == 0:
 			self.logger.experiment.add_embedding(mat=self.visual_encoding, label_img=self.visual_patch, global_step=self.current_epoch)
 			self.logger.experiment.add_image('visual_recons', self.grid_img_visual_patch, self.current_epoch)
-
 
 
 if __name__ == '__main__':
