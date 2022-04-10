@@ -299,7 +299,9 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
         # Python spec enforces (iteration order == insertion order)
         cat_names = tuple(self._categories.keys())
 
-        anchor, pos = self._categories[cat_names[cat_idx]][index]
+        # anchor, pos = self._categories[cat_names[cat_idx]][index]
+        anchor, _ = self._categories[cat_names[cat_idx]][index]
+        pos, _ = self._get_random_datum((cat_names[cat_idx],))
         neg, _ = self._get_random_datum(
             (*cat_names[:cat_idx], *cat_names[cat_idx + 1 :])
         )
