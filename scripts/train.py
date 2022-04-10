@@ -47,7 +47,8 @@ class CustomDataset(Dataset):
 		angular_vel = self.data[idx]['inertial'][-13:, 40:40+3]
 		foot = self.data[idx]['inertial'][-13:, 43:43+4]
 
-		imu = np.hstack((joints.flatten(), linear_vel[:, [2]].flatten(), angular_vel[:, [0, 1]].flatten(), foot.flatten()))
+		# imu = np.hstack((joints.flatten(), linear_vel[:, [2]].flatten(), angular_vel[:, [0, 1]].flatten(), foot.flatten()))
+		imu = np.hstack((joints.flatten(), foot.flatten()))
 
 		return patch, imu
 
@@ -106,7 +107,7 @@ class DualAEModel(pl.LightningModule):
 		)
 
 		self.inertial_encoder = nn.Sequential(
-			nn.Linear(559, 512), nn.BatchNorm1d(512), nn.PReLU(),
+			nn.Linear(520, 512), nn.BatchNorm1d(512), nn.PReLU(),
 			nn.Linear(512, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 128), nn.PReLU(),
 			nn.Linear(128, latent_size)
@@ -116,7 +117,7 @@ class DualAEModel(pl.LightningModule):
 			nn.Linear(latent_size, 128), nn.BatchNorm1d(128), nn.PReLU(),
 			nn.Linear(128, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 512), nn.PReLU(),
-			nn.Linear(512, 559)
+			nn.Linear(512, 520)
 		)
 
 		# self.inertial_encoder = Encoder(14, 41, 64)
