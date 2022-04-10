@@ -11,6 +11,9 @@ import numpy as np
 from datetime import datetime
 from torchvision.utils import make_grid
 import cv2
+import tensorflow as tf
+import tensorboard as tb
+tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
