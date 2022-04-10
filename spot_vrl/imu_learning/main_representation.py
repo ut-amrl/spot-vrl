@@ -32,7 +32,10 @@ def main() -> None:
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument("--model", type=str, required=True, choices=("mlp", "lstm"))
     parser.add_argument(
-        "--dataset", type=str, required=True, choices=("0.5", "1.0", "1.5")
+        "--dataset",
+        type=str,
+        required=True,
+        choices=("0.5", "0.5-speedway-holdout", "1.0", "1.5"),
     )
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=float, default=1)
