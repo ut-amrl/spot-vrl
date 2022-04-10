@@ -79,7 +79,7 @@ class MyDataLoader(pl.LightningDataModule):
 
 
 class DualAEModel(pl.LightningModule):
-	def __init__(self, lr=3e-4):
+	def __init__(self, lr=3e-4, latent_size=64):
 		super(DualAEModel, self).__init__()
 		self.visual_encoder = nn.Sequential(
 			nn.Conv2d(1, 32, kernel_size=4, stride=2),
@@ -90,11 +90,11 @@ class DualAEModel(pl.LightningModule):
 			nn.BatchNorm2d(128), nn.PReLU(),
 			nn.Conv2d(128, 256, kernel_size=4, stride=2),
 			Flatten(),
-			nn.Linear(1024, 64)
+			nn.Linear(1024, latent_size)
 		)
 
 		self.visual_decoder = nn.Sequential(
-			nn.Linear(64, 1024),
+			nn.Linear(latent_size, 1024),
 			UnFlatten(),
 			nn.ConvTranspose2d(1024, 128, kernel_size=5, stride=2),
 			nn.BatchNorm2d(128), nn.PReLU(),
@@ -109,11 +109,11 @@ class DualAEModel(pl.LightningModule):
 			nn.Linear(559, 512), nn.BatchNorm1d(512), nn.PReLU(),
 			nn.Linear(512, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 128), nn.PReLU(),
-			nn.Linear(128, 64)
+			nn.Linear(128, latent_size)
 		)
 
 		self.inertial_decoder = nn.Sequential(
-			nn.Linear(64, 128), nn.BatchNorm1d(128), nn.PReLU(),
+			nn.Linear(latent_size, 128), nn.BatchNorm1d(128), nn.PReLU(),
 			nn.Linear(128, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 512), nn.PReLU(),
 			nn.Linear(512, 559)
@@ -154,7 +154,7 @@ class DualAEModel(pl.LightningModule):
 																								 imu_history)
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
+		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)/13.
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
@@ -179,7 +179,7 @@ class DualAEModel(pl.LightningModule):
 																								 imu_history)
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
+		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)/13.
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
@@ -249,13 +249,15 @@ if __name__ == '__main__':
 	parser.add_argument('--smaller_data', action='store_true', default=False)
 	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
 						help='number of GPUs to use (default: 1)')
+	parser.add_argument('--latent_size', type=int, default=6, metavar='N',
+						help='Size of the common latent space (default: 6)')
 	args = parser.parse_args()
 
 	if args.smaller_data: print('Using smaller dataset..')
 
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 	dm = MyDataLoader(data_path=args.data_dir, batch_size=args.batch_size, smaller_data=args.smaller_data)
-	model = DualAEModel(lr=args.lr).to(device)
+	model = DualAEModel(lr=args.lr, latent_size=args.latent_size).to(device)
 
 	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=100)
 	model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
