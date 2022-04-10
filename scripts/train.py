@@ -130,13 +130,13 @@ class DualAEModel(pl.LightningModule):
 		# visual Auto Encoder
 		visual_encoding = self.visual_encoder(visual_patch)
 		# L2 normalize the embedding space
-		visual_encoding = F.normalize(visual_encoding, p=2, dim=1)
+		# visual_encoding = F.normalize(visual_encoding, p=2, dim=1)
 		visual_patch_recon = self.visual_decoder(visual_encoding)
 
 		# IMU Auto Encoder
 		inertial_encoding = self.inertial_encoder(imu_history)
 		# L2 normalize the embedding space
-		inertial_encoding = F.normalize(inertial_encoding, p=2, dim=1)
+		# inertial_encoding = F.normalize(inertial_encoding, p=2, dim=1)
 		imu_history_recon = self.inertial_decoder(inertial_encoding)
 
 		return visual_patch_recon, visual_encoding, imu_history_recon, inertial_encoding
@@ -156,12 +156,14 @@ class DualAEModel(pl.LightningModule):
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss
+		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
 		self.log('train_loss', loss, prog_bar=True, logger=True)
 		self.log('train_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
 		self.log('train_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
 		self.log('train_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
+		self.log('train_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
@@ -179,12 +181,14 @@ class DualAEModel(pl.LightningModule):
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss
+		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
 		self.log('val_loss', loss, prog_bar=True, logger=True)
 		self.log('val_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
 		self.log('val_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
 		self.log('val_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
+		self.log('val_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
 	def configure_optimizers(self):
