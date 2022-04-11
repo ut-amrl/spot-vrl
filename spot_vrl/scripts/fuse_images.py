@@ -61,10 +61,14 @@ def fuse_images(filename: str) -> None:
     for seq, (ts, images) in tqdm.tqdm(
         enumerate(img_data), desc="Processing Video", total=len(img_data)
     ):
-        _, odom_poses = imu.query_time_range(imu.tforms("odom", "body"), float(ts))
-        displacement = np.zeros(3, dtype=np.float32)
-        if len(odom_poses) > 0:
-            displacement = (start_tform_odom @ odom_poses[0])[:3, 3]
+        if ts > imu.timestamp_sec[-1]:
+            break
+
+        _, odom_poses = imu.query_time_range(imu.tforms("odom", "body"), ts)
+        displacement = (start_tform_odom @ odom_poses[0])[:3, 3]
+
+        _, lin_vels = imu.query_time_range(imu.linear_vel, ts)
+        lin_vel = lin_vels[0]
 
         td = perspective_transform.TopDown(images, ground_tform_body)
 
@@ -75,6 +79,12 @@ def fuse_images(filename: str) -> None:
 
         img_wrapper.add_line("odom:")
         x, y, z = displacement
+        img_wrapper.add_line(f" {x:.2f}")
+        img_wrapper.add_line(f" {y:.2f}")
+        img_wrapper.add_line(f" {z:.2f}")
+
+        img_wrapper.add_line("v:")
+        x, y, z = lin_vel
         img_wrapper.add_line(f" {x:.2f}")
         img_wrapper.add_line(f" {y:.2f}")
         img_wrapper.add_line(f" {z:.2f}")
