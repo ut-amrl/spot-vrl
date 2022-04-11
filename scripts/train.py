@@ -219,12 +219,12 @@ class DualAEModel(pl.LightningModule):
 			grid_img_visual_patch = make_grid(torch.cat((visual_patch_tmp, visual_patch_recon_tmp), dim=2), nrow=20)
 
 			if batch_idx == 0:
-				self.visual_encoding = visual_encoding[:20, :]
-				self.visual_patch = visual_patch[:20, :, :, :]
+				self.visual_encoding = visual_encoding[:, :]
+				self.visual_patch = visual_patch[:, :, :, :]
 				self.grid_img_visual_patch = grid_img_visual_patch
 			else:
-				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:20, :]), dim=0)
-				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:20, :, :, :]), dim=0)
+				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:, :]), dim=0)
+				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:, :, :, :]), dim=0)
 
 
 	def on_validation_end(self) -> None:
