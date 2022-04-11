@@ -42,9 +42,9 @@ class CustomDataset(Dataset):
 		patch = patch[np.random.randint(0, len(patch))]
 		patch = patch / 255.0
 
-		joints = self.data[idx]['inertial'][-13:, 1:37]
-		linear_vel = self.data[idx]['inertial'][-13:, 37:37+3]
-		angular_vel = self.data[idx]['inertial'][-13:, 40:40+3]
+		# joints = self.data[idx]['inertial'][-13:, 1:37]
+		# linear_vel = self.data[idx]['inertial'][-13:, 37:37+3]
+		# angular_vel = self.data[idx]['inertial'][-13:, 40:40+3]
 		foot = self.data[idx]['inertial'][-13:, 43:43+4]
 
 		# imu = np.hstack((joints.flatten(), linear_vel[:, [2]].flatten(), angular_vel[:, [0, 1]].flatten(), foot.flatten()))
@@ -59,6 +59,7 @@ class MyDataLoader(pl.LightningDataModule):
 		self.batch_size = batch_size
 		self.data_path = data_path
 		self.smaller_data = smaller_data
+		self.setup()
 
 	def setup(self, stage=None):
 		train_data_path = self.data_path + 'train/*/*.pkl'
@@ -69,6 +70,19 @@ class MyDataLoader(pl.LightningDataModule):
 
 		self.train_dataset = ConcatDataset([CustomDataset(file) for file in glob.glob(train_data_path)])
 		self.val_dataset = ConcatDataset([CustomDataset(file) for file in glob.glob(val_data_path)])
+
+		# find mean, std statistics of inertial data in the training set
+		print('Finding mean and std statistics of inertial data in the training set...')
+		tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
+		tmp_list = []
+		for _, i in tmp:
+			i = i.numpy()
+			tmp_list.append(i)
+		tmp_list = np.asarray(tmp_list)
+		self.mean = np.mean(tmp_list, axis=0)
+		self.std = np.std(tmp_list, axis=0)
+		print('Data statistics have been found.')
+		del tmp, tmp_list
 
 		print('Train dataset size:', len(self.train_dataset))
 		print('Val dataset size:', len(self.val_dataset))
@@ -81,7 +95,7 @@ class MyDataLoader(pl.LightningDataModule):
 
 
 class DualAEModel(pl.LightningModule):
-	def __init__(self, lr=3e-4, latent_size=64):
+	def __init__(self, lr=3e-4, latent_size=64, mean=None, std=None):
 		super(DualAEModel, self).__init__()
 		self.visual_encoder = nn.Sequential(
 			nn.Conv2d(1, 32, kernel_size=4, stride=2),
@@ -126,6 +140,7 @@ class DualAEModel(pl.LightningModule):
 
 		self.mse_loss = nn.MSELoss()
 		self.lr = lr
+		self.mean, self.std = torch.tensor(mean).float(), torch.tensor(std).float()
 
 	def forward(self, visual_patch, imu_history):
 
@@ -149,6 +164,10 @@ class DualAEModel(pl.LightningModule):
 		visual_patch = visual_patch.unsqueeze(1).float()
 		imu_history = imu_history.float()
 
+		# normalize IMU info
+		device = imu_history.device
+		imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
+
 		# print('visu shape : ', visual_patch.shape)
 		# print('imu hist shape : ', imu_history.shape)
 
@@ -156,7 +175,7 @@ class DualAEModel(pl.LightningModule):
 																								 imu_history)
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)/13.
+		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
@@ -174,6 +193,10 @@ class DualAEModel(pl.LightningModule):
 		visual_patch = visual_patch.unsqueeze(1).float()
 		imu_history = imu_history.float()
 
+		# normalize IMU info
+		device = imu_history.device
+		imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
+
 		# print('visual patch shape : ', visual_patch.shape)
 		# print('imu hist shape : ', imu_history.shape)
 
@@ -181,7 +204,7 @@ class DualAEModel(pl.LightningModule):
 																								 imu_history)
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)/13.
+		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
@@ -200,9 +223,14 @@ class DualAEModel(pl.LightningModule):
 		if self.current_epoch % 10 == 0:
 
 			visual_patch, imu_history = batch
+
 			visual_patch = visual_patch.unsqueeze(1).float()
 			imu_history = imu_history.float()
 			# print('imu hist shape : ', imu_history.shape)
+
+			# normalize IMU info
+			device = imu_history.device
+			imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
 
 			visual_patch_recon, visual_encoding, imu_history_recon, inertial_encoding = self.forward(visual_patch,
 																									 imu_history)
@@ -259,7 +287,7 @@ if __name__ == '__main__':
 
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 	dm = MyDataLoader(data_path=args.data_dir, batch_size=args.batch_size, smaller_data=args.smaller_data)
-	model = DualAEModel(lr=args.lr, latent_size=args.latent_size).to(device)
+	model = DualAEModel(lr=args.lr, latent_size=args.latent_size, mean=dm.mean, std=dm.std).to(device)
 
 	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=100)
 	model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
