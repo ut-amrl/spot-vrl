@@ -118,3 +118,37 @@ class TripletNet(nn.Module):
         e_neg = self.get_embedding(t[2])
 
         return e_anchor, e_pos, e_neg
+
+
+class CostNet(nn.Module):
+    def __init__(self, embedding_dim: int = 48) -> None:
+        super().__init__()
+
+        self.fc = nn.Sequential(
+            nn.Linear(embedding_dim, 32),
+            nn.PReLU(),
+            nn.Linear(32, 32),
+            nn.PReLU(),
+            nn.Linear(32, 16),
+            nn.PReLU(),
+            nn.Linear(16, 1),
+            nn.ReLU(),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.fc(x)  # type: ignore
+
+
+class FullPairCostNet(nn.Module):
+    def __init__(self, embedding_net: BaseEmbeddingNet, cost_net: CostNet) -> None:
+        super().__init__()
+
+        self.embedding_net = embedding_net
+        self.cost_net = cost_net
+
+    def forward(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        emb_x = self.embedding_net(x)
+        emb_y = self.embedding_net(y)
+        return (self.cost_net(emb_x), self.cost_net(emb_y))
