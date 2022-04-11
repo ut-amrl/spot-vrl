@@ -48,7 +48,8 @@ class CustomDataset(Dataset):
 		foot = self.data[idx]['inertial'][-13:, 43:43+4]
 
 		# imu = np.hstack((joints.flatten(), linear_vel[:, [2]].flatten(), angular_vel[:, [0, 1]].flatten(), foot.flatten()))
-		imu = np.hstack((joints.flatten(), foot.flatten()))
+		# imu = np.hstack((joints.flatten(), foot.flatten()))
+		imu = np.hstack((foot.flatten()))
 
 		return patch, imu
 
@@ -107,7 +108,7 @@ class DualAEModel(pl.LightningModule):
 		)
 
 		self.inertial_encoder = nn.Sequential(
-			nn.Linear(520, 512), nn.BatchNorm1d(512), nn.PReLU(),
+			nn.Linear(52, 512), nn.BatchNorm1d(512), nn.PReLU(),
 			nn.Linear(512, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 128), nn.PReLU(),
 			nn.Linear(128, latent_size)
@@ -117,7 +118,7 @@ class DualAEModel(pl.LightningModule):
 			nn.Linear(latent_size, 128), nn.BatchNorm1d(128), nn.PReLU(),
 			nn.Linear(128, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 512), nn.PReLU(),
-			nn.Linear(512, 520)
+			nn.Linear(512, 52)
 		)
 
 		# self.inertial_encoder = Encoder(14, 41, 64)
@@ -157,7 +158,7 @@ class DualAEModel(pl.LightningModule):
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)/13.
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
 		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
 		self.log('train_loss', loss, prog_bar=True, logger=True)
@@ -182,7 +183,7 @@ class DualAEModel(pl.LightningModule):
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)/13.
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
 		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
 		self.log('val_loss', loss, prog_bar=True, logger=True)
