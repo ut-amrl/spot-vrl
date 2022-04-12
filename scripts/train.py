@@ -314,18 +314,16 @@ class DualAEModel(pl.LightningModule):
 			grid_img_visual_patch = make_grid(torch.cat((visual_patch_tmp, visual_patch_recon_tmp), dim=2), nrow=20)
 
 			if batch_idx == 0:
-				self.visual_encoding = visual_encoding[:, :]
-				self.visual_patch = visual_patch[:, :, :, :]
+				self.visual_encoding = visual_encoding[:100, :]
+				self.visual_patch = visual_patch[:100, :, :, :]
 				self.grid_img_visual_patch = grid_img_visual_patch
 			else:
-				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:, :]), dim=0)
-				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:, :, :, :]), dim=0)
+				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:100, :]), dim=0)
+				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:100, :, :, :]), dim=0)
 
 
 	def on_validation_end(self) -> None:
 		if self.current_epoch % 10 == 0:
-			print('visual patch shape : ', self.visual_patch.shape)
-			print('visual encoding shape : ', self.visual_encoding.shape)
 			self.logger.experiment.add_embedding(mat=self.visual_encoding, label_img=self.visual_patch, global_step=self.current_epoch)
 			self.logger.experiment.add_image('visual_recons', self.grid_img_visual_patch, self.current_epoch)
 
