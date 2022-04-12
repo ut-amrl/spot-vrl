@@ -37,7 +37,7 @@ class CustomDataset(Dataset):
 		# self.delay = 0
 
 	def __len__(self):
-		return len(self.data) #- 300 - 75
+		return len(self.data) - 300 - 75
 
 	def __getitem__(self, idx):
 		# skip the first 20 seconds and last 5 seconds
