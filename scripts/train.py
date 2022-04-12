@@ -324,9 +324,10 @@ class DualAEModel(pl.LightningModule):
 
 	def on_validation_end(self) -> None:
 		if self.current_epoch % 10 == 0:
+			print('visual patch shape : ', self.visual_patch.shape)
+			print('visual encoding shape : ', self.visual_encoding.shape)
 			self.logger.experiment.add_embedding(mat=self.visual_encoding, label_img=self.visual_patch, global_step=self.current_epoch)
 			self.logger.experiment.add_image('visual_recons', self.grid_img_visual_patch, self.current_epoch)
-			print('img dimension : ', self.grid_img_visual_patch.shape)
 
 if __name__ == '__main__':
 	# parse command line arguments
