@@ -32,7 +32,7 @@ class UnFlatten(nn.Module):
 class CustomDataset(Dataset):
 	def __init__(self, pickle_file_path):
 		self.pickle_file_path = pickle_file_path
-		self.data = pickle.load(open(self.pickle_file_path, 'rb'))
+		self.data = pickle.load(open(self.pickle_file_path, 'rb'))#[:20]
 		self.delay = 300
 		# self.delay = 0
 
@@ -267,7 +267,7 @@ class DualAEModel(pl.LightningModule):
 
 		mean_visual_recon_loss /= visual_patch_list.shape[1]
 		mean_embedding_similarity_loss /= visual_patch_list.shape[1]
-		mean_visual_rae_loss /= visual_patch_list.shape[0]
+		mean_visual_rae_loss /= visual_patch_list.shape[1]
 
 		loss = mean_visual_recon_loss + imu_history_recon_loss + 1e-4 * (
 					rae_loss_inertial + mean_visual_rae_loss) + 1e-3 * mean_embedding_similarity_loss
@@ -326,7 +326,7 @@ class DualAEModel(pl.LightningModule):
 		if self.current_epoch % 10 == 0:
 			self.logger.experiment.add_embedding(mat=self.visual_encoding, label_img=self.visual_patch, global_step=self.current_epoch)
 			self.logger.experiment.add_image('visual_recons', self.grid_img_visual_patch, self.current_epoch)
-
+			print('img dimension : ', self.grid_img_visual_patch.shape)
 
 if __name__ == '__main__':
 	# parse command line arguments
