@@ -45,8 +45,8 @@ class CustomDataset(Dataset):
 		# pick random from list
 		patch_1 = patch[np.random.randint(0, len(patch))]
 		patch_2 = patch[np.random.randint(0, len(patch))]
-		patch_1 = patch_1 / 255.0
-		patch_2 = patch_2 / 255.0
+		patch_1 = patch_1.astype(np.float32) / 255.0
+		patch_2 = patch_2.astype(np.float32) / 255.0
 
 
 
