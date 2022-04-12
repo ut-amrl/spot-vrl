@@ -225,8 +225,8 @@ class DualAEModel(pl.LightningModule):
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-		# embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
+		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
+		# embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
 		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
@@ -255,8 +255,8 @@ class DualAEModel(pl.LightningModule):
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-		# embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
+		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
+		# embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
 		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
