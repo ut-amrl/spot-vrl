@@ -79,7 +79,7 @@ class MyDataLoader(pl.LightningDataModule):
 		print('Finding mean and std statistics of inertial data in the training set...')
 		tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
 		tmp_list = []
-		for _, i in tmp:
+		for _, _, i in tmp:
 			i = i.numpy()
 			tmp_list.append(i)
 		tmp_list = np.asarray(tmp_list)
