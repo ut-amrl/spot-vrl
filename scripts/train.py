@@ -178,26 +178,32 @@ class DualAEModel(pl.LightningModule):
 			nn.Linear(512, inertial_shape)
 		)
 
+
+		self.projector = nn.Sequential(
+			nn.Linear(latent_size, latent_size)
+		)
+
 		# self.inertial_encoder = Encoder(14, 41, 64)
 		# self.inertial_decoder = Decoder(14, 64, 41)
 
 		self.mse_loss = nn.MSELoss()
 		self.lr = lr
 		self.mean, self.std = torch.tensor(mean).float(), torch.tensor(std).float()
+		self.cosine_sim_loss = nn.CosineSimilarity()
 
 	def forward(self, visual_patch, imu_history):
 
 		# visual Auto Encoder
 		visual_encoding = self.visual_encoder(visual_patch)
-		# L2 normalize the embedding space
-		visual_encoding = F.normalize(visual_encoding, p=2, dim=1)
 		visual_patch_recon = self.visual_decoder(visual_encoding)
+		# L2 normalize the embedding space
+		visual_encoding = F.normalize(self.projector(visual_encoding), p=2, dim=1)
 
 		# IMU Auto Encoder
 		inertial_encoding = self.inertial_encoder(imu_history)
-		# L2 normalize the embedding space
-		inertial_encoding = F.normalize(inertial_encoding, p=2, dim=1)
 		imu_history_recon = self.inertial_decoder(inertial_encoding)
+		# L2 normalize the embedding space
+		inertial_encoding = F.normalize(self.projector(inertial_encoding), p=2, dim=1)
 
 		return visual_patch_recon, visual_encoding, imu_history_recon, inertial_encoding
 
@@ -219,15 +225,16 @@ class DualAEModel(pl.LightningModule):
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		# rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		# embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
+		embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss #+ rae_loss
+		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
 		self.log('train_loss', loss, prog_bar=True, logger=True)
 		self.log('train_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
 		self.log('train_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
 		self.log('train_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
-		# self.log('train_rae_loss', rae_loss, prog_bar=False, logger=True)
+		self.log('train_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
@@ -248,15 +255,16 @@ class DualAEModel(pl.LightningModule):
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		# rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		# embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
+		embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss #+ rae_loss
+		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
 		self.log('val_loss', loss, prog_bar=True, logger=True)
 		self.log('val_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
 		self.log('val_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
 		self.log('val_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
-		# self.log('val_rae_loss', rae_loss, prog_bar=False, logger=True)
+		self.log('val_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
 	def configure_optimizers(self):
