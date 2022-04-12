@@ -160,25 +160,25 @@ class DualAEModel(pl.LightningModule):
 			nn.Sigmoid(),
 		)
 
-		self.inertial_encoder = nn.Sequential(
-			nn.Linear(inertial_shape, 512), nn.BatchNorm1d(512), nn.PReLU(),
-			nn.Linear(512, 256), nn.BatchNorm1d(256), nn.PReLU(),
-			nn.Linear(256, 128), nn.PReLU(),
-			nn.Linear(128, latent_size)
-		)
-
-		self.inertial_decoder = nn.Sequential(
-			nn.Linear(latent_size, 128), nn.BatchNorm1d(128), nn.PReLU(),
-			nn.Linear(128, 256), nn.BatchNorm1d(256), nn.PReLU(),
-			nn.Linear(256, 512), nn.PReLU(),
-			nn.Linear(512, inertial_shape)
-		)
-
-
-		self.projector = nn.Sequential(
-			nn.Linear(latent_size, 64), nn.ReLU(),
-			nn.Linear(64, 32)
-		)
+		# self.inertial_encoder = nn.Sequential(
+		# 	nn.Linear(inertial_shape, 512), nn.BatchNorm1d(512), nn.PReLU(),
+		# 	nn.Linear(512, 256), nn.BatchNorm1d(256), nn.PReLU(),
+		# 	nn.Linear(256, 128), nn.PReLU(),
+		# 	nn.Linear(128, latent_size)
+		# )
+		#
+		# self.inertial_decoder = nn.Sequential(
+		# 	nn.Linear(latent_size, 128), nn.BatchNorm1d(128), nn.PReLU(),
+		# 	nn.Linear(128, 256), nn.BatchNorm1d(256), nn.PReLU(),
+		# 	nn.Linear(256, 512), nn.PReLU(),
+		# 	nn.Linear(512, inertial_shape)
+		# )
+		#
+		#
+		# self.projector = nn.Sequential(
+		# 	nn.Linear(latent_size, 64), nn.ReLU(),
+		# 	nn.Linear(64, 32)
+		# )
 
 		# self.inertial_encoder = Encoder(14, 41, 64)
 		# self.inertial_decoder = Decoder(14, 64, 41)
@@ -194,15 +194,15 @@ class DualAEModel(pl.LightningModule):
 		visual_encoding = self.visual_encoder(visual_patch)
 		visual_patch_recon = self.visual_decoder(visual_encoding)
 		# L2 normalize the embedding space
-		visual_encoding_projected = F.normalize(self.projector(visual_encoding), p=2, dim=1)
+		# visual_encoding_projected = F.normalize(self.projector(visual_encoding), p=2, dim=1)
 
 		# IMU Auto Encoder
-		inertial_encoding = self.inertial_encoder(imu_history)
-		imu_history_recon = self.inertial_decoder(inertial_encoding)
-		# L2 normalize the embedding space
-		inertial_encoding_projected = F.normalize(self.projector(inertial_encoding), p=2, dim=1)
+		# inertial_encoding = self.inertial_encoder(imu_history)
+		# imu_history_recon = self.inertial_decoder(inertial_encoding)
+		# # L2 normalize the embedding space
+		# inertial_encoding_projected = F.normalize(self.projector(inertial_encoding), p=2, dim=1)
 
-		return visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected
+		return visual_patch_recon, visual_encoding#, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected
 
 	def training_step(self, batch, batch_idx):
 		visual_patch , imu_history = batch
@@ -217,19 +217,19 @@ class DualAEModel(pl.LightningModule):
 		# print('visu shape : ', visual_patch.shape)
 		# print('imu hist shape : ', imu_history.shape)
 
-		visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
+		# visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
+		visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-		embedding_similarity_loss = torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
-		# embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
-		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		# imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
+		# embedding_similarity_loss = torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
+		loss = visual_recon_loss + 0.001 * rae_loss #+ imu_history_recon_loss + embedding_similarity_loss
 		self.log('train_loss', loss, prog_bar=True, logger=True)
 		self.log('train_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
-		self.log('train_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
-		self.log('train_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
+		# self.log('train_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
+		# self.log('train_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
 		self.log('train_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
@@ -246,19 +246,19 @@ class DualAEModel(pl.LightningModule):
 		# print('visual patch shape : ', visual_patch.shape)
 		# print('imu hist shape : ', imu_history.shape)
 
-		visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
+		# visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
+		visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
 
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-		embedding_similarity_loss = torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
-		# embedding_similarity_loss = self.cosine_sim_loss(visual_encoding, inertial_encoding)
-		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() + (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		# imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
+		# embedding_similarity_loss = torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
+		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
+		loss = visual_recon_loss + 0.001 * rae_loss #+ imu_history_recon_loss + embedding_similarity_loss
 		self.log('val_loss', loss, prog_bar=True, logger=True)
 		self.log('val_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
-		self.log('val_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
-		self.log('val_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
+		# self.log('val_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
+		# self.log('val_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
 		self.log('val_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
@@ -278,7 +278,8 @@ class DualAEModel(pl.LightningModule):
 			device = imu_history.device
 			imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
 
-			visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
+			# visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
+			visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
 
 			# embeddings = torch.cat((visual_encoding, inertial_encoding), dim=0)
 			# labels = ['V' for _ in range(visual_encoding.shape[0])] + ['I' for _ in range(inertial_encoding.shape[0])]
