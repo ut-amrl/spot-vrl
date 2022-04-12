@@ -48,10 +48,10 @@ class CustomDataset(Dataset):
 		random.shuffle(patch)
 
 		normalized_patches = []
-		for patch_ in patch[:10]:
+		for patch_ in patch[:5]:
 			patch_ = patch_.astype(np.float32) / 255.0
 			normalized_patches.append(patch_)
-		normalized_patches = np.array(normalized_patches)
+		normalized_patches = np.asarray(normalized_patches)
 
 		# joint_positions = self.data[idx]['joint_positions'][-13:, :].flatten()
 		# joint_velocities = self.data[idx]['joint_velocities'][-13:, :].flatten()
