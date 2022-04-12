@@ -45,10 +45,10 @@ class CustomDataset(Dataset):
 
 		patch = self.data[idx]['patches']
 		# randomize list in python
-		random.shuffle(patch)
+		# random.shuffle(patch)
 
 		normalized_patches = []
-		for patch_ in patch[:5]:
+		for patch_ in random.sample(patch, 5):
 			patch_ = patch_.astype(np.float32) / 255.0
 			normalized_patches.append(patch_)
 		normalized_patches = np.asarray(normalized_patches)
