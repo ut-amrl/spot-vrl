@@ -46,20 +46,16 @@ class CustomDataset(Dataset):
 		patch = patch[np.random.randint(0, len(patch))]
 		patch = patch / 255.0
 
-		# joints = self.data[idx]['inertial'][-13:, 1:37]
-		# linear_vel = self.data[idx]['inertial'][-13:, 37:37+3]
-		# angular_vel = self.data[idx]['inertial'][-13:, 40:40+3]
-		# foot = self.data[idx]['inertial'][-13:, 43:43+4]
-		joint_positions = self.data[idx]['joint_positions'][-13:, :].flatten()
-		joint_velocities = self.data[idx]['joint_velocities'][-13:, :].flatten()
-		joint_accelerations = self.data[idx]['joint_accelerations'][-13:, :].flatten()
-		linear_velocity = self.data[idx]['linear_velocity'][-13:, [2]].flatten()
-		angular_velocity = self.data[idx]['angular_velocity'][-13:, [0, 1]].flatten()
+
+		# joint_positions = self.data[idx]['joint_positions'][-13:, :].flatten()
+		# joint_velocities = self.data[idx]['joint_velocities'][-13:, :].flatten()
+		# joint_accelerations = self.data[idx]['joint_accelerations'][-13:, :].flatten()
+		# linear_velocity = self.data[idx]['linear_velocity'][-13:, [2]].flatten()
+		# angular_velocity = self.data[idx]['angular_velocity'][-13:, [0, 1]].flatten()
 		foot_depth_sensor = self.data[idx]['depth_info'][-13:, :].flatten()
 
-		# imu = np.hstack((joints.flatten(), linear_vel[:, [2]].flatten(), angular_vel[:, [0, 1]].flatten(), foot.flatten()))
-		# imu = np.hstack((joints.flatten(), foot.flatten()))
-		imu = np.hstack((joint_positions, joint_velocities, joint_accelerations, linear_velocity, angular_velocity, foot_depth_sensor))
+		# imu = np.hstack((joint_positions, joint_velocities, joint_accelerations, linear_velocity, angular_velocity, foot_depth_sensor))
+		imu = foot_depth_sensor
 		return patch, imu
 
 class MyDataLoader(pl.LightningDataModule):
@@ -180,8 +176,8 @@ class DualAEModel(pl.LightningModule):
 
 
 		self.projector = nn.Sequential(
-			nn.Linear(latent_size, 512), nn.ReLU(),
-			nn.Linear(512, 128)
+			nn.Linear(latent_size, 64), nn.ReLU(),
+			nn.Linear(64, 32)
 		)
 
 		# self.inertial_encoder = Encoder(14, 41, 64)
