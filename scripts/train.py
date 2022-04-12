@@ -25,18 +25,22 @@ class Flatten(nn.Module):
 
 
 class UnFlatten(nn.Module):
-	def forward(self, input, size=1024):
-		return input.view(input.size(0), size, 1, 1)
+	def forward(self, input, size=256):
+		return input.view(input.size(0), size, 2, 2)
 
 class CustomDataset(Dataset):
 	def __init__(self, pickle_file_path):
 		self.pickle_file_path = pickle_file_path
 		self.data = pickle.load(open(self.pickle_file_path, 'rb'))
+		self.delay = 300
 
 	def __len__(self):
-		return len(self.data)
+		return len(self.data) - 300 - 75
 
 	def __getitem__(self, idx):
+		# skip the first 20 seconds and last 5 seconds
+		idx = idx + self.delay
+
 		patch = self.data[idx]['patches']
 		# pick random from list
 		patch = patch[np.random.randint(0, len(patch))]
@@ -45,28 +49,29 @@ class CustomDataset(Dataset):
 		# joints = self.data[idx]['inertial'][-13:, 1:37]
 		# linear_vel = self.data[idx]['inertial'][-13:, 37:37+3]
 		# angular_vel = self.data[idx]['inertial'][-13:, 40:40+3]
-		foot = self.data[idx]['inertial'][-13:, 43:43+4]
+		# foot = self.data[idx]['inertial'][-13:, 43:43+4]
+		joint_positions = self.data[idx]['joint_positions'][-13:, :].flatten()
+		joint_velocities = self.data[idx]['joint_velocities'][-13:, :].flatten()
+		joint_accelerations = self.data[idx]['joint_accelerations'][-13:, :].flatten()
+		linear_velocity = self.data[idx]['linear_velocity'][-13:, [2]].flatten()
+		angular_velocity = self.data[idx]['angular_velocity'][-13:, [0, 1]].flatten()
+		foot_depth_sensor = self.data[idx]['depth_info'][-13:, :].flatten()
 
 		# imu = np.hstack((joints.flatten(), linear_vel[:, [2]].flatten(), angular_vel[:, [0, 1]].flatten(), foot.flatten()))
 		# imu = np.hstack((joints.flatten(), foot.flatten()))
-		imu = np.hstack((foot.flatten()))
-
+		imu = np.hstack((joint_positions, joint_velocities, joint_accelerations, linear_velocity, angular_velocity, foot_depth_sensor))
 		return patch, imu
 
 class MyDataLoader(pl.LightningDataModule):
-	def __init__(self, data_path, batch_size=32, smaller_data=False):
+	def __init__(self, data_path, batch_size=32):
 		super(MyDataLoader, self).__init__()
 		self.batch_size = batch_size
 		self.data_path = data_path
-		self.smaller_data = smaller_data
 		self.setup()
 
 	def setup(self, stage=None):
 		train_data_path = self.data_path + 'train/*/*.pkl'
 		val_data_path = self.data_path + 'val/*/*.pkl'
-		if self.smaller_data:
-			train_data_path = self.data_path + 'train/*/*_short.pkl'
-			val_data_path = self.data_path + 'val/*/*_short.pkl'
 
 		self.train_dataset = ConcatDataset([CustomDataset(file) for file in glob.glob(train_data_path)])
 		self.val_dataset = ConcatDataset([CustomDataset(file) for file in glob.glob(val_data_path)])
@@ -81,6 +86,7 @@ class MyDataLoader(pl.LightningDataModule):
 		tmp_list = np.asarray(tmp_list)
 		self.mean = np.mean(tmp_list, axis=0)
 		self.std = np.std(tmp_list, axis=0)
+		self.inertial_shape = self.mean.shape[1]
 		print('Data statistics have been found.')
 		del tmp, tmp_list
 
@@ -95,34 +101,71 @@ class MyDataLoader(pl.LightningDataModule):
 
 
 class DualAEModel(pl.LightningModule):
-	def __init__(self, lr=3e-4, latent_size=64, mean=None, std=None):
+	def __init__(self, lr=3e-4, latent_size=64, mean=None, std=None, inertial_shape=None):
 		super(DualAEModel, self).__init__()
+
+		self.save_hyperparameters(
+			'lr',
+			'latent_size',
+			'inertial_shape'
+		)
+
+		# self.visual_encoder = nn.Sequential(
+		# 	nn.Conv2d(1, 32, kernel_size=4, stride=2),
+		# 	nn.BatchNorm2d(32), nn.PReLU(),
+		# 	nn.Conv2d(32, 64, kernel_size=4, stride=2),
+		# 	nn.BatchNorm2d(64), nn.PReLU(),
+		# 	nn.Conv2d(64, 128, kernel_size=4, stride=2),
+		# 	nn.BatchNorm2d(128), nn.PReLU(),
+		# 	nn.Conv2d(128, 256, kernel_size=4, stride=2),
+		# 	Flatten(),
+		# 	nn.Linear(1024, latent_size)
+		# )
+		#
+		# self.visual_decoder = nn.Sequential(
+		# 	nn.Linear(latent_size, 1024),
+		# 	UnFlatten(),
+		# 	nn.ConvTranspose2d(1024, 128, kernel_size=5, stride=2),
+		# 	nn.BatchNorm2d(128), nn.PReLU(),
+		# 	nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2),
+		# 	nn.BatchNorm2d(64), nn.PReLU(),
+		# 	nn.ConvTranspose2d(64, 32, kernel_size=6, stride=2), nn.PReLU(),
+		# 	nn.ConvTranspose2d(32, 1, kernel_size=6, stride=2),
+		# 	nn.Sigmoid(),
+		# )
+
 		self.visual_encoder = nn.Sequential(
-			nn.Conv2d(1, 32, kernel_size=4, stride=2),
+			nn.Conv2d(1, 16, kernel_size=3, stride=2), # 63 x 63
+			nn.BatchNorm2d(16), nn.PReLU(),
+			nn.Conv2d(16, 32, kernel_size=3, stride=2), # 31 x 31
 			nn.BatchNorm2d(32), nn.PReLU(),
-			nn.Conv2d(32, 64, kernel_size=4, stride=2),
+			nn.Conv2d(32, 64, kernel_size=5, stride=2), # 14 x 14
 			nn.BatchNorm2d(64), nn.PReLU(),
-			nn.Conv2d(64, 128, kernel_size=4, stride=2),
+			nn.Conv2d(64, 128, kernel_size=5, stride=2),  # 5 x 5
 			nn.BatchNorm2d(128), nn.PReLU(),
-			nn.Conv2d(128, 256, kernel_size=4, stride=2),
+			nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
+			nn.PReLU(),
 			Flatten(),
 			nn.Linear(1024, latent_size)
 		)
 
 		self.visual_decoder = nn.Sequential(
 			nn.Linear(latent_size, 1024),
-			UnFlatten(),
-			nn.ConvTranspose2d(1024, 128, kernel_size=5, stride=2),
+			UnFlatten(), 											# 2 x 2
+			nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2),  # 5 x 5
 			nn.BatchNorm2d(128), nn.PReLU(),
-			nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2),
+			nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2), # 13 x 13
 			nn.BatchNorm2d(64), nn.PReLU(),
-			nn.ConvTranspose2d(64, 32, kernel_size=6, stride=2), nn.PReLU(),
-			nn.ConvTranspose2d(32, 1, kernel_size=6, stride=2),
+			nn.ConvTranspose2d(64, 32, kernel_size=7, stride=2), #  31 x 31
+			nn.BatchNorm2d(32), nn.PReLU(),
+			nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2), #  63 x 63
+			nn.PReLU(),
+			nn.ConvTranspose2d(16, 1, kernel_size=4, stride=2), # 128 x 128
 			nn.Sigmoid(),
 		)
 
 		self.inertial_encoder = nn.Sequential(
-			nn.Linear(52, 512), nn.BatchNorm1d(512), nn.PReLU(),
+			nn.Linear(inertial_shape, 512), nn.BatchNorm1d(512), nn.PReLU(),
 			nn.Linear(512, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 128), nn.PReLU(),
 			nn.Linear(128, latent_size)
@@ -132,7 +175,7 @@ class DualAEModel(pl.LightningModule):
 			nn.Linear(latent_size, 128), nn.BatchNorm1d(128), nn.PReLU(),
 			nn.Linear(128, 256), nn.BatchNorm1d(256), nn.PReLU(),
 			nn.Linear(256, 512), nn.PReLU(),
-			nn.Linear(512, 52)
+			nn.Linear(512, inertial_shape)
 		)
 
 		# self.inertial_encoder = Encoder(14, 41, 64)
@@ -147,13 +190,13 @@ class DualAEModel(pl.LightningModule):
 		# visual Auto Encoder
 		visual_encoding = self.visual_encoder(visual_patch)
 		# L2 normalize the embedding space
-		# visual_encoding = F.normalize(visual_encoding, p=2, dim=1)
+		visual_encoding = F.normalize(visual_encoding, p=2, dim=1)
 		visual_patch_recon = self.visual_decoder(visual_encoding)
 
 		# IMU Auto Encoder
 		inertial_encoding = self.inertial_encoder(imu_history)
 		# L2 normalize the embedding space
-		# inertial_encoding = F.normalize(inertial_encoding, p=2, dim=1)
+		inertial_encoding = F.normalize(inertial_encoding, p=2, dim=1)
 		imu_history_recon = self.inertial_decoder(inertial_encoding)
 
 		return visual_patch_recon, visual_encoding, imu_history_recon, inertial_encoding
@@ -177,14 +220,14 @@ class DualAEModel(pl.LightningModule):
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		# rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
+		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss #+ rae_loss
 		self.log('train_loss', loss, prog_bar=True, logger=True)
 		self.log('train_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
 		self.log('train_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
 		self.log('train_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
-		self.log('train_rae_loss', rae_loss, prog_bar=False, logger=True)
+		# self.log('train_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
@@ -206,14 +249,14 @@ class DualAEModel(pl.LightningModule):
 		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
 		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		embedding_similarity_loss = torch.mean((visual_encoding - inertial_encoding) ** 2)
-		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
+		# rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
 
-		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss + rae_loss
+		loss = visual_recon_loss + imu_history_recon_loss + embedding_similarity_loss #+ rae_loss
 		self.log('val_loss', loss, prog_bar=True, logger=True)
 		self.log('val_visual_recon_loss', visual_recon_loss, prog_bar=False, logger=True)
 		self.log('val_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
 		self.log('val_embedding_similarity_loss', embedding_similarity_loss, prog_bar=False, logger=True)
-		self.log('val_rae_loss', rae_loss, prog_bar=False, logger=True)
+		# self.log('val_rae_loss', rae_loss, prog_bar=False, logger=True)
 		return loss
 
 	def configure_optimizers(self):
@@ -276,18 +319,15 @@ if __name__ == '__main__':
 						help='log directory (default: logs)')
 	parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
 						help='model directory (default: models)')
-	parser.add_argument('--smaller_data', action='store_true', default=False)
 	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
 						help='number of GPUs to use (default: 1)')
 	parser.add_argument('--latent_size', type=int, default=6, metavar='N',
 						help='Size of the common latent space (default: 6)')
 	args = parser.parse_args()
 
-	if args.smaller_data: print('Using smaller dataset..')
-
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-	dm = MyDataLoader(data_path=args.data_dir, batch_size=args.batch_size, smaller_data=args.smaller_data)
-	model = DualAEModel(lr=args.lr, latent_size=args.latent_size, mean=dm.mean, std=dm.std).to(device)
+	dm = MyDataLoader(data_path=args.data_dir, batch_size=args.batch_size)
+	model = DualAEModel(lr=args.lr, latent_size=args.latent_size, mean=dm.mean, std=dm.std, inertial_shape=dm.inertial_shape).to(device)
 
 	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=100)
 	model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
