@@ -180,6 +180,7 @@ class DualAEModel(pl.LightningModule):
 
 
 		self.projector = nn.Sequential(
+			nn.Linear(latent_size, latent_size), nn.ReLU(),
 			nn.Linear(latent_size, latent_size)
 		)
 
