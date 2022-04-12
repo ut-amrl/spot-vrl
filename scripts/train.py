@@ -43,8 +43,11 @@ class CustomDataset(Dataset):
 
 		patch = self.data[idx]['patches']
 		# pick random from list
-		patch = patch[np.random.randint(0, len(patch))]
-		patch = patch / 255.0
+		patch_1 = patch[np.random.randint(0, len(patch))]
+		patch_2 = patch[np.random.randint(0, len(patch))]
+		patch_1 = patch_1 / 255.0
+		patch_2 = patch_2 / 255.0
+
 
 
 		# joint_positions = self.data[idx]['joint_positions'][-13:, :].flatten()
@@ -56,7 +59,7 @@ class CustomDataset(Dataset):
 
 		# imu = np.hstack((joint_positions, joint_velocities, joint_accelerations, linear_velocity, angular_velocity, foot_depth_sensor))
 		imu = foot_depth_sensor
-		return patch, imu
+		return patch_1, patch_2, imu
 
 class MyDataLoader(pl.LightningDataModule):
 	def __init__(self, data_path, batch_size=32):
@@ -93,7 +96,7 @@ class MyDataLoader(pl.LightningDataModule):
 		return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
 
 	def val_dataloader(self):
-		return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)
+		return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True)
 
 
 class DualAEModel(pl.LightningModule):
@@ -205,9 +208,10 @@ class DualAEModel(pl.LightningModule):
 		return visual_patch_recon, visual_encoding#, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected
 
 	def training_step(self, batch, batch_idx):
-		visual_patch , imu_history = batch
+		visual_patch_1 , visual_patch_2, imu_history = batch
 
-		visual_patch = visual_patch.unsqueeze(1).float()
+		visual_patch_1 = visual_patch_1.unsqueeze(1).float()
+		visual_patch_2 = visual_patch_2.unsqueeze(1).float()
 		imu_history = imu_history.float()
 
 		# normalize IMU info
@@ -218,9 +222,9 @@ class DualAEModel(pl.LightningModule):
 		# print('imu hist shape : ', imu_history.shape)
 
 		# visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
-		visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
+		visual_patch_recon, visual_encoding = self.forward(visual_patch_1, imu_history)
 
-		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
+		visual_recon_loss = torch.mean((visual_patch_2 - visual_patch_recon) ** 2)
 		# imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		# embedding_similarity_loss = torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
@@ -234,9 +238,10 @@ class DualAEModel(pl.LightningModule):
 		return loss
 
 	def validation_step(self, batch, batch_idx):
-		visual_patch , imu_history = batch
+		visual_patch_1, visual_patch_2, imu_history = batch
 
-		visual_patch = visual_patch.unsqueeze(1).float()
+		visual_patch_1 = visual_patch_1.unsqueeze(1).float()
+		visual_patch_2 = visual_patch_2.unsqueeze(1).float()
 		imu_history = imu_history.float()
 
 		# normalize IMU info
@@ -247,9 +252,9 @@ class DualAEModel(pl.LightningModule):
 		# print('imu hist shape : ', imu_history.shape)
 
 		# visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
-		visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
+		visual_patch_recon, visual_encoding = self.forward(visual_patch_1, imu_history)
 
-		visual_recon_loss = torch.mean((visual_patch - visual_patch_recon) ** 2)
+		visual_recon_loss = torch.mean((visual_patch_2 - visual_patch_recon) ** 2)
 		# imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
 		# embedding_similarity_loss = torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
 		rae_loss = (0.5 * visual_encoding.pow(2).sum(1)).mean() #+ (0.5 * inertial_encoding.pow(2).sum(1)).mean()
@@ -268,9 +273,10 @@ class DualAEModel(pl.LightningModule):
 	def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
 		if self.current_epoch % 10 == 0:
 
-			visual_patch, imu_history = batch
+			visual_patch_1, visual_patch_2, imu_history = batch
 
-			visual_patch = visual_patch.unsqueeze(1).float()
+			visual_patch_1 = visual_patch_1.unsqueeze(1).float()
+			visual_patch_2 = visual_patch_2.unsqueeze(1).float()
 			imu_history = imu_history.float()
 			# print('imu hist shape : ', imu_history.shape)
 
@@ -279,12 +285,12 @@ class DualAEModel(pl.LightningModule):
 			imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
 
 			# visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected = self.forward(visual_patch, imu_history)
-			visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
+			visual_patch_recon, visual_encoding = self.forward(visual_patch_1, imu_history)
 
 			# embeddings = torch.cat((visual_encoding, inertial_encoding), dim=0)
 			# labels = ['V' for _ in range(visual_encoding.shape[0])] + ['I' for _ in range(inertial_encoding.shape[0])]
 
-			visual_patch_tmp = visual_patch.float()[:20, :, :, :]
+			visual_patch_tmp = visual_patch_2.float()[:20, :, :, :]
 			visual_patch_recon_tmp = visual_patch_recon.float()[:20, :, :, :]
 
 			visual_patch_tmp = torch.cat((visual_patch_tmp, visual_patch_tmp, visual_patch_tmp), dim=1)
@@ -295,11 +301,11 @@ class DualAEModel(pl.LightningModule):
 
 			if batch_idx == 0:
 				self.visual_encoding = visual_encoding[:, :]
-				self.visual_patch = visual_patch[:, :, :, :]
+				self.visual_patch = visual_patch_2[:, :, :, :]
 				self.grid_img_visual_patch = grid_img_visual_patch
 			else:
 				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:, :]), dim=0)
-				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:, :, :, :]), dim=0)
+				self.visual_patch = torch.cat((self.visual_patch, visual_patch_2[:, :, :, :]), dim=0)
 
 
 	def on_validation_end(self) -> None:
