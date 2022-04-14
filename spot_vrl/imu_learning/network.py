@@ -140,15 +140,15 @@ class CostNet(nn.Module):
 
 
 class FullPairCostNet(nn.Module):
-    def __init__(self, embedding_net: BaseEmbeddingNet, cost_net: CostNet) -> None:
+    def __init__(self, triplet_net: TripletNet, cost_net: CostNet) -> None:
         super().__init__()
 
-        self.embedding_net = embedding_net
+        self.triplet_net = triplet_net
         self.cost_net = cost_net
 
     def forward(
         self, x: torch.Tensor, y: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        emb_x = self.embedding_net(x)
-        emb_y = self.embedding_net(y)
+        emb_x = self.triplet_net.get_embedding(x)
+        emb_y = self.triplet_net.get_embedding(y)
         return (self.cost_net(emb_x), self.cost_net(emb_y))

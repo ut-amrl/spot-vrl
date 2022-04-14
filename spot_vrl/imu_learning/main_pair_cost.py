@@ -15,7 +15,12 @@ from spot_vrl.imu_learning.datasets import (
     TripletHoldoutDataset,
 )
 from spot_vrl.imu_learning.losses import MarginRankingLoss
-from spot_vrl.imu_learning.network import CostNet, FullPairCostNet, MlpEmbeddingNet
+from spot_vrl.imu_learning.network import (
+    CostNet,
+    FullPairCostNet,
+    MlpEmbeddingNet,
+    TripletNet,
+)
 from spot_vrl.imu_learning.cost_trainer import EmbeddingGenerator, fit
 
 
@@ -71,17 +76,18 @@ def main() -> None:
     embedding_net = MlpEmbeddingNet(
         cost_dataset.triplet_dataset[0][0].shape, embedding_dim
     )
+    triplet_net = TripletNet(embedding_net)
+    triplet_net.load_state_dict(
+        torch.load(
+            os.path.join(embedding_ckpt_dir, f"trained_epoch_{embedding_epoch}.pth"),
+            map_location=device,
+        ),  # type: ignore
+        strict=True,
+    )
+    triplet_net.requires_grad_(False)
     cost_net = CostNet(embedding_dim)
 
-    model = FullPairCostNet(embedding_net, cost_net)
-    model.load_state_dict(
-        torch.load(
-            os.path.join(embedding_ckpt_dir, f"trained_epoch_{embedding_epoch}.pth")
-        ),  # type: ignore
-        strict=False,
-    )
-    for param in embedding_net.parameters():
-        param.requires_grad = False
+    model = FullPairCostNet(triplet_net, cost_net)
     model = model.to(device)
 
     loss_fn = MarginRankingLoss(margin)
