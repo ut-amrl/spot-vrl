@@ -1,7 +1,9 @@
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
+import matplotlib.pyplot as plt
+import numpy as np
 import tqdm
 import torch
 from torch import Tensor
@@ -23,45 +25,63 @@ class EmbeddingGenerator:
     ) -> None:
         self.tb_writer = tb_writer
 
-        self.tensors: Dict[str, torch.Tensor] = {}
-        """Dict[DatasetType -> Tensor]"""
+        self.train_tensors: Dict[str, torch.Tensor] = {}
+        """Dict[terrain_type -> Tensor]"""
 
-        self.labels: Dict[str, List[str]] = {}
-        """Dict[DatasetType -> List[str]]"""
+        self.holdout_tensors: Dict[str, torch.Tensor] = {}
+        """Dict[terrain_type -> Tensor]"""
 
         for terrain, ds in train_set._categories.items():
-            t = self.tensors.get("train", torch.empty(0))
+            t = self.train_tensors.get(terrain, torch.empty(0))
             t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
-            self.tensors["train"] = torch.cat((t, t2), dim=0)
-            self.labels.setdefault("train", []).extend(
-                [terrain for _ in range(len(ds))]
-            )
+            self.train_tensors[terrain] = torch.cat((t, t2), dim=0)
 
         for terrain, ds in holdout_set._categories.items():
-            t = self.tensors.get("holdout", torch.empty(0))
+            t = self.holdout_tensors.get(terrain, torch.empty(0))
             t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
-            self.tensors["holdout"] = torch.cat((t, t2), dim=0)
-            self.labels.setdefault("holdout", []).extend(
-                [terrain for _ in range(len(ds))]
-            )
+            self.holdout_tensors[terrain] = torch.cat((t, t2), dim=0)
 
-        for key, val in self.tensors.items():
-            self.tensors[key] = val.to(device)
+        for key, val in self.train_tensors.items():
+            self.train_tensors[key] = val.to(device)
+
+        for key, val in self.holdout_tensors.items():
+            self.holdout_tensors[key] = val.to(device)
+
+    def generate_plot(
+        self, model: FullPairCostNet, dataset: Dict[str, torch.Tensor]
+    ) -> plt.Figure:
+        fig, ax = plt.subplots(sharey=True, constrained_layout=True)
+
+        data = [t for t in dataset.values()]
+        data = [model.triplet_net.get_embedding(t) for t in data]
+        data = [model.cost_net(t) for t in data]
+        data = [t.squeeze().cpu().detach().numpy() for t in data]
+
+        labels = list(dataset.keys())
+        positions = np.arange(0, len(labels))
+
+        ax.boxplot(data, positions=positions, vert=False, showfliers=True)
+        ax.set_yticks(positions, labels)
+        ax.set_xlabel("Cost")
+
+        return fig
 
     def write(self, model: FullPairCostNet, epoch: int) -> None:
         model.eval()
         with torch.no_grad():  # type: ignore
-            for dataset_type, tensor in self.tensors.items():
-                embeddings: Tensor = model.embedding_net(tensor)
-                costs: Tensor = model.cost_net(embeddings)
+            self.tb_writer.add_figure(
+                "train/costs",
+                self.generate_plot(model, self.train_tensors),
+                epoch,
+                close=True,
+            )  # type: ignore
 
-                # SummaryWriter needs at least length 3 Tensors
-                self.tb_writer.add_embedding(
-                    costs.expand(-1, 3),
-                    metadata=self.labels[dataset_type],
-                    tag=f"embed-{dataset_type}",
-                    global_step=epoch,
-                )  # type: ignore
+            self.tb_writer.add_figure(
+                "holdout/costs",
+                self.generate_plot(model, self.holdout_tensors),
+                epoch,
+                close=True,
+            )  # type: ignore
 
 
 def fit(

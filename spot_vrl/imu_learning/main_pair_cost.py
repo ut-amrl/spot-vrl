@@ -93,7 +93,7 @@ def main() -> None:
     save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}"
     os.makedirs(save_dir, exist_ok=True)
 
-    tb_writer = SummaryWriter(log_dir=str(save_dir))  # type: ignore
+    tb_writer = SummaryWriter(log_dir=str(save_dir), flush_secs=1)  # type: ignore
     tb_writer.add_text("margin", str(margin))  # type: ignore
     tb_writer.add_text("lr", str(lr))  # type: ignore
     tb_writer.add_text("bs", str(batch_size))  # type: ignore
