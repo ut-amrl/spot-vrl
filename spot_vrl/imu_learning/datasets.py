@@ -266,6 +266,9 @@ class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]])
                 seen_categories.add(first)
                 seen_categories.add(second)
 
+            for category in self.triplet_dataset._categories.keys():
+                self.orderings[(category, category)] = 0.0
+
             if seen_categories != set(self.triplet_dataset._categories.keys()):
                 logger.error(f"({spec}): orderings do not contain all categories")
 
