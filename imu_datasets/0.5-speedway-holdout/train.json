@@ -42,12 +42,12 @@
         {
             "first": "concrete",
             "second": "grass",
-            "label": 1
+            "label": -1
         },
         {
             "first": "concrete",
             "second": "sml_rock",
-            "label": 1
+            "label": -1
         }
     ]
 }
