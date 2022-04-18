@@ -22,10 +22,10 @@ def get_patch_from_odom_delta(T_odom_curr, T_odom_prev, prevImage, visualize=Fal
 	# patch corners in current robot frame
 	height = T_odom_prev[2, -1]
 	patch_corners = [
-		np.array([0.3, 0.3, 0, 1]),
-		np.array([0.3, -0.3, 0, 1]),
-		np.array([-0.3, -0.3, 0, 1]),
-		np.array([-0.3, 0.3, 0, 1])
+		np.array([0.5, 0.5, 0, 1]),
+		np.array([0.5, -0.5, 0, 1]),
+		np.array([-0.5, -0.5, 0, 1]),
+		np.array([-0.5, 0.5, 0, 1])
 	]
 
 	# patch corners in prev frame
@@ -86,11 +86,11 @@ def get_patch_from_odom_delta(T_odom_curr, T_odom_prev, prevImage, visualize=Fal
 			2
 		)
 
-	persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
+	persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [127, 0], [127, 127], [0, 127]]))
 	patch = cv2.warpPerspective(
 		prevImage,
 		persp,
-		(64, 64)
+		(128, 128)
 	)
 
 	zero_count = (patch == 0)
@@ -101,12 +101,21 @@ def get_patch_from_odom_delta(T_odom_curr, T_odom_prev, prevImage, visualize=Fal
 
 
 def process_collected_data(filename, visualize=False):
-	terraindata = SynchronizedData(filename=filename)
+	terraindata = SynchronizedData(filename=filename, imu_history_sec=2.0)
 	processedterraindata = []
 	for i in tqdm(range(len(terraindata.data)-1, -1, -1)):
 		datapt = {
 			'patches': [],
-			'inertial': terraindata.data[i].imu_history
+			'power': terraindata.data[i].imu_history[:, 0],
+			'odom': terraindata.data[i].odom,
+			'joint_positions': terraindata.data[i].imu_history[:, 1:13],
+			'joint_velocities': terraindata.data[i].imu_history[:, 13:25],
+			'joint_accelerations': terraindata.data[i].imu_history[:, 25:37],
+			# 'linear_velocity': (T_curr_odom @ terraindata.data[i].imu_history[:, 37:40].T).T, # rotate velocity to robot frame
+			# 'angular_velocity': (T_curr_odom @ terraindata.data[i].imu_history[:, 40: 43].T).T, # rotate velocity to robot frame
+			'linear_velocity': terraindata.data[i].imu_history[:, 37:40],
+			'angular_velocity': terraindata.data[i].imu_history[:, 40: 43],
+			'depth_info': terraindata.data[i].imu_history[:, 43:47]
 		}
 
 		# current image and odom
@@ -115,7 +124,7 @@ def process_collected_data(filename, visualize=False):
 
 		# for this location underneath the robot, find the visual patch
 		# from previous observations
-		for j in range(i, max(i-150, 0), -2):
+		for j in range(i, max(i-150, 0), -1):
 			prevImage = terraindata.data[j].image
 			prevOdom = terraindata.data[j].odom
 			patch, _, visImg = get_patch_from_odom_delta(currOdom, prevOdom, prevImage, visualize=visualize)
@@ -123,8 +132,8 @@ def process_collected_data(filename, visualize=False):
 			if patch is not None:
 				datapt['patches'].append(patch)
 				if visualize:
-					visImg = cv2.putText(visImg, 'i : '+str(i), (250, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
-					visImg = cv2.putText(visImg, 'j : '+str(j), (250, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+					# visImg = cv2.putText(visImg, 'i : '+str(i), (250, 150), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
+					# visImg = cv2.putText(visImg, 'j : '+str(j), (250, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2, cv2.LINE_AA)
 					cv2.imshow('visimg', visImg)
 					cv2.imshow('patch', patch)
 					cv2.waitKey(0)
@@ -143,7 +152,7 @@ def process_and_save_as_pickle(filename, visualize=False):
 		processedterraindata = process_collected_data(filename=filename, visualize=visualize)
 		pickle.dump(processedterraindata, open(filename.replace('bddf', 'pkl'), 'wb'))
 		# also save a tiny dataset
-		pickle.dump(processedterraindata[:20], open(filename.replace('.bddf', '_short.pkl'), 'wb'))
+		# pickle.dump(processedterraindata[:20], open(filename.replace('.bddf', '_short.pkl'), 'wb'))
 		print('Processed this data and saved as a pickle file..')
 	except Exception as e:
 		print(e)

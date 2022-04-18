@@ -1,5 +1,6 @@
 import glob
 
+import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -7,6 +8,7 @@ import torch.nn.functional as F
 import argparse
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
 import pickle
+from scipy import fftpack
 import numpy as np
 from datetime import datetime
 from torchvision.utils import make_grid
@@ -19,11 +21,22 @@ tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from scripts.recurrent_model import Encoder, Decoder
+from scripts.optimizer import LARS, CosineWarmupScheduler
+from typing import List, Union, Tuple
+
+label_dict = {
+	'cement': 0,
+	'smallrocks': 1,
+	'grass': 2,
+	'speedway': 3
+}
+
+def exclude_bias_and_norm(p):
+	return p.ndim == 1
 
 class Flatten(nn.Module):
 	def forward(self, input):
 		return input.view(input.size(0), -1)
-
 
 class UnFlatten(nn.Module):
 	def forward(self, input, size=256):
@@ -36,6 +49,8 @@ class CustomDataset(Dataset):
 		self.delay = 300
 		# self.delay = 0
 
+		self.label = pickle_file_path.split('/')[-2]
+
 	def __len__(self):
 		return len(self.data) - 300 - 75
 
@@ -43,26 +58,25 @@ class CustomDataset(Dataset):
 		# skip the first 20 seconds and last 5 seconds
 		idx = idx + self.delay
 
-		patch = self.data[idx]['patches']
-		# randomize list in python
-		# random.shuffle(patch)
+		# randomly pick a patch from the list
+		patch = random.sample(self.data[idx]['patches'], 1)[0]
+		patch = patch.astype(np.float32) / 255.0
+		patch = np.expand_dims(patch, axis=0)
 
-		normalized_patches = []
-		for patch_ in random.sample(patch, 5):
-			patch_ = patch_.astype(np.float32) / 255.0
-			normalized_patches.append(patch_)
-		normalized_patches = np.asarray(normalized_patches)
+		joint_positions = self.data[idx]['joint_positions'][-26:, :].flatten()
+		joint_velocities = self.data[idx]['joint_velocities'][-26:, :].flatten()
+		joint_accelerations = self.data[idx]['joint_accelerations'][-26:, :].flatten()
+		linear_velocity = self.data[idx]['linear_velocity'][-26:, [2]].flatten()
+		angular_velocity = self.data[idx]['angular_velocity'][-26:, [0, 1]].flatten()
+		foot_depth_sensor = self.data[idx]['depth_info'][-26:, :].flatten()
 
-		# joint_positions = self.data[idx]['joint_positions'][-13:, :].flatten()
-		# joint_velocities = self.data[idx]['joint_velocities'][-13:, :].flatten()
-		# joint_accelerations = self.data[idx]['joint_accelerations'][-13:, :].flatten()
-		linear_velocity = self.data[idx]['linear_velocity'][-13:, [2]].flatten()
-		angular_velocity = self.data[idx]['angular_velocity'][-13:, [0, 1]].flatten()
-		foot_depth_sensor = self.data[idx]['depth_info'][-13:, :].flatten()
+		inertial_data = np.hstack((linear_velocity, angular_velocity, foot_depth_sensor, joint_positions, joint_velocities, joint_accelerations))
+		inertial_data = np.expand_dims(inertial_data, axis=0)
 
-		# imu = np.hstack((joint_positions, joint_velocities, joint_accelerations, linear_velocity, angular_velocity, foot_depth_sensor))
-		imu = np.hstack((linear_velocity, angular_velocity, foot_depth_sensor))
-		return normalized_patches, imu
+		# randomize the inertial data
+		# inertial_data = np.random.randn(1, inertial_data.shape[1])
+
+		return patch, inertial_data, self.label
 
 class MyDataLoader(pl.LightningDataModule):
 	def __init__(self, data_path, batch_size=32):
@@ -82,13 +96,14 @@ class MyDataLoader(pl.LightningDataModule):
 		print('Finding mean and std statistics of inertial data in the training set...')
 		tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
 		tmp_list = []
-		for _, i in tmp:
+		for _, i, _ in tmp:
 			i = i.numpy()
 			tmp_list.append(i)
 		tmp_list = np.asarray(tmp_list)
 		self.mean = np.mean(tmp_list, axis=0)
 		self.std = np.std(tmp_list, axis=0)
-		self.inertial_shape = self.mean.shape[1]
+		self.inertial_shape = self.mean.shape[1] if len(self.mean.shape) > 1 else 1
+		print('Inertial shape:', self.inertial_shape)
 		print('Data statistics have been found.')
 		del tmp, tmp_list
 
@@ -96,245 +111,199 @@ class MyDataLoader(pl.LightningDataModule):
 		print('Val dataset size:', len(self.val_dataset))
 
 	def train_dataloader(self):
-		return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4)
+		return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=4, drop_last=True if len(self.train_dataset) % self.batch_size != 0 else False)
 
 	def val_dataloader(self):
-		return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4)
+		return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=4, drop_last=True if len(self.val_dataset) % self.batch_size != 0 else False)
 
-
-class DualAEModel(pl.LightningModule):
-	def __init__(self, lr=3e-4, latent_size=64, mean=None, std=None, inertial_shape=None):
-		super(DualAEModel, self).__init__()
+class BarlowModel(pl.LightningModule):
+	def __init__(self, lr=3e-4, latent_size=64,
+				 mean=None, std=None, inertial_shape=None,
+				 scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
+				 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1):
+		super(BarlowModel, self).__init__()
 
 		self.save_hyperparameters(
 			'lr',
 			'latent_size',
-			'inertial_shape'
+			'inertial_shape',
+			'scale_loss',
+			'lambd',
+			'weight_decay'
 		)
+
+		self.scale_loss = scale_loss
+		self.lambd = lambd
+		self.weight_decay = weight_decay
+		self.lr = lr
+		self.per_device_batch_size = per_device_batch_size
+		self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
 
 		self.visual_encoder = nn.Sequential(
 			nn.Conv2d(1, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
-			nn.BatchNorm2d(16), nn.PReLU(),
+			nn.BatchNorm2d(16), nn.ReLU(),
 			nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), # 31 x 31
-			nn.BatchNorm2d(32), nn.PReLU(),
+			nn.BatchNorm2d(32), nn.ReLU(),
 			nn.Conv2d(32, 64, kernel_size=5, stride=2, bias=False), # 14 x 14
-			nn.BatchNorm2d(64), nn.PReLU(),
+			nn.BatchNorm2d(64), nn.ReLU(),
 			nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False),  # 5 x 5
-			nn.BatchNorm2d(128), nn.PReLU(),
+			nn.BatchNorm2d(128), nn.ReLU(),
 			nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
-			nn.PReLU(),
-			Flatten(),
-			nn.Linear(1024, latent_size)
-		)
-
-		self.visual_decoder = nn.Sequential(
-			nn.Linear(latent_size, 1024),
-			UnFlatten(), 											# 2 x 2
-			nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, bias=False),  # 5 x 5
-			nn.BatchNorm2d(128), nn.PReLU(),
-			nn.ConvTranspose2d(128, 64, kernel_size=5, stride=2, bias=False), # 13 x 13
-			nn.BatchNorm2d(64), nn.PReLU(),
-			nn.ConvTranspose2d(64, 32, kernel_size=7, stride=2, bias=False), #  31 x 31
-			nn.BatchNorm2d(32), nn.PReLU(),
-			nn.ConvTranspose2d(32, 16, kernel_size=3, stride=2), #  63 x 63
-			nn.PReLU(),
-			nn.ConvTranspose2d(16, 1, kernel_size=4, stride=2), # 128 x 128
-			nn.Sigmoid(),
+			nn.ReLU(),
+			Flatten(), # 1024 output
+			nn.Linear(1024, 128)
 		)
 
 		self.inertial_encoder = nn.Sequential(
-			nn.Linear(inertial_shape, 512, bias=False), nn.BatchNorm1d(512), nn.PReLU(),
-			nn.Linear(512, 256, bias=False), nn.BatchNorm1d(256), nn.PReLU(),
-			nn.Linear(256, 128), nn.PReLU(),
-			nn.Linear(128, latent_size)
+			nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(16), nn.ReLU(), # 558
+			nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False), nn.BatchNorm1d(32), nn.ReLU(), # 185
+			nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False), nn.BatchNorm1d(64), nn.ReLU(), # 60
+			nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(128), nn.ReLU(), # 30
+			nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False), nn.ReLU(), # 8
+			nn.Flatten(),
+			nn.Linear(2048, 128)
 		)
-
-		self.inertial_decoder = nn.Sequential(
-			nn.Linear(latent_size, 128, bias=False), nn.BatchNorm1d(128), nn.PReLU(),
-			nn.Linear(128, 256, bias=False), nn.BatchNorm1d(256), nn.PReLU(),
-			nn.Linear(256, 512), nn.PReLU(),
-			nn.Linear(512, inertial_shape)
-		)
-
 
 		self.projector = nn.Sequential(
-			nn.Linear(latent_size, 64), nn.ReLU(),
-			nn.Linear(64, 32)
+			nn.Linear(128, 1024, bias=False), nn.BatchNorm1d(1024), nn.ReLU(),
+			nn.Linear(1024, latent_size)
 		)
 
-		# self.inertial_encoder = Encoder(14, 41, 64)
-		# self.inertial_decoder = Decoder(14, 64, 41)
-
-		self.mse_loss = nn.MSELoss()
-		self.lr = lr
 		self.mean, self.std = torch.tensor(mean).float(), torch.tensor(std).float()
-		self.cosine_sim_loss = nn.CosineSimilarity()
 
-	def vision_forward(self, visual_patch):
-		# visual Auto Encoder
-		visual_encoding = self.visual_encoder(visual_patch)
-		visual_patch_recon = self.visual_decoder(visual_encoding)
-		# L2 normalize the embedding space
-		visual_encoding_projected = F.normalize(self.projector(visual_encoding), p=2, dim=1)
-		return visual_patch_recon, visual_encoding, visual_encoding_projected
-
-	def inertial_forward(self, imu_history):
-		# IMU Auto Encoder
-		inertial_encoding = self.inertial_encoder(imu_history)
-		imu_history_recon = self.inertial_decoder(inertial_encoding)
-		# L2 normalize the embedding space
-		inertial_encoding_projected = F.normalize(self.projector(inertial_encoding), p=2, dim=1)
-		return imu_history_recon, inertial_encoding, inertial_encoding_projected
+		# normalization layer for the representations z1 and z2
+		self.bn = nn.BatchNorm1d(latent_size, affine=False)
 
 	def forward(self, visual_patch, imu_history):
-		visual_patch_recon, visual_encoding, visual_encoding_projected = self.vision_forward(visual_patch)
-		imu_history_recon, inertial_encoding, inertial_encoding_projected = self.inertial_forward(imu_history)
-		return visual_patch_recon, visual_encoding, visual_encoding_projected, imu_history_recon, inertial_encoding, inertial_encoding_projected
 
-	def training_step(self, batch, batch_idx):
-		visual_patch_list, imu_history = batch
-
-		mean_visual_recon_loss = 0
-		mean_embedding_similarity_loss = 0
-		mean_visual_rae_loss = 0
-
-		imu_history = imu_history.float()
-
-		# normalize IMU info
+		# normalize inertial data
 		device = imu_history.device
 		imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
 
-		imu_history_recon, inertial_encoding, inertial_encoding_projected = self.inertial_forward(imu_history)
-		rae_loss_inertial = (0.5 * inertial_encoding.pow(2).sum(1)).mean()
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
+		z1 = self.projector(self.visual_encoder(visual_patch))
+		z2 = self.projector(self.inertial_encoder(imu_history))
 
+		# empirical cross-correlation matrix
+		c = self.bn(z1).T @ self.bn(z2)
 
-		for x in range(visual_patch_list.shape[1]):
-			# reconstruction task
-			visual_patch = visual_patch_list[:, x, :, :].unsqueeze(1).float()
-			visual_patch_recon, visual_encoding, visual_encoding_projected = self.vision_forward(visual_patch)
-			mean_visual_recon_loss += torch.mean((visual_patch - visual_patch_recon) ** 2)
+		# sum the cross-correlation matrix between all gpus
+		c.div_(self.per_device_batch_size * self.trainer.num_processes)
+		self.all_reduce(c)
 
-			# embedding simularity
-			mean_embedding_similarity_loss += torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
+		# use --scale-loss to multiply the loss by a constant factor
+		# In order to match the code that was used to develop Barlow Twins,
+		# the authors included an additional parameter, --scale-loss,
+		# that multiplies the loss by a constant factor.
+		on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
+		off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
+		loss = on_diag + self.lambd * off_diag #+ 1e-3*torch.mean((z1 - z2)**2)
+		return loss
 
-			# RAE loss for visual encoders
-			mean_visual_rae_loss += (0.5 * visual_encoding.pow(2).sum(1)).mean()
+	def off_diagonal(self, x):
+		# return a flattened view of the off-diagonal elements of a square matrix
+		n, m = x.shape
+		assert n == m
+		return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
-		mean_visual_recon_loss /= visual_patch_list.shape[1]
-		mean_embedding_similarity_loss /= visual_patch_list.shape[1]
-		mean_visual_rae_loss /= visual_patch_list.shape[1]
+	def all_reduce(self, c):
+		if torch.distributed.is_initialized():
+			torch.distributed.all_reduce(c)
 
-		loss = mean_visual_recon_loss + imu_history_recon_loss + 1e-4 * (rae_loss_inertial + mean_visual_rae_loss) + 1e-3 * mean_embedding_similarity_loss
+	def common_step(self, batch, batch_idx):
+		visual, inertial, _ = batch
+		loss = self(visual, inertial)
+		return loss
 
+	def training_step(self, batch, batch_idx):
+		loss = self.common_step(batch, batch_idx)
 		self.log('train_loss', loss, prog_bar=True, logger=True)
-		self.log('train_visual_recon_loss', mean_visual_recon_loss, prog_bar=False, logger=True)
-		self.log('train_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
-		self.log('train_embedding_similarity_loss', mean_embedding_similarity_loss, prog_bar=False, logger=True)
-		self.log('train_rae_loss_visual', mean_visual_rae_loss, prog_bar=False, logger=True)
-		self.log('train_rae_loss_inertial', rae_loss_inertial, prog_bar=False, logger=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
-		visual_patch_list, imu_history = batch
-
-		mean_visual_recon_loss = 0
-		mean_embedding_similarity_loss = 0
-		mean_visual_rae_loss = 0
-
-		imu_history = imu_history.float()
-
-		# normalize IMU info
-		device = imu_history.device
-		imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
-
-		imu_history_recon, inertial_encoding, inertial_encoding_projected = self.inertial_forward(imu_history)
-		rae_loss_inertial = (0.5 * inertial_encoding.pow(2).sum(1)).mean()
-		imu_history_recon_loss = torch.mean((imu_history - imu_history_recon) ** 2)
-
-		for x in range(visual_patch_list.shape[1]):
-			# reconstruction task
-			visual_patch = visual_patch_list[:, x, :, :]
-			visual_patch = visual_patch.unsqueeze(1).float()
-			visual_patch_recon, visual_encoding, visual_encoding_projected = self.vision_forward(visual_patch)
-			mean_visual_recon_loss += torch.mean((visual_patch - visual_patch_recon) ** 2)
-
-			# embedding simularity
-			mean_embedding_similarity_loss += torch.mean((visual_encoding_projected - inertial_encoding_projected) ** 2)
-
-			# RAE loss for visual encoders
-			mean_visual_rae_loss += (0.5 * visual_encoding.pow(2).sum(1)).mean()
-
-		mean_visual_recon_loss /= visual_patch_list.shape[1]
-		mean_embedding_similarity_loss /= visual_patch_list.shape[1]
-		mean_visual_rae_loss /= visual_patch_list.shape[1]
-
-		loss = mean_visual_recon_loss + imu_history_recon_loss + 1e-4 * (
-					rae_loss_inertial + mean_visual_rae_loss) + 1e-3 * mean_embedding_similarity_loss
-
+		with torch.no_grad():
+			loss = self.common_step(batch, batch_idx)
 		self.log('val_loss', loss, prog_bar=True, logger=True)
-		self.log('val_visual_recon_loss', mean_visual_recon_loss, prog_bar=False, logger=True)
-		self.log('val_imu_history_recon_loss', imu_history_recon_loss, prog_bar=False, logger=True)
-		self.log('val_embedding_similarity_loss', mean_embedding_similarity_loss, prog_bar=False, logger=True)
-		self.log('val_rae_loss_visual', mean_visual_rae_loss, prog_bar=False, logger=True)
-		self.log('val_rae_loss_inertial', rae_loss_inertial, prog_bar=False, logger=True)
-		return loss
+
+	# def configure_optimizers(self):
+	# 	optimizer = LARS(
+	# 		self.parameters(),
+	# 		lr=0,  # Initialize with a LR of 0
+	# 		weight_decay=self.weight_decay,
+	# 		weight_decay_filter=exclude_bias_and_norm,
+	# 		lars_adaptation_filter=exclude_bias_and_norm
+	# 	)
+	#
+	# 	total_training_steps = self.total_training_steps
+	# 	num_warmup_steps = self.compute_warmup(total_training_steps, self.num_warmup_steps_or_ratio)
+	# 	lr_scheduler = CosineWarmupScheduler(
+	# 		optimizer=optimizer,
+	# 		batch_size=self.per_device_batch_size,
+	# 		warmup_steps=num_warmup_steps,
+	# 		max_steps=total_training_steps,
+	# 		lr=self.lr
+	# 	)
+	# 	return [optimizer], [
+	# 		{
+	# 			'scheduler': lr_scheduler,  # The LR scheduler instance (required)
+	# 			'interval': 'step',  # The unit of the scheduler's step size
+	# 		}
+	# 	]
 
 	def configure_optimizers(self):
-		return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=0.001)
+		return torch.optim.SGD(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
 	def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
 		if self.current_epoch % 10 == 0:
 
-			visual_patch_list, imu_history = batch
+			visual_patch, imu_history, label = batch
+			label = np.asarray(label)
+			visual_patch = visual_patch.float()
+			visual_encoding = self.visual_encoder(visual_patch)
 
-			visual_patch = visual_patch_list[:, 0, :, :]
-
-			visual_patch = visual_patch.unsqueeze(1).float()
-			imu_history = imu_history.float()
-			# print('imu hist shape : ', imu_history.shape)
-
-			# normalize IMU info
-			device = imu_history.device
-			imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
-
-			visual_patch_recon, visual_encoding, _, imu_history_recon, inertial_encoding, _ = self.forward(visual_patch, imu_history)
-			# visual_patch_recon, visual_encoding = self.forward(visual_patch, imu_history)
-
-			# embeddings = torch.cat((visual_encoding, inertial_encoding), dim=0)
-			# labels = ['V' for _ in range(visual_encoding.shape[0])] + ['I' for _ in range(inertial_encoding.shape[0])]
-
-			visual_patch_tmp = visual_patch.float()[:20, :, :, :]
-			visual_patch_recon_tmp = visual_patch_recon.float()[:20, :, :, :]
-
-			visual_patch_tmp = torch.cat((visual_patch_tmp, visual_patch_tmp, visual_patch_tmp), dim=1)
-			visual_patch_recon_tmp = torch.cat((visual_patch_recon_tmp, visual_patch_recon_tmp, visual_patch_recon_tmp), dim=1)
-
-
-			grid_img_visual_patch = make_grid(torch.cat((visual_patch_tmp, visual_patch_recon_tmp), dim=2), nrow=20)
 
 			if batch_idx == 0:
-				self.visual_encoding = visual_encoding[:100, :]
-				self.visual_patch = visual_patch[:100, :, :, :]
-				self.grid_img_visual_patch = grid_img_visual_patch
+				self.visual_encoding = visual_encoding[:, :]
+				self.visual_patch = visual_patch[:, :, :, :]
+				self.label = label[:]
 			else:
-				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:100, :]), dim=0)
-				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:100, :, :, :]), dim=0)
-
+				self.visual_patch = torch.cat((self.visual_patch, visual_patch[:, :, :, :]), dim=0)
+				self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:, :]), dim=0)
+				self.label = np.concatenate((self.label, label[:]))
 
 	def on_validation_end(self) -> None:
 		if self.current_epoch % 10 == 0:
-			self.logger.experiment.add_embedding(mat=self.visual_encoding, label_img=self.visual_patch, global_step=self.current_epoch)
-			self.logger.experiment.add_image('visual_recons', self.grid_img_visual_patch, self.current_epoch)
+			idx = np.arange(self.visual_encoding.shape[0])
+
+			# randomize numpy array
+			np.random.shuffle(idx)
+
+			self.logger.experiment.add_embedding(mat=self.visual_encoding[idx[:2000], :],
+												 label_img=self.visual_patch[idx[:2000], :, :, :],
+												 global_step=self.current_epoch,
+												 metadata=self.label[idx[:2000]])
+
+	@property
+	def total_training_steps(self) -> int:
+		dataset_size = len(self.trainer.datamodule.train_dataloader())
+		num_devices = self.trainer.tpu_cores if self.trainer.tpu_cores else self.trainer.num_processes
+		effective_batch_size = self.trainer.accumulate_grad_batches * num_devices
+		max_estimated_steps = (dataset_size // effective_batch_size) * self.trainer.max_epochs
+
+		if self.trainer.max_steps and self.trainer.max_steps < max_estimated_steps:
+			return self.trainer.max_steps
+		return max_estimated_steps
+
+	def compute_warmup(self, num_training_steps: int, num_warmup_steps: Union[int, float]) -> int:
+		return num_warmup_steps * num_training_steps if isinstance(num_warmup_steps, float) else num_training_steps
 
 if __name__ == '__main__':
 	# parse command line arguments
 	parser = argparse.ArgumentParser(description='Dual Auto Encoder')
-	parser.add_argument('--batch_size', type=int, default=128, metavar='N',
+	parser.add_argument('--batch_size', type=int, default=1024, metavar='N',
 						help='input batch size for training (default: 32)')
 	parser.add_argument('--epochs', type=int, default=1000, metavar='N',
 						help='number of epochs to train (default: 100)')
-	parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+	parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
 						help='learning rate (default: 0.001)')
 	parser.add_argument('--data_dir', type=str, default='data/', metavar='N',
 						help='data directory (default: data)')
@@ -344,15 +313,16 @@ if __name__ == '__main__':
 						help='model directory (default: models)')
 	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
 						help='number of GPUs to use (default: 1)')
-	parser.add_argument('--latent_size', type=int, default=6, metavar='N',
+	parser.add_argument('--latent_size', type=int, default=1024, metavar='N',
 						help='Size of the common latent space (default: 6)')
 	args = parser.parse_args()
 
 	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 	dm = MyDataLoader(data_path=args.data_dir, batch_size=args.batch_size)
-	model = DualAEModel(lr=args.lr, latent_size=args.latent_size, mean=dm.mean, std=dm.std, inertial_shape=dm.inertial_shape).to(device)
+	model = BarlowModel(lr=args.lr, latent_size=args.latent_size, mean=dm.mean, std=dm.std,
+						inertial_shape=dm.inertial_shape, scale_loss=1.0, lambd=0.0051, per_device_batch_size=args.batch_size).to(device)
 
-	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=100)
+	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
 	model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
 										  filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_',
 										  monitor='val_loss', verbose=True)
@@ -360,13 +330,13 @@ if __name__ == '__main__':
 	print("Training model...")
 	trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),
 						 max_epochs=args.epochs,
-						 callbacks=[early_stopping_cb, model_checkpoint_cb],
+						 callbacks=[model_checkpoint_cb],
 						 log_every_n_steps=10,
+						 precision=16,
 						 distributed_backend='ddp',
 						 num_sanity_val_steps=-1,
-						 stochastic_weight_avg=True,
-						 gradient_clip_val=1.0,
 						 logger=True,
+						 sync_batchnorm=True,
 						 )
 
 	trainer.fit(model, dm)
