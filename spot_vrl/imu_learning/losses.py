@@ -1,6 +1,9 @@
+import sys
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from loguru import logger
 
 
 class MarginRankingLoss(nn.Module):
@@ -69,6 +72,12 @@ class MarginRankingLoss(nn.Module):
                 =   (abs(z) - 2*margin) + margin
                 =   abs(z) - margin
         """
+        with logger.catch(
+            message="Expected inputs of the same shape", onerror=sys.exit
+        ):
+            assert x1.shape == x2.shape
+            assert x1.shape == y.shape
+
         z = x1 - x2
         z = torch.where(y == 0.0, torch.abs(z) - 2 * self.margin, z)
         y = torch.where(y == 0.0, -1.0, y)
