@@ -121,22 +121,24 @@ class TripletNet(nn.Module):
 
 
 class CostNet(nn.Module):
-    def __init__(self, embedding_dim: int = 48) -> None:
+    def __init__(self, embedding_dim: int) -> None:
         super().__init__()
 
         self.fc = nn.Sequential(
-            nn.Linear(embedding_dim, 32),
+            nn.Linear(embedding_dim, embedding_dim),
             nn.PReLU(),
-            nn.Linear(32, 32),
+            nn.Linear(embedding_dim, embedding_dim),
             nn.PReLU(),
-            nn.Linear(32, 16),
-            nn.PReLU(),
-            nn.Linear(16, 1),
-            nn.ReLU(),
+            nn.Linear(embedding_dim, 1),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.fc(x)  # type: ignore
+        out: torch.Tensor = self.fc(x)
+
+        # Enforce non-negative costs. The exponential function is used instead
+        # of ReLU since ReLU will produce a 0 gradient if the network output is
+        # all non-positive.
+        return torch.exp(out)
 
 
 class FullPairCostNet(nn.Module):
