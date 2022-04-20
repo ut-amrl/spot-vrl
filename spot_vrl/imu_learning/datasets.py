@@ -259,7 +259,7 @@ class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]])
                     logger.error(f"({spec}): ordering mismatch for ({first}, {second})")
                     raise ValueError
 
-                if self.orderings.setdefault((second, first), -label) != -label:
+                if self.orderings.get((second, first), -label) != -label:
                     logger.error(f"({spec}): ordering mismatch for ({second}, {first})")
                     raise ValueError
 
