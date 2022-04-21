@@ -99,8 +99,8 @@ def fit(
 
         val_loss = test_epoch(val_loader, model, loss_fn, device)
 
-        tb_writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
-        tb_writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("valid/loss", val_loss, epoch)  # type: ignore
 
         if embedder is not None and (epoch + 1) % 10 == 0:
             embedder.write(model, epoch)
