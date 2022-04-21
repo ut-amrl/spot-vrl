@@ -102,7 +102,7 @@ def fit(
         tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore
         tb_writer.add_scalar("valid/loss", val_loss, epoch)  # type: ignore
 
-        if embedder is not None:
+        if embedder is not None and (epoch + 1) % 10 == 0:
             embedder.write(model, epoch)
 
         pbar.clear()
