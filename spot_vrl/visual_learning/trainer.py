@@ -18,10 +18,12 @@ class EmbeddingGenerator:
     def __init__(
         self,
         device: torch.device,
+        batch_size: int,
         train_set: BaseTripletDataset,
         holdout_set: BaseTripletDataset,
         tb_writer: SummaryWriter,
     ):
+        self.batch_size = batch_size
         self.tb_writer = tb_writer
 
         self.tensors: Dict[str, torch.Tensor] = {}
@@ -47,14 +49,25 @@ class EmbeddingGenerator:
             )
 
         for key, val in self.tensors.items():
-            self.tensors[key] = val.detach().to(device)
+            self.tensors[key] = val.to(device)
 
     def write(self, model: TripletNet, epoch: int) -> None:
+        model.eval()
         with torch.no_grad():  # type: ignore
-            model.eval()
             for dataset_type, tensor in self.tensors.items():
+                """Perform batched computations for embeddings.
+
+                The convolutional kernels allocate an extremely large amount of
+                GPU memory if we pass in the entire dataset tensor at once.
+                """
+                embeddings = []
+                for start in range(0, tensor.size(dim=0), self.batch_size):
+                    end = min(start + self.batch_size, tensor.size(dim=0))
+                    embeddings.append(model.get_embedding(tensor[start:end]))
+                    start = end
+
                 self.tb_writer.add_embedding(
-                    model.get_embedding(tensor),
+                    torch.cat(embeddings),
                     metadata=self.labels[dataset_type],
                     tag=f"embed-{dataset_type}",
                     global_step=epoch,

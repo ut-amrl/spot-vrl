@@ -95,6 +95,7 @@ def main() -> None:
 
     embedder = EmbeddingGenerator(
         device,
+        batch_size,
         triplet_dataset,
         TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
         tb_writer,
