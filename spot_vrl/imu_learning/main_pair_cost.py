@@ -30,12 +30,11 @@ def main() -> None:
     parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument(
-        "--embedding-ckpt-dir",
+        "--triplet-model",
         type=Path,
         required=True,
-        help="Folder with saved embedding model",
+        help="Path to saved TripletNet model.",
     )
-    parser.add_argument("--embedding-epoch", type=int, required=True)
     parser.add_argument(
         "--dataset", type=str, required=True, choices=("0.5-speedway-holdout",)
     )
@@ -51,8 +50,7 @@ def main() -> None:
 
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
-    embedding_ckpt_dir: Path = args.embedding_ckpt_dir
-    embedding_epoch: int = args.embedding_epoch
+    triplet_net_path: Path = args.triplet_model
     dataset_dir: Path = Path("imu_datasets") / args.dataset
     epochs: int = args.epochs
     margin: float = args.margin
@@ -78,10 +76,7 @@ def main() -> None:
     )
     triplet_net = TripletNet(embedding_net)
     triplet_net.load_state_dict(
-        torch.load(
-            os.path.join(embedding_ckpt_dir, f"trained_epoch_{embedding_epoch}.pth"),
-            map_location=device,
-        ),  # type: ignore
+        torch.load(triplet_net_path, map_location=device),  # type: ignore
         strict=True,
     )
     triplet_net.requires_grad_(False)
