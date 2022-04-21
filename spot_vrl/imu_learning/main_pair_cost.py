@@ -6,7 +6,6 @@ from pathlib import Path
 import torch
 import torch.optim as optim
 import torch.utils.data.dataset
-from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -42,8 +41,6 @@ def main() -> None:
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--bs", type=int, default=32)
-    parser.add_argument("--steplr-step-size", type=int, default=10)
-    parser.add_argument("--steplr-gamma", type=float, default=0.5)
     parser.add_argument("--comment", type=str, default="")
 
     args = parser.parse_args()
@@ -56,8 +53,6 @@ def main() -> None:
     margin: float = args.margin
     lr: float = args.lr
     batch_size: int = args.bs
-    steplr_step_size: int = args.steplr_step_size
-    steplr_gamma: float = args.steplr_gamma
     comment: str = args.comment
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -87,9 +82,6 @@ def main() -> None:
 
     loss_fn = MarginRankingLoss(margin)
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
-    scheduler = lr_scheduler.StepLR(
-        optimizer, steplr_step_size, gamma=steplr_gamma, last_epoch=-1
-    )
 
     save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}"
     os.makedirs(save_dir, exist_ok=True)
@@ -98,8 +90,6 @@ def main() -> None:
     tb_writer.add_text("margin", str(margin))  # type: ignore
     tb_writer.add_text("lr", str(lr))  # type: ignore
     tb_writer.add_text("bs", str(batch_size))  # type: ignore
-    tb_writer.add_text("steplr_step_size", str(steplr_step_size))  # type: ignore
-    tb_writer.add_text("steplr_gamma", str(steplr_gamma))  # type: ignore
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 
@@ -116,7 +106,6 @@ def main() -> None:
         model,
         loss_fn,
         optimizer,
-        scheduler,
         epochs,
         device,
         save_dir,

@@ -90,7 +90,6 @@ def fit(
     model: FullPairCostNet,
     loss_fn: MarginRankingLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
@@ -124,7 +123,6 @@ def fit(
 
         pbar.clear()
         print(message)
-        scheduler.step()
 
 
 def train_epoch(
