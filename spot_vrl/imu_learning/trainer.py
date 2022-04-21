@@ -66,7 +66,7 @@ def fit(
     model: TripletNet,
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
@@ -83,9 +83,6 @@ def fit(
     Siamese network: Siamese loader, siamese model, contrastive loss
     Online triplet learning: batch loader, embedding model, online triplet loss
     """
-    for epoch in range(0, start_epoch):
-        scheduler.step()
-
     pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Training")
     for epoch in pbar:
         # Train stage
@@ -100,16 +97,10 @@ def fit(
             model.state_dict(),
             os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
         )
-        message = "Epoch: {}/{}. Train set: Average loss: {:.4f}".format(
-            epoch + 1, n_epochs, train_loss
-        )
 
         val_loss = test_epoch(val_loader, model, loss_fn, device)
         val_loss /= len(val_loader)
 
-        message += "\nEpoch: {}/{}. Validation set: Average loss: {:.4f}".format(
-            epoch + 1, n_epochs, val_loss
-        )
         tb_writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
         tb_writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
 
@@ -117,8 +108,7 @@ def fit(
             embedder.write(model, epoch)
 
         pbar.clear()
-        print(message)
-        scheduler.step()
+        scheduler.step(val_loss)
 
 
 def train_epoch(
