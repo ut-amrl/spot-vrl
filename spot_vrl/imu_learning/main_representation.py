@@ -99,7 +99,7 @@ def main() -> None:
     save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}-{embedding_net.arch()}"
     os.makedirs(save_dir, exist_ok=True)
 
-    tb_writer = SummaryWriter(log_dir=str(save_dir))  # type: ignore
+    tb_writer = SummaryWriter(log_dir=str(save_dir), flush_secs=10)  # type: ignore
     tb_writer.add_text("model", model_type)  # type: ignore
     tb_writer.add_text("margin", str(margin))  # type: ignore
     tb_writer.add_text("lr", str(lr))  # type: ignore
