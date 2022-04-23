@@ -6,23 +6,38 @@ from spot_vrl.visual_learning.datasets import Triplet
 
 
 class EmbeddingNet(nn.Module):
+    class ConvBlock(nn.Module):
+        def __init__(
+            self, in_channels: int, out_channels: int, kernel_size: int
+        ) -> None:
+            super().__init__()
+            self.block = torch.nn.Sequential(
+                # shrinks the image size by a factor of 2
+                nn.Conv2d(
+                    in_channels,
+                    out_channels,
+                    kernel_size,
+                    stride=2,
+                    padding=kernel_size // 2,
+                ),
+                nn.BatchNorm2d(out_channels),  # type: ignore
+                nn.PReLU(),
+            )
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return self.block(x)  # type: ignore
+
     def __init__(self, embedding_dim: int) -> None:
         super().__init__()
 
         # Reduce 1x60x60 image into a 128x1x1 image
         self.convnet = nn.Sequential(
             # 1x60x60
-            nn.Conv2d(1, 16, 7, padding="same"),
-            nn.PReLU(),
-            nn.MaxPool2d(2, stride=2),
+            self.ConvBlock(1, 16, 7),
             # 16x30x30
-            nn.Conv2d(16, 64, 5, padding="same"),
-            nn.PReLU(),
-            nn.MaxPool2d(2, stride=2),
+            self.ConvBlock(16, 64, 5),
             # 64x15x15
-            nn.Conv2d(64, 128, 5, padding="same"),
-            nn.PReLU(),
-            nn.MaxPool2d(2, stride=2),
+            self.ConvBlock(64, 128, 5),
             # 128 x 7 x 7
             nn.AvgPool2d(7),
             # 128 x 1 x 1
