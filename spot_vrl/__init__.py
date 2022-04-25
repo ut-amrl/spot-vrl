@@ -1,6 +1,7 @@
 import os
 import multiprocessing
-import typing
+
+import cv2
 
 
 __version__ = "0.1.0"
@@ -15,9 +16,12 @@ def _get_omp_num_threads() -> int:
 
 
 def _set_omp_num_threads(count: int) -> None:
+    # OpenMP thread limit must be set before importing libraries that read the
+    # environment variable.
     os.environ["OMP_NUM_THREADS"] = str(count)
+    cv2.setNumThreads(count)
 
 
-# On machines with very high core counts, parallelism exploited by libraries can
-# slow programs down due to shared state / communication overhead.
+# On machines with very high core counts, overhead from library multithreading
+# (NumPy, OpenCV) can slow programs down.
 _set_omp_num_threads(min(8, _get_omp_num_threads()))
