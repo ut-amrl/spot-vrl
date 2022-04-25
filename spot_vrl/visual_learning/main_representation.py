@@ -32,7 +32,7 @@ def main() -> None:
         "--dataset",
         type=str,
         required=True,
-        choices=("0.5-no-speedway", "0.5-with-speedway"),
+        choices=("0.5-no-speedway", "0.5-with-speedway", "0.5-speedway-holdout"),
     )
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=float, default=1)

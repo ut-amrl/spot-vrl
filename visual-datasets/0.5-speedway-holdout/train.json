@@ -1,0 +1,53 @@
+{
+    "_comment": "Training dataset at 0.5 m/s",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-03-14/2022-03-14-17-36-52.bddf",
+                "start": 1647297420,
+                "end": 1647297868
+            },
+            {
+                "path": "data/2022-03-14/2022-03-14-17-46-10.bddf",
+                "start": 1647297977,
+                "end": 1647298424
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-03-14/2022-03-14-18-45-10.bddf",
+                "start": 1647301515,
+                "end": 1647302138
+            },
+            {
+                "path": "data/2022-03-14/2022-03-14-18-58-59.bddf",
+                "start": 1647302344,
+                "end": 1647302477
+            }
+        ],
+        "sml_rock": [
+            {
+                "path": "data/2022-03-15/2022-03-15-10-15-27.bddf",
+                "start": 1647357329,
+                "end": 1647357747
+            },
+            {
+                "path": "data/2022-03-15/2022-03-15-10-24-31.bddf",
+                "start": 1647357872,
+                "end": 1647358323
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "concrete",
+            "second": "sml_rock",
+            "label": -1
+        }
+    ]
+}
