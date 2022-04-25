@@ -62,6 +62,11 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
         MAX_COST = 2.0
         for row in range(0, view.shape[0], PATCH_SIZE):
             patch_y = np.s_[row : min(view.shape[0], row + PATCH_SIZE)]
+
+            # Compute each row as a batch to increase throughput
+            patch_slices = []
+            patch_imgs = []
+
             for col in range(0, view.shape[1], PATCH_SIZE):
                 patch_x = np.s_[col : min(view.shape[1], col + PATCH_SIZE)]
                 patch = torch.from_numpy(view[patch_y, patch_x])[None, ...]
@@ -70,7 +75,18 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
                 if patch.shape[1] < 16 or patch.shape[2] < 16 or 0 in patch:
                     continue
 
-                cost: float = cost_model.get_cost(patch).squeeze().item()
+                patch_slices.append(patch_x)
+                patch_imgs.append(patch)
+
+            if len(patch_imgs) == 0:
+                continue
+
+            costs = cost_model.get_cost(torch.cat(patch_imgs))
+
+            for i in range(len(patch_slices)):
+                patch_x = patch_slices[i]
+
+                cost = costs[i]
 
                 # color map:
                 # gradient:
@@ -78,7 +94,6 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
                 #   dark = low cost
                 red = cost / MAX_COST
                 red = np.clip(red, 0.0, 1.0)
-
                 cost_view[patch_y, patch_x, 2] = int(red * 255)
 
         view = cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
