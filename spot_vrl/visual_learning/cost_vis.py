@@ -60,29 +60,26 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
 
         PATCH_SIZE = 60
         MAX_COST = 2.0
-        for row in range(0, cost_view.shape[0], PATCH_SIZE):
-            patch_y = np.s_[row : min(cost_view.shape[0], row + PATCH_SIZE)]
-            for col in range(0, cost_view.shape[1], PATCH_SIZE):
-                patch_x = np.s_[col : min(cost_view.shape[1], col + PATCH_SIZE)]
+        for row in range(0, view.shape[0], PATCH_SIZE):
+            patch_y = np.s_[row : min(view.shape[0], row + PATCH_SIZE)]
+            for col in range(0, view.shape[1], PATCH_SIZE):
+                patch_x = np.s_[col : min(view.shape[1], col + PATCH_SIZE)]
                 patch = torch.from_numpy(view[patch_y, patch_x])[None, ...]
 
                 # TODO: find actual min size limits based on kernel sizes
-                if patch.shape[1] < 16 or patch.shape[2] < 16:
+                if patch.shape[1] < 16 or patch.shape[2] < 16 or 0 in patch:
                     continue
 
                 cost: float = cost_model.get_cost(patch).squeeze().item()
 
-                if cost < 1:
-                    logger.debug(cost)
-
                 # color map:
                 # gradient:
-                #   bright green = low cost
-                #   dark = high cost
-                green = (MAX_COST - cost) / MAX_COST
-                green = np.clip(green, 0.0, 1.0)
+                #   bright red = high cost
+                #   dark = low cost
+                red = cost / MAX_COST
+                red = np.clip(red, 0.0, 1.0)
 
-                cost_view[patch_y, patch_x, 1] = int(green * 255)
+                cost_view[patch_y, patch_x, 2] = int(red * 255)
 
         view = cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
         view = np.vstack((view, cost_view))
