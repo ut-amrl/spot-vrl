@@ -100,6 +100,10 @@ class FullPairCostNet(nn.Module):
         self.triplet_net = triplet_net
         self.cost_net = cost_net
 
+    def get_cost(self, patch: torch.Tensor) -> torch.Tensor:
+        embed = self.triplet_net.get_embedding(patch)
+        return self.cost_net(embed)  # type: ignore
+
     def forward(
         self, x: torch.Tensor, y: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
