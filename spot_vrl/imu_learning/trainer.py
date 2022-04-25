@@ -9,6 +9,7 @@ from spot_vrl.imu_learning.datasets import (
     Triplet,
 )
 from spot_vrl.imu_learning.network import TripletNet
+from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
@@ -66,13 +67,12 @@ def fit(
     model: TripletNet,
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
     tb_writer: SummaryWriter,
     embedder: Optional[EmbeddingGenerator] = None,
-    start_epoch: int = 0,
 ) -> None:
     """
     Loaders, model, loss function and metrics should work together for a given task,
@@ -83,12 +83,8 @@ def fit(
     Siamese network: Siamese loader, siamese model, contrastive loss
     Online triplet learning: batch loader, embedding model, online triplet loss
     """
-    for epoch in range(0, start_epoch):
-        scheduler.step()
-
-    pbar = tqdm.tqdm(range(start_epoch, n_epochs), desc="Training")
+    pbar = tqdm.tqdm(range(n_epochs), desc="Training")
     for epoch in pbar:
-        # Train stage
         train_loss = train_epoch(
             train_loader,
             model,
@@ -100,25 +96,17 @@ def fit(
             model.state_dict(),
             os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
         )
-        message = "Epoch: {}/{}. Train set: Average loss: {:.4f}".format(
-            epoch + 1, n_epochs, train_loss
-        )
 
         val_loss = test_epoch(val_loader, model, loss_fn, device)
-        val_loss /= len(val_loader)
 
-        message += "\nEpoch: {}/{}. Validation set: Average loss: {:.4f}".format(
-            epoch + 1, n_epochs, val_loss
-        )
-        tb_writer.add_scalar("train_loss", train_loss, epoch)  # type: ignore
-        tb_writer.add_scalar("val_loss", val_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore
+        tb_writer.add_scalar("valid/loss", val_loss, epoch)  # type: ignore
 
-        if embedder is not None:
+        if embedder is not None and (epoch + 1) % 10 == 0:
             embedder.write(model, epoch)
 
         pbar.clear()
-        print(message)
-        scheduler.step()
+        scheduler.step(val_loss)
 
 
 def train_epoch(
@@ -130,37 +118,20 @@ def train_epoch(
 ) -> float:
     model.train()
     losses = []
-    total_loss = 0.0
 
-    for batch_idx, data in enumerate(train_loader):
-        if not type(data) in (tuple, list):
-            data = (data,)
-
-        data = tuple(d.to(device) for d in data)
+    triplet: Triplet
+    for triplet in train_loader:
+        triplet = tuple(t.to(device) for t in triplet)  # type: ignore
 
         optimizer.zero_grad()
-        outputs = model(data)
+        embeddings: Triplet = model(triplet)
 
-        if type(outputs) not in (tuple, list):
-            if outputs.shape[1] == 1:
-                outputs = outputs.squeeze()
-            outputs = (outputs,)
-
-        loss_inputs = outputs
-
-        loss_outputs = loss_fn(*loss_inputs)
-        loss = (
-            torch.sum(torch.stack(loss_outputs))
-            if type(loss_outputs) in (tuple, list)
-            else loss_outputs
-        )
+        loss: Tensor = loss_fn(*embeddings)
         losses.append(loss.item())
-        total_loss += loss.item()
-        loss.backward()
+        loss.backward()  # type: ignore
         optimizer.step()
 
-    total_loss /= batch_idx + 1
-    return total_loss
+    return sum(losses) / len(losses)
 
 
 def test_epoch(
@@ -169,29 +140,16 @@ def test_epoch(
     loss_fn: torch.nn.TripletMarginLoss,
     device: torch.device,
 ) -> float:
+    model.eval()
+    losses = []
+
     with torch.no_grad():  # type: ignore
-        model.eval()
-        val_loss = 0.0
-        for batch_idx, data in enumerate(val_loader):
-            if not type(data) in (tuple, list):
-                data = (data,)
+        triplet: Triplet
+        for triplet in val_loader:
+            triplet = tuple(t.to(device) for t in triplet)  # type: ignore
 
-            data = tuple(d.to(device) for d in data)
+            embeddings: Triplet = model(triplet)
+            loss: Tensor = loss_fn(*embeddings)
+            losses.append(loss.item())
 
-            outputs = model(data)
-
-            if type(outputs) not in (tuple, list):
-                if outputs.shape[1] == 1:
-                    outputs = outputs.squeeze()
-                outputs = (outputs,)
-            loss_inputs = outputs
-
-            loss_outputs = loss_fn(*loss_inputs)
-            loss = (
-                torch.sum(torch.stack(loss_outputs))
-                if type(loss_outputs) in (tuple, list)
-                else loss_outputs
-            )
-            val_loss += loss.item()
-
-    return val_loss
+    return sum(losses) / len(losses)

@@ -1,10 +1,11 @@
 import json
 import os
 import pickle
+import random
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Sequence, Tuple, Union, Optional
+from typing import Any, ClassVar, Dict, List, Sequence, Set, Tuple, Union, Optional
 
 import cv2
 import numpy as np
@@ -330,3 +331,63 @@ class TripletHoldoutDataset(BaseTripletDataset):
     def __len__(self) -> int:
         """Prevent this class from being used for training."""
         return 0
+
+
+class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]]):
+    def __init__(self, spec: Union[str, Path]) -> None:
+        self.triplet_dataset = TripletTrainingDataset()
+        self.orderings: Dict[Tuple[str, str], float] = {}
+
+        self.triplet_dataset.init_from_json(spec)
+
+        with open(spec) as f:
+            seen_categories: Set[str] = set()
+
+            # TODO: check for transitivity
+            for order in json.load(f)["orderings"]:
+                first: str = order["first"]
+                second: str = order["second"]
+                label: float = float(order["label"])
+
+                if first not in self.triplet_dataset._categories:
+                    logger.error(f"({spec}): {first} not in categories set")
+                    raise ValueError
+
+                if second not in self.triplet_dataset._categories:
+                    logger.error(f"({spec}): {second} not in categories set")
+                    raise ValueError
+
+                if first == second:
+                    logger.error(f"({spec}): first==second")
+                    raise ValueError
+
+                if label not in (1.0, -1.0, 0.0):
+                    logger.error(f"({spec}): label number {label} not in (-1, 0, or 1)")
+                    raise ValueError
+
+                if self.orderings.setdefault((first, second), label) != label:
+                    logger.error(f"({spec}): ordering mismatch for ({first}, {second})")
+                    raise ValueError
+
+                if self.orderings.get((second, first), -label) != -label:
+                    logger.error(f"({spec}): ordering mismatch for ({second}, {first})")
+                    raise ValueError
+
+                seen_categories.add(first)
+                seen_categories.add(second)
+
+            for category in self.triplet_dataset._categories.keys():
+                self.orderings[(category, category)] = 0.0
+
+            if seen_categories != set(self.triplet_dataset._categories.keys()):
+                logger.error(f"({spec}): orderings do not contain all categories")
+
+    def __len__(self) -> int:
+        return len(self.triplet_dataset)
+
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, float]:
+        (first_cat, second_cat), label = random.choice(tuple(self.orderings.items()))
+        first_t = self.triplet_dataset._get_random_datum((first_cat,))[0]
+        second_t = self.triplet_dataset._get_random_datum((second_cat,))[0]
+
+        return first_t, second_t, label
