@@ -41,8 +41,6 @@ class EmbeddingNet(nn.Module):
             # 64x15x15
             self.ConvBlock(64, 128, 5),
             # 128 x 7 x 7
-            nn.AvgPool2d(7),
-            # 128 x 1 x 1
         )
 
         self.fc = nn.Linear(128, embedding_dim)
@@ -52,7 +50,7 @@ class EmbeddingNet(nn.Module):
         # TODO: do input scaling outside of network?
         x = x[:, None, :, :].float() / 255
         output: torch.Tensor = self.convnet(x)
-        output = output.squeeze()
+        output = output.mean(dim=(2, 3))
         output = self.fc(output)
         return F.normalize(output, p=2, dim=1)
 
