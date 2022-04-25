@@ -33,6 +33,7 @@ def load_cost_model(path: Path, embedding_dim: int) -> FullPairCostNet:
         strict=True,
     )
     cost_model.requires_grad_(False)
+    cost_model.eval()
     return cost_model
 
 
