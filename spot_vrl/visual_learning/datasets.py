@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import tqdm
 from loguru import logger
+from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data import ImuData, ImageData
@@ -88,16 +89,21 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             first_tform_odom = np.linalg.inv(poses[0])
 
             resolution = 150
-            origin_y = 334
-            origin_x = 383
+            horizon_dist = 4.0
+            # The center of the 60x60 patch with this top-left coordinate is
+            # (0,0) in the body frame. Using this coordinate as the first patch
+            # causes the first few patches in each subtrajectory to contain pixels
+            # that are out of view (channel == 0).
+            origin_y = 866
+            origin_x = 732
 
             front_images = [img for img in images if "front" in img.frame_name]
-            td = TopDown(front_images, GROUND_TFORM_BODY).get_view(resolution)
+            td = TopDown(front_images, GROUND_TFORM_BODY).get_view(
+                resolution, horizon_dist
+            )
 
-            patch_slice = np.s_[origin_y : origin_y + 60, origin_x : origin_x + 60]
-            self.patches[i][i] = torch.from_numpy(td[patch_slice].copy())
-            fwd_patches[i][i] = patch_slice
-
+            total_dist = np.float64(0)
+            last_odom_pose = poses[0]
             for j in range(i, len(img_data)):
                 jmg_ts, _ = img_data[j]
 
@@ -108,7 +114,19 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                     imu_data.tforms("odom", "body"), jmg_ts
                 )
                 disp = first_tform_odom @ poses[0]
-                dist = np.linalg.norm(disp[:2, 3])
+
+                inst_odom_disp = np.linalg.inv(last_odom_pose) @ poses[0]
+                total_dist += np.linalg.norm(inst_odom_disp[:2, 3])
+                last_odom_pose = poses[0]
+
+                if total_dist > horizon_dist:
+                    break
+
+                # Odometry suffers from inaccuracies when turning. Truncate the
+                # subtrajectory if the robot turned more than 90 degrees.
+                yaw = Rotation.from_matrix(disp[:3, :3]).as_euler("ZXY")[0]
+                if abs(yaw) > np.pi / 2:
+                    break
 
                 disp_x = disp[0, 3]
                 disp_y = disp[1, 3]
@@ -117,11 +135,15 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 tl_x = origin_x - int(disp_y * resolution)
                 tl_y = origin_y - int(disp_x * resolution)
                 patch_slice = np.s_[tl_y : tl_y + 60, tl_x : tl_x + 60]
-                self.patches[j][i] = torch.from_numpy(td[patch_slice].copy())
-                fwd_patches[i][j] = patch_slice
 
-                if dist > 1.25:
-                    break
+                # Filter out patches that contain out-of-view areas
+                try:
+                    patch = torch.from_numpy(td[patch_slice].copy())
+                    if (patch != 0).all():
+                        self.patches[j][i] = patch
+                        fwd_patches[i][j] = patch_slice
+                except IndexError:
+                    pass
 
             if video_writer is not None:
                 td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)
