@@ -53,6 +53,7 @@ class SynchronizedData:
         """
 
         imu_container = ImuData(filename)
+        self.imu_container = imu_container
         image_container = ImageData(filename, lazy=True)
 
         image_timestamp: np.float64

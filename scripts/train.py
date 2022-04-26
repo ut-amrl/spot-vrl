@@ -70,7 +70,8 @@ class CustomDataset(Dataset):
 		angular_velocity = self.data[idx]['angular_velocity'][-26:, [0, 1]].flatten()
 		foot_depth_sensor = self.data[idx]['depth_info'][-26:, :].flatten()
 
-		inertial_data = np.hstack((linear_velocity, angular_velocity, foot_depth_sensor, joint_positions, joint_velocities, joint_accelerations))
+		# inertial_data = np.hstack((linear_velocity, angular_velocity, foot_depth_sensor, joint_positions, joint_velocities, joint_accelerations))
+		inertial_data = np.hstack((linear_velocity, angular_velocity, joint_positions, joint_velocities, joint_accelerations))
 		inertial_data = np.expand_dims(inertial_data, axis=0)
 
 		# randomize the inertial data
@@ -102,7 +103,7 @@ class MyDataLoader(pl.LightningDataModule):
 		tmp_list = np.asarray(tmp_list)
 		self.mean = np.mean(tmp_list, axis=0)
 		self.std = np.std(tmp_list, axis=0)
-		self.inertial_shape = self.mean.shape[1] if len(self.mean.shape) > 1 else 1
+		self.inertial_shape = self.mean.shape[1]
 		print('Inertial shape:', self.inertial_shape)
 		print('Data statistics have been found.')
 		del tmp, tmp_list
@@ -174,6 +175,31 @@ class BarlowModel(pl.LightningModule):
 		# normalization layer for the representations z1 and z2
 		self.bn = nn.BatchNorm1d(latent_size, affine=False)
 
+	# def forward(self, visual_patch, imu_history):
+	#
+	# 	# normalize inertial data
+	# 	device = imu_history.device
+	# 	imu_history = (imu_history - self.mean.to(device)) / (self.std.to(device) + 1e-8)
+	#
+	# 	z1 = self.projector(self.visual_encoder(visual_patch))
+	# 	z2 = self.projector(self.inertial_encoder(imu_history))
+	#
+	# 	# empirical cross-correlation matrix
+	# 	c = self.bn(z1).T @ self.bn(z2)
+	#
+	# 	# sum the cross-correlation matrix between all gpus
+	# 	c.div_(self.per_device_batch_size * self.trainer.num_processes)
+	# 	self.all_reduce(c)
+	#
+	# 	# use --scale-loss to multiply the loss by a constant factor
+	# 	# In order to match the code that was used to develop Barlow Twins,
+	# 	# the authors included an additional parameter, --scale-loss,
+	# 	# that multiplies the loss by a constant factor.
+	# 	on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
+	# 	off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
+	# 	loss = on_diag + self.lambd * off_diag #+ 1e-3*torch.mean((z1 - z2)**2)
+	# 	return loss
+
 	def forward(self, visual_patch, imu_history):
 
 		# normalize inertial data
@@ -183,21 +209,45 @@ class BarlowModel(pl.LightningModule):
 		z1 = self.projector(self.visual_encoder(visual_patch))
 		z2 = self.projector(self.inertial_encoder(imu_history))
 
+		# z1 = self.bn(z1)
+		# z2 = self.bn(z2)
+
 		# empirical cross-correlation matrix
 		c = self.bn(z1).T @ self.bn(z2)
 
-		# sum the cross-correlation matrix between all gpus
-		c.div_(self.per_device_batch_size * self.trainer.num_processes)
-		self.all_reduce(c)
+		# z1 = z1 / z1.norm(dim=1, keepdim=True)
+		# z2 = z2 / z2.norm(dim=1, keepdim=True)
+		#
+		# c1 = z1 @ z1.T
+		# c2 = z2 @ z2.T
 
-		# use --scale-loss to multiply the loss by a constant factor
-		# In order to match the code that was used to develop Barlow Twins,
-		# the authors included an additional parameter, --scale-loss,
-		# that multiplies the loss by a constant factor.
+		c1b = self.bn(z1.T).T @ self.bn(z1.T)
+		c2b = self.bn(z2.T).T @ self.bn(z2.T)
+
+		c1 = self.bn(z1).T @ self.bn(z1)
+		c2 = self.bn(z2).T @ self.bn(z2)
+
+		# sum the cross-correlation matrix between all gpus
+		c.div_(self.per_device_batch_size  * self.trainer.num_processes)
+		c1.div_(self.per_device_batch_size * self.trainer.num_processes)
+		c2.div_(self.per_device_batch_size * self.trainer.num_processes)
+		c1b.div_(self.per_device_batch_size * self.trainer.num_processes)
+		c2b.div_(self.per_device_batch_size * self.trainer.num_processes)
+		self.all_reduce(c)
+		self.all_reduce(c1)
+		self.all_reduce(c2)
+		self.all_reduce(c1b)
+		self.all_reduce(c2b)
+
 		on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
 		off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
-		loss = on_diag + self.lambd * off_diag #+ 1e-3*torch.mean((z1 - z2)**2)
-		return loss
+		# off_diag_match = (self.off_diagonal(c1) - self.off_diagonal(c2)).pow_(2).sum().mul(self.scale_loss)
+		off_diag_match_loss = (c1b - c2b).pow_(2).sum()
+		off_diag_IV_loss = self.off_diagonal(c2).pow_(2).sum().mul(self.scale_loss) #+ self.off_diagonal(c1).pow_(2).sum().mul(self.scale_loss)
+
+		loss = on_diag + self.lambd * off_diag_IV_loss + self.lambd * off_diag_match_loss
+
+		return loss, on_diag, self.lambd * off_diag_IV_loss, self.lambd * off_diag_match_loss
 
 	def off_diagonal(self, x):
 		# return a flattened view of the off-diagonal elements of a square matrix
@@ -211,18 +261,23 @@ class BarlowModel(pl.LightningModule):
 
 	def common_step(self, batch, batch_idx):
 		visual, inertial, _ = batch
-		loss = self(visual, inertial)
-		return loss
+		return self(visual, inertial)
 
 	def training_step(self, batch, batch_idx):
-		loss = self.common_step(batch, batch_idx)
+		loss, on_diag, off_diag, off_diag_match_loss = self.common_step(batch, batch_idx)
 		self.log('train_loss', loss, prog_bar=True, logger=True)
+		self.log('train_on_diag', on_diag, prog_bar=True, logger=True)
+		self.log('train_off_diag', off_diag, prog_bar=True, logger=True)
+		self.log('train_off_diag_match_loss', off_diag_match_loss, prog_bar=True, logger=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
 		with torch.no_grad():
-			loss = self.common_step(batch, batch_idx)
+			loss, on_diag, off_diag, off_diag_match_loss = self.common_step(batch, batch_idx)
 		self.log('val_loss', loss, prog_bar=True, logger=True)
+		self.log('val_on_diag', on_diag, prog_bar=True, logger=True)
+		self.log('val_off_diag', off_diag, prog_bar=True, logger=True)
+		self.log('val_off_diag_match_loss', off_diag_match_loss, prog_bar=True, logger=True)
 
 	# def configure_optimizers(self):
 	# 	optimizer = LARS(
@@ -251,6 +306,10 @@ class BarlowModel(pl.LightningModule):
 
 	def configure_optimizers(self):
 		return torch.optim.SGD(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+		# opt_v_i = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+		# opt_v = torch.optim.AdamW(list(self.projector.parameters()) + list(self.visual_encoder.parameters()),
+		# 						  lr=self.lr/10., weight_decay=self.weight_decay)
+		# return [opt_v_i, opt_v], []
 
 	def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
 		if self.current_epoch % 10 == 0:
@@ -304,7 +363,7 @@ if __name__ == '__main__':
 	parser.add_argument('--epochs', type=int, default=1000, metavar='N',
 						help='number of epochs to train (default: 100)')
 	parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
-						help='learning rate (default: 0.001)')
+						help='learning rate (default: 3e-4)')
 	parser.add_argument('--data_dir', type=str, default='data/', metavar='N',
 						help='data directory (default: data)')
 	parser.add_argument('--log_dir', type=str, default='logs/', metavar='N',
@@ -332,7 +391,6 @@ if __name__ == '__main__':
 						 max_epochs=args.epochs,
 						 callbacks=[model_checkpoint_cb],
 						 log_every_n_steps=10,
-						 precision=16,
 						 distributed_backend='ddp',
 						 num_sanity_val_steps=-1,
 						 logger=True,

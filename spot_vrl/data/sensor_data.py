@@ -116,6 +116,11 @@ class ImuData:
                 odom_vel.angular.z,
             )
 
+            # Rotate the odometry velocities into the robot frame
+            body_tform_odom = proto_to_numpy.body_tform_frame(self.tf_tree, "odom")
+            self.linear_vel = body_tform_odom[:3, :3] @ self.linear_vel
+            self.angular_vel = body_tform_odom[:3, :3] @ self.angular_vel
+
             feet_in_contact = 0
             for foot in robot_state.foot_state:
                 if foot.contact != FootState.CONTACT_MADE:
