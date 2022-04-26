@@ -17,7 +17,9 @@ class TopDown:
         self.spot_images = spot_images
         self.ground_tform_body = ground_tform_body
 
-    def get_view(self, resolution: int = 100) -> npt.NDArray[np.uint8]:
+    def get_view(
+        self, resolution: int = 100, horizon_dist: float = 2.0
+    ) -> npt.NDArray[np.uint8]:
         """Generate a top-down view of the ground around the robot.
 
         The image is oriented such that:
@@ -43,7 +45,7 @@ class TopDown:
                 spot_image.camera_matrix,
                 spot_image.width,
                 spot_image.height,
-                horizon_dist=2,
+                horizon_dist=horizon_dist,
             )
 
         view_limits = np.zeros((2, 2))  # min, max as xy row vectors
