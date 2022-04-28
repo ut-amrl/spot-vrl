@@ -1,3 +1,4 @@
+import abc
 from pathlib import Path
 from typing import ClassVar, Dict, Iterator, List, Tuple, Union, overload
 
@@ -12,6 +13,63 @@ from loguru import logger
 
 from spot_vrl.data import proto_to_numpy
 from spot_vrl.homography import camera_transform
+
+
+class CameraImage(abc.ABC):
+    """Base class for single images and associated camera metadata necessary
+    for transforms."""
+
+    @abc.abstractmethod
+    def decoded_image(self) -> npt.NDArray[np.uint8]:
+        """Decodes the raw data buffer as an image.
+
+        The number of channels is dependent on the camera type:
+            - Spot Camera: 1 channel (squeezed)
+            - Kinect Camera: 3 channels (BGR order)
+
+        Returns:
+            npt.NDArray[np.uint8]: An image matrix of size
+                (self.height, self.width) or (self.height, self.width, 3)
+        """
+
+    @abc.abstractmethod
+    def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
+        """Removes the sky from the image.
+
+        Pixels with the value 0 in the original image (which are generally quite
+        rare) are set to 1. Sky pixels are then "cleared" by setting their
+        values to 0.
+
+        Returns:
+            npt.NDArray[np.uint8]: An image matrix of size
+                (self.height, self.width) or (self.height, self.width, 3)
+                containing the visible ground plane.
+        """
+
+    @property
+    @abc.abstractmethod
+    def height(self) -> int:
+        """The height of this image."""
+
+    @property
+    @abc.abstractmethod
+    def width(self) -> int:
+        """The width of this image."""
+
+    @property
+    @abc.abstractmethod
+    def frame_name(self) -> str:
+        """The name of the frame for this camera."""
+
+    @property
+    @abc.abstractmethod
+    def body_tform_camera(self) -> npt.NDArray[np.float64]:
+        """The 4x4 Affine3D pose of this camera in the body frame."""
+
+    @property
+    @abc.abstractmethod
+    def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
+        """The 3x3 intrinsic matrix of this camera."""
 
 
 class SpotImage:
