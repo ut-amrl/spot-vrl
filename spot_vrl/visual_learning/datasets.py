@@ -138,14 +138,12 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 tl_y = origin_y - int(disp_x * resolution)
                 patch_slice = np.s_[tl_y : tl_y + 60, tl_x : tl_x + 60]
 
+                patch = torch.from_numpy(td[patch_slice].copy())
+
                 # Filter out patches that contain out-of-view areas
-                try:
-                    patch = torch.from_numpy(td[patch_slice].copy())
-                    if (patch != 0).all():
-                        self.patches[j][i] = patch
-                        fwd_patches[i][j] = patch_slice
-                except IndexError:
-                    pass
+                if patch.shape == (60, 60) and (patch != 0).all():
+                    self.patches[j][i] = patch
+                    fwd_patches[i][j] = patch_slice
 
             if video_writer is not None:
                 td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)

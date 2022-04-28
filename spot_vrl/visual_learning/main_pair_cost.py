@@ -135,7 +135,7 @@ def train_epoch(
         cost2: Tensor
         cost1, cost2 = model(t1, t2)
 
-        loss = loss_fn(cost1.squeeze(), cost2.squeeze(), label)
+        loss = loss_fn(cost1.squeeze(dim=1), cost2.squeeze(dim=1), label)
         losses.append(loss.item())
         loss.backward()
         optimizer.step()
@@ -165,7 +165,7 @@ def test_epoch(
             cost2: Tensor
             cost1, cost2 = model(t1, t2)
 
-            loss = loss_fn(cost1.squeeze(), cost2.squeeze(), label)
+            loss = loss_fn(cost1.squeeze(dim=1), cost2.squeeze(dim=1), label)
             losses.append(loss.item())
 
     return sum(losses) / len(losses)
