@@ -14,6 +14,8 @@ from loguru import logger
 from scipy.spatial.transform.rotation import Rotation
 
 if sys.platform == "linux":
+    import rospy
+    import rosbag
     from sensor_msgs.msg import CompressedImage
 
 from spot_vrl.data import proto_to_numpy
@@ -337,92 +339,37 @@ class KinectImage(CameraImage):
         return self._ts
 
 
-class ImageData:
+class ImageData(abc.ABC):
     """Iterable storage container for visual Spot data.
 
     The return type for all indexing operations is a tuple containing:
         - [0] np.float64: A unix timestamp.
         - [1] List[CameraImage]: A list of images corresponding to the timestamp.
-
-    The returned timestamp is the timestamp stored in the GetImageResponse
-    message from the robot. The response timestamp was chosen because the actual
-    capture timestamps of the individual images may be different from one
-    another. The response timestamp will be at least several milliseconds
-    greater than the actual image capture timestamps.
-
-    This class has an option to load images lazily to reduce memory use.
-    Indexing with slices is not supported when lazy loading.
-
-    This class assumes the GetImageResponses stored in the BDDF file are sorted
-    by ascending timestamp. Our data collection stack should enforce ordering,
-    but arbitrary BDDF files may not necessarily be ordered.
     """
 
     def __init__(self, filename: Union[str, Path], lazy: bool = False) -> None:
-        """
-        Args:
-            filename (str | Path): Path to a BDDF file.
-            lazy (bool): Whether to load images lazily to reduce memory use.
-        """
         self._lazy = lazy
+        self._path = Path(filename)
 
         # If `self._lazy` is True, these will remain empty.
         self._timestamps: npt.NDArray[np.float64] = np.empty(0, dtype=np.float64)
         self._images: List[List[CameraImage]] = []
 
-        self._path = Path(filename)
-        self._data_reader = DataReader(None, str(self._path))
-        self._proto_reader = ProtobufReader(self._data_reader)
+    @classmethod
+    def factory(cls, filename: Union[str, Path], lazy: bool = False) -> "ImageData":
+        """Dispatch construction to subclass based on extension."""
+        path = Path(filename)
+        if path.suffix == ".bddf":
+            return SpotImageData(filename, lazy)
+        elif path.suffix == ".bag":
+            return KinectImageData(filename)
+        else:
+            logger.error(f"Unrecognized file format ({path.suffix}).")
+            raise ValueError
 
-        # Store various low-level BDDF properties.
-        self._series_index: int = self._proto_reader.series_index(
-            "bosdyn.api.GetImageResponse"
-        )
-        self._series_block_index: SeriesBlockIndex = (
-            self._data_reader.series_block_index(self._series_index)
-        )
-        self._num_msgs = len(self._series_block_index.block_entries)
-
-        if not self._lazy:
-            self._timestamps = np.empty(self._num_msgs, dtype=np.float64)
-            for msg_idx in range(len(self)):
-                ts_sec, images = self._read_index(msg_idx)
-                self._timestamps[msg_idx] = ts_sec
-                self._images.append(images)
-
-    def _read_index(self, idx: int) -> Tuple[np.float64, List[CameraImage]]:
-        """Reads and deconstructs a GetImageResponse from the BDDF file.
-
-        Args:
-            idx (int): The index of the GetImageResponse to read. Supports
-                negative indices.
-
-        Returns:
-            Tuple[np.float64, List[CameraImage]]: A tuple containing the unix
-                timestamp of the response message and a list of CameraImage
-                objects.
-
-        Raises:
-            IndexError: The specified index is out of bounds.
-        """
-        if idx < 0:
-            idx += len(self)
-        if idx < 0 or idx >= len(self):
-            raise IndexError
-
-        _, _, response = self._proto_reader.get_message(
-            self._series_index, GetImageResponse, idx
-        )
-        header_ts = response.header.response_timestamp
-
-        ts_sec = float(header_ts.seconds) + header_ts.nanos * 1e-9
-        images: List[CameraImage] = []
-        for image_response in response.image_responses:
-            images.append(SpotImage(image_response))
-        return ts_sec, images
-
+    @abc.abstractmethod
     def __len__(self) -> int:
-        return self._num_msgs
+        ...
 
     @overload
     def __getitem__(self, idx: int) -> Tuple[np.float64, List[CameraImage]]:
@@ -448,16 +395,9 @@ class ImageData:
                 The class is set to lazy mode.
         """
 
+    @abc.abstractmethod
     def __getitem__(self, idx):  # type: ignore
-        if self._lazy:
-            if type(idx) == int:
-                return self._read_index(idx)
-            else:
-                raise RuntimeError(
-                    "Indexing with slices is not supported in lazy mode."
-                )
-        else:
-            return self._timestamps[idx], self._images[idx]
+        ...
 
     class _Iterator(Iterator[Tuple[np.float64, List[CameraImage]]]):
         def __init__(self, container: "ImageData") -> None:
@@ -516,3 +456,122 @@ class ImageData:
         if start_i == end_i:
             logger.warning("Returning empty arrays.")
         return self[start_i:end_i]
+
+
+class SpotImageData(ImageData):
+    """Iterable storage container for visual Spot data.
+
+    The return type for all indexing operations is a tuple containing:
+        - [0] np.float64: A unix timestamp.
+        - [1] List[CameraImage]: A list of images corresponding to the timestamp.
+
+    The returned timestamp is the timestamp stored in the GetImageResponse
+    message from the robot. The response timestamp was chosen because the actual
+    capture timestamps of the individual images may be different from one
+    another. The response timestamp will be at least several milliseconds
+    greater than the actual image capture timestamps.
+
+    This class has an option to load images lazily to reduce memory use.
+    Indexing with slices is not supported when lazy loading.
+
+    This class assumes the GetImageResponses stored in the BDDF file are sorted
+    by ascending timestamp. Our data collection stack should enforce ordering,
+    but arbitrary BDDF files may not necessarily be ordered.
+    """
+
+    def __init__(self, filename: Union[str, Path], lazy: bool = False) -> None:
+        """
+        Args:
+            filename (str | Path): Path to a BDDF file.
+            lazy (bool): Whether to load images lazily to reduce memory use.
+        """
+        super().__init__(filename, lazy)
+
+        self._data_reader = DataReader(None, str(self._path))
+        self._proto_reader = ProtobufReader(self._data_reader)
+
+        # Store various low-level BDDF properties.
+        self._series_index: int = self._proto_reader.series_index(
+            "bosdyn.api.GetImageResponse"
+        )
+        self._series_block_index: SeriesBlockIndex = (
+            self._data_reader.series_block_index(self._series_index)
+        )
+        self._num_msgs = len(self._series_block_index.block_entries)
+
+        if not self._lazy:
+            self._timestamps = np.empty(self._num_msgs, dtype=np.float64)
+            for msg_idx in range(len(self)):
+                ts_sec, images = self._read_index(msg_idx)
+                self._timestamps[msg_idx] = ts_sec
+                self._images.append(images)
+
+    def _read_index(self, idx: int) -> Tuple[np.float64, List[CameraImage]]:
+        """Reads and deconstructs a GetImageResponse from the BDDF file.
+
+        Args:
+            idx (int): The index of the GetImageResponse to read. Supports
+                negative indices.
+
+        Returns:
+            Tuple[np.float64, List[CameraImage]]: A tuple containing the unix
+                timestamp of the response message and a list of CameraImage
+                objects.
+
+        Raises:
+            IndexError: The specified index is out of bounds.
+        """
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError
+
+        _, _, response = self._proto_reader.get_message(
+            self._series_index, GetImageResponse, idx
+        )
+        header_ts = response.header.response_timestamp
+
+        ts_sec = float(header_ts.seconds) + header_ts.nanos * 1e-9
+        images: List[CameraImage] = []
+        for image_response in response.image_responses:
+            images.append(SpotImage(image_response))
+        return ts_sec, images
+
+    def __len__(self) -> int:
+        return self._num_msgs
+
+    def __getitem__(self, idx):  # type: ignore
+        if self._lazy:
+            if type(idx) == int:
+                return self._read_index(idx)
+            else:
+                raise RuntimeError(
+                    "Indexing with slices is not supported in lazy mode."
+                )
+        else:
+            return self._timestamps[idx], self._images[idx]
+
+
+class KinectImageData(ImageData):
+    def __init__(self, filename: Union[str, Path]) -> None:
+        super().__init__(filename, False)
+
+        bag = rosbag.Bag(str(self._path))
+
+        topic: str
+        msg: CompressedImage
+        ts: rospy.Time  # hmm does this match the KinectImage time?
+        for topic, msg, ts in bag.read_messages(
+            topics="/camera/rgb/image_raw/compressed"
+        ):
+            self._images.append([KinectImage(msg)])
+
+        self._timestamps = np.array(
+            [img_list[0].timestamp for img_list in self._images], dtype=np.float64
+        )
+
+    def __len__(self) -> int:
+        return len(self._images)
+
+    def __getitem__(self, idx):  # type: ignore
+        return self._timestamps[idx], self._images[idx]
