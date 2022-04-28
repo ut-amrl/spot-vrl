@@ -42,7 +42,7 @@ class TopDown:
                 spot_image.frame_name
             ] = camera_transform.visible_ground_plane_limits(
                 ground_tform_camera,
-                spot_image.camera_matrix,
+                spot_image.intrinsic_matrix,
                 spot_image.width,
                 spot_image.height,
                 horizon_dist=horizon_dist,
@@ -70,7 +70,7 @@ class TopDown:
             # Calculate the source image coordinates of this camera's ground
             # plane limits.
             limits_source_coords = camera_transform.ground_to_image(
-                plane_limits, camera_tform_ground, spot_image.camera_matrix
+                plane_limits, camera_tform_ground, spot_image.intrinsic_matrix
             )
 
             # Calculate the output image coordinates of this camera's ground

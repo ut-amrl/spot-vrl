@@ -72,7 +72,7 @@ class CameraImage(abc.ABC):
         """The 3x3 intrinsic matrix of this camera."""
 
 
-class SpotImage:
+class SpotImage(CameraImage):
     _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
     """Cache for the image mask of the sky for each camera.
 
@@ -96,17 +96,17 @@ class SpotImage:
             image.pixel_format == image_pb2.Image.PixelFormat.PIXEL_FORMAT_GREYSCALE_U8
         )
 
-        self.frame_name = image_capture.frame_name_image_sensor
-        self.body_tform_camera = proto_to_numpy.body_tform_frame(
+        self._frame_name: str = image_capture.frame_name_image_sensor
+        self._body_tform_camera = proto_to_numpy.body_tform_frame(
             image_capture.transforms_snapshot, self.frame_name
         )
-        self.camera_matrix = proto_to_numpy.camera_intrinsic_matrix(image_source)
-        self.width = image.cols
-        self.height = image.rows
-        self.imgbuf: npt.NDArray[np.uint8] = np.frombuffer(image.data, dtype=np.uint8)
+        self._intrinsic_matrix = proto_to_numpy.camera_intrinsic_matrix(image_source)
+        self._width: int = image.cols
+        self._height: int = image.rows
+        self._imgbuf: npt.NDArray[np.uint8] = np.frombuffer(image.data, dtype=np.uint8)
 
     def decoded_image(self) -> npt.NDArray[np.uint8]:
-        """Decodes the raw bytes stored in self.imgbuf as an image.
+        """Decodes the raw data buffer as an image.
 
         Assumes the image is grayscale.
 
@@ -114,7 +114,7 @@ class SpotImage:
             npt.NDArray[np.uint8]: A 2D matrix of size (self.height, self.width)
                 containing a single-channel image.
         """
-        img: npt.NDArray[np.uint8] = cv2.imdecode(self.imgbuf, cv2.IMREAD_UNCHANGED)
+        img: npt.NDArray[np.uint8] = cv2.imdecode(self._imgbuf, cv2.IMREAD_UNCHANGED)
         assert img.shape == (self.height, self.width)
         return img
 
@@ -134,7 +134,7 @@ class SpotImage:
             image_coords = image_coords.transpose()
 
             rays = camera_transform.camera_rays(
-                image_coords, self.body_tform_camera, self.camera_matrix
+                image_coords, self.body_tform_camera, self.intrinsic_matrix
             )
 
             # Mark the indices of the rays that point above the horizon
@@ -148,10 +148,11 @@ class SpotImage:
         return self._sky_masks[self.frame_name]
 
     def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
-        """Removes the sky from the image returned by self.decoded_image.
+        """Removes the sky from the image.
 
-        Zero pixels in the original image (which are quite rare) are set to one.
-        Pixels are then "cleared" by setting their values to zero.
+        Pixels with the value 0 in the original image (which are generally quite
+        rare) are set to 1. Sky pixels are then "cleared" by setting their
+        values to 0.
 
         Returns:
             npt.NDArray[np.uint8]: A 2D matrix of size (self.height, self.width)
@@ -163,6 +164,26 @@ class SpotImage:
         img[self._sky_mask()] = 0
 
         return img
+
+    @property
+    def height(self) -> int:
+        return self._height
+
+    @property
+    def width(self) -> int:
+        return self._width
+
+    @property
+    def frame_name(self) -> str:
+        return self._frame_name
+
+    @property
+    def body_tform_camera(self) -> npt.NDArray[np.float64]:
+        return self._body_tform_camera
+
+    @property
+    def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
+        return self._intrinsic_matrix
 
 
 class ImageData:
