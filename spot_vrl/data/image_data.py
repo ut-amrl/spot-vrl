@@ -342,7 +342,7 @@ class ImageData:
 
     The return type for all indexing operations is a tuple containing:
         - [0] np.float64: A unix timestamp.
-        - [1] List[SpotImage]: A list of images corresponding to the timestamp.
+        - [1] List[CameraImage]: A list of images corresponding to the timestamp.
 
     The returned timestamp is the timestamp stored in the GetImageResponse
     message from the robot. The response timestamp was chosen because the actual
@@ -368,7 +368,7 @@ class ImageData:
 
         # If `self._lazy` is True, these will remain empty.
         self._timestamps: npt.NDArray[np.float64] = np.empty(0, dtype=np.float64)
-        self._images: List[List[SpotImage]] = []
+        self._images: List[List[CameraImage]] = []
 
         self._path = Path(filename)
         self._data_reader = DataReader(None, str(self._path))
@@ -390,7 +390,7 @@ class ImageData:
                 self._timestamps[msg_idx] = ts_sec
                 self._images.append(images)
 
-    def _read_index(self, idx: int) -> Tuple[np.float64, List[SpotImage]]:
+    def _read_index(self, idx: int) -> Tuple[np.float64, List[CameraImage]]:
         """Reads and deconstructs a GetImageResponse from the BDDF file.
 
         Args:
@@ -398,8 +398,8 @@ class ImageData:
                 negative indices.
 
         Returns:
-            Tuple[np.float64, List[SpotImage]]: A tuple containing the unix
-                timestamp of the response message and a list of SpotImage
+            Tuple[np.float64, List[CameraImage]]: A tuple containing the unix
+                timestamp of the response message and a list of CameraImage
                 objects.
 
         Raises:
@@ -416,7 +416,7 @@ class ImageData:
         header_ts = response.header.response_timestamp
 
         ts_sec = float(header_ts.seconds) + header_ts.nanos * 1e-9
-        images: List[SpotImage] = []
+        images: List[CameraImage] = []
         for image_response in response.image_responses:
             images.append(SpotImage(image_response))
         return ts_sec, images
@@ -425,23 +425,23 @@ class ImageData:
         return self._num_msgs
 
     @overload
-    def __getitem__(self, idx: int) -> Tuple[np.float64, List[SpotImage]]:
+    def __getitem__(self, idx: int) -> Tuple[np.float64, List[CameraImage]]:
         """
         Returns:
-            Tuple[np.float64, List[SpotImage]]: A tuple containing the unix
-                timestamp of the response message and a list of SpotImage
+            Tuple[np.float64, List[CameraImage]]: A tuple containing the unix
+                timestamp of the response message and a list of CameraImage
                 objects.
         """
 
     @overload
     def __getitem__(
         self, idx: slice
-    ) -> Tuple[npt.NDArray[np.float64], List[List[SpotImage]]]:
+    ) -> Tuple[npt.NDArray[np.float64], List[List[CameraImage]]]:
         """
         Returns:
-            Tuple[npt.NDArray[np.float64], List[List[SpotImage]]]:
+            Tuple[npt.NDArray[np.float64], List[List[CameraImage]]]:
                 Vectors containing unix timestamps of response messages
-                and lists of SpotImage objects.
+                and lists of CameraImage objects.
 
         Raises:
             RuntimeError:
@@ -459,15 +459,15 @@ class ImageData:
         else:
             return self._timestamps[idx], self._images[idx]
 
-    class _Iterator(Iterator[Tuple[np.float64, List[SpotImage]]]):
+    class _Iterator(Iterator[Tuple[np.float64, List[CameraImage]]]):
         def __init__(self, container: "ImageData") -> None:
             self.idx = 0
             self.container = container
 
-        def __iter__(self) -> Iterator[Tuple[np.float64, List[SpotImage]]]:
+        def __iter__(self) -> Iterator[Tuple[np.float64, List[CameraImage]]]:
             return self
 
-        def __next__(self) -> Tuple[np.float64, List[SpotImage]]:
+        def __next__(self) -> Tuple[np.float64, List[CameraImage]]:
             if self.idx < len(self.container):
                 ret_tuple = self.container[self.idx]
                 self.idx += 1
@@ -482,7 +482,7 @@ class ImageData:
         self,
         start: Union[float, np.float_] = 0,
         end: Union[float, np.float_] = np.inf,
-    ) -> Tuple[npt.NDArray[np.float64], List[List[SpotImage]]]:
+    ) -> Tuple[npt.NDArray[np.float64], List[List[CameraImage]]]:
         """Queries a time range.
 
         Args:
@@ -490,9 +490,9 @@ class ImageData:
             end (float): The end of the tne range (unix seconds, exclusive).
 
         Returns:
-            Tuple[npt.NDArray[np.float64], List[List[SpotImage]]]:
+            Tuple[npt.NDArray[np.float64], List[List[CameraImage]]]:
                 Vectors containing unix timestamps of response messages and
-                lists of SpotImage objects corresponding to the time range.
+                lists of CameraImage objects corresponding to the time range.
 
         Raises:
             ValueError:
