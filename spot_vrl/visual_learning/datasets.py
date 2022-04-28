@@ -119,7 +119,9 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 total_dist += np.linalg.norm(inst_odom_disp[:2, 3])
                 last_odom_pose = poses[0]
 
-                if total_dist > horizon_dist:
+                # The viewable distance is greater than horizon_dist
+                # TODO: is this a bug in the TopDown class?
+                if total_dist > 6:
                     break
 
                 # Odometry suffers from inaccuracies when turning. Truncate the
