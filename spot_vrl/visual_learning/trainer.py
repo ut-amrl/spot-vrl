@@ -80,7 +80,7 @@ def fit(
     model: TripletNet,
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
@@ -119,7 +119,7 @@ def fit(
             embedder.write(model, epoch)
 
         pbar.clear()
-        scheduler.step()
+        scheduler.step(val_loss)
 
 
 def train_epoch(
