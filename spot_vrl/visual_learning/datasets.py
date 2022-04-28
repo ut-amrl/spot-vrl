@@ -211,12 +211,21 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         return len(self.keys)
 
     def __getitem__(self, idx: int) -> Tuple[Patch, Patch]:
-        """Return an anchor and positive patch."""
+        """Returns an anchor and similar patch of the same geolocation as viewed
+        from two different viewpoints."""
 
         viewpoint = self.keys[idx]
         patch_ids = tuple(self.patches[viewpoint].keys())
-        singleton = len(patch_ids) == 1
-        a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
+
+        # Use the clearest possible view of the patch as an anchor
+        a_id = max(patch_ids)
+        s_id = np.random.choice(patch_ids, size=1)[0]
+
+        # Debug option: use only the clearest and fuzziest patches
+        # s_id = min(patch_ids)
+
+        # Completely random sampling
+        # a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
 
         return self.patches[viewpoint][a_id], self.patches[viewpoint][s_id]
 
@@ -326,7 +335,7 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
 
         # anchor, pos = self._categories[cat_names[cat_idx]][index]
         anchor, _ = self._categories[cat_names[cat_idx]][index]
-        pos, _ = self._get_random_datum((cat_names[cat_idx],))
+        _, pos = self._get_random_datum((cat_names[cat_idx],))
         neg, _ = self._get_random_datum(
             (*cat_names[:cat_idx], *cat_names[cat_idx + 1 :])
         )
