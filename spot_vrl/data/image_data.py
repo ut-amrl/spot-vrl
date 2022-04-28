@@ -1,6 +1,7 @@
 import abc
+import sys
 from pathlib import Path
-from typing import ClassVar, Dict, Iterator, List, Tuple, Union, overload
+from typing import ClassVar, Dict, Final, Iterator, List, Tuple, Union, overload
 
 import cv2
 import numpy as np
@@ -10,6 +11,10 @@ from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
+from scipy.spatial.transform.rotation import Rotation
+
+if sys.platform == "linux":
+    from sensor_msgs.msg import CompressedImage
 
 from spot_vrl.data import proto_to_numpy
 from spot_vrl.homography import camera_transform
@@ -184,6 +189,124 @@ class SpotImage(CameraImage):
     @property
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
         return self._intrinsic_matrix
+
+
+class KinectImage(CameraImage):
+    """Container for single images and associated transforms metadata from the Azure
+    Kinect DK camera."""
+
+    # Hardcoded values for components of the transform data. Intrinsic
+    # information was generated from the k4a_ros repository using the 1536p
+    # setting. Extrinsic information was estimated using a ruler and gyroscope.
+    EXPECTED_HEIGHT: Final[int] = 1536
+    EXPECTED_WIDTH: Final[int] = 2048
+    INTRINSIC_MATRIX: Final[npt.NDArray[np.float64]] = np.array(
+        [
+            [984.822632, 0, 1020.586365],
+            [0, 984.730103, 780.647827],
+            [0, 0, 1],
+        ],
+        dtype=np.float64,
+    )
+    BODY_ROT_FRAME: Final[npt.NDArray[np.float64]] = Rotation.from_euler(
+        "XYZ", (0, 20.5, 0), degrees=True
+    ).as_matrix()
+    BODY_TRANS_FRAME: Final[npt.NDArray[np.float64]] = np.array(
+        [0.35, 0, 0.245], dtype=np.float64
+    )
+
+    # TODO: same structure as SpotImage, can put this in CameraImage
+    _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
+
+    def __init__(self, compressed_image: CompressedImage) -> None:
+        imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
+        self._img: npt.NDArray[np.uint8] = cv2.imdecode(imgbuf, cv2.IMREAD_UNCHANGED)
+
+        if self._img.shape != (self.EXPECTED_HEIGHT, self.EXPECTED_WIDTH, 3):
+            logger.critical(
+                f"CompressedImage dimensions {self._img.shape} does not match "
+                f"expected {(self.EXPECTED_HEIGHT, self.EXPECTED_WIDTH, 3)}. "
+                "Cannot proceed."
+            )
+            raise ValueError
+
+    def decoded_image(self) -> npt.NDArray[np.uint8]:
+        return self._img
+
+    def _sky_mask(self) -> npt.NDArray[np.bool_]:
+        """Calculates the image mask of the sky for the camera corresponding to
+        this image.
+
+        Returns:
+            npt.NDArray[np.bool_]: A 2D matrix of size (self.height, self.width)
+                containing a boolean bitmask where True represents the sky.
+        """
+        if self.frame_name not in self._sky_masks:
+            # Generate a 2xN matrix of all integer image coordinates [x, y]
+            image_coords = np.indices((self.width, self.height))
+            image_coords = np.moveaxis(image_coords, 0, -1)
+            image_coords = image_coords.reshape(self.width * self.height, 2)
+            image_coords = image_coords.transpose()
+
+            rays = camera_transform.camera_rays(
+                image_coords, self.body_tform_camera, self.intrinsic_matrix
+            )
+            # Mark the indices of the rays that point above the horizon
+            is_sky: npt.NDArray[np.bool_] = rays[2] >= 0
+            # Convert flat array to (y, x) image coords
+            is_sky = is_sky.reshape(self.width, self.height).T
+
+            assert is_sky.shape == (self.height, self.width)
+            self._sky_masks[self.frame_name] = is_sky
+
+        return self._sky_masks[self.frame_name]
+
+    def decoded_image_ground_plane(self) -> npt.NDArray[np.uint8]:
+        """Removes the sky from the image.
+
+        Pixels with the value 0 in the original image (which are generally quite
+        rare) are set to 1. Sky pixels are then "cleared" by setting their
+        values to 0.
+
+        Returns:
+            npt.NDArray[np.uint8]: A 3D matrix of size (self.height, self.width, 3)
+                containing a BGR image of the visible ground plane.
+        """
+        img = np.copy(self._img)
+        img[img == 0] = 1
+        img[self._sky_mask()] = 0
+        return img
+
+    @property
+    def height(self) -> int:
+        return self.EXPECTED_HEIGHT
+
+    @property
+    def width(self) -> int:
+        return self.EXPECTED_WIDTH
+
+    @property
+    def frame_name(self) -> str:
+        return "kinect"
+
+    @property
+    def body_tform_camera(self) -> npt.NDArray[np.float64]:
+        mat = np.identity(4)
+
+        # TODO: this math seems to work, but maybe on accident
+        # e.g. is "XYZ" order correct in BODY_ROT_FRAME ?
+        # Need to formalize the math, update variable names to make more sense
+
+        # second transform such that z points out of the camera
+        camera_fwd = Rotation.from_euler("XYZ", (-90, 90, 0), degrees=True).as_matrix()
+        mat[:3, :3] = self.BODY_ROT_FRAME @ camera_fwd
+        mat[:3, 3] = self.BODY_TRANS_FRAME
+
+        return mat
+
+    @property
+    def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
+        return self.INTRINSIC_MATRIX
 
 
 class ImageData:
