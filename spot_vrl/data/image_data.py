@@ -63,6 +63,11 @@ class CameraImage(abc.ABC):
 
     @property
     @abc.abstractmethod
+    def channels(self) -> int:
+        """The number of channels in this image."""
+
+    @property
+    @abc.abstractmethod
     def frame_name(self) -> str:
         """The name of the frame for this camera."""
 
@@ -185,6 +190,10 @@ class SpotImage(CameraImage):
         return self._width
 
     @property
+    def channels(self) -> int:
+        return 1
+
+    @property
     def frame_name(self) -> str:
         return self._frame_name
 
@@ -295,6 +304,10 @@ class KinectImage(CameraImage):
     @property
     def width(self) -> int:
         return self.EXPECTED_WIDTH
+
+    @property
+    def channels(self) -> int:
+        return 3
 
     @property
     def frame_name(self) -> str:
