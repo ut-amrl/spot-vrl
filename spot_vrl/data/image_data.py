@@ -76,6 +76,11 @@ class CameraImage(abc.ABC):
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
         """The 3x3 intrinsic matrix of this camera."""
 
+    @property
+    @abc.abstractmethod
+    def timestamp(self) -> np.float64:
+        """The acquisition timestamp of this image."""
+
 
 class SpotImage(CameraImage):
     _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
@@ -109,6 +114,7 @@ class SpotImage(CameraImage):
         self._width: int = image.cols
         self._height: int = image.rows
         self._imgbuf: npt.NDArray[np.uint8] = np.frombuffer(image.data, dtype=np.uint8)
+        self._ts = proto_to_numpy.timestamp_float64(image_capture.acquisition_time)
 
     def decoded_image(self) -> npt.NDArray[np.uint8]:
         """Decodes the raw data buffer as an image.
@@ -190,6 +196,10 @@ class SpotImage(CameraImage):
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
         return self._intrinsic_matrix
 
+    @property
+    def timestamp(self) -> np.float64:
+        return self._ts
+
 
 class KinectImage(CameraImage):
     """Container for single images and associated transforms metadata from the Azure
@@ -219,6 +229,7 @@ class KinectImage(CameraImage):
     _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
 
     def __init__(self, compressed_image: CompressedImage) -> None:
+        self._ts = np.float64(compressed_image.header.stamp.to_sec())
         imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
         self._img: npt.NDArray[np.uint8] = cv2.imdecode(imgbuf, cv2.IMREAD_UNCHANGED)
 
@@ -307,6 +318,10 @@ class KinectImage(CameraImage):
     @property
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
         return self.INTRINSIC_MATRIX
+
+    @property
+    def timestamp(self) -> np.float64:
+        return self._ts
 
 
 class ImageData:
