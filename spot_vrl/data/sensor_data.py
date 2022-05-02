@@ -175,9 +175,23 @@ class ImuData:
             filename (str | Path): Path to a BDDF file.
         """
         self._data: List[SensorMetrics] = []
+        self._path: Path = Path(filename)
 
-        self.path: Path = Path(filename)
-        data_reader = DataReader(None, str(filename))
+        if self._path.suffix == ".bddf":
+            self._init_from_bddf()
+        elif self._path.suffix == ".bag":
+            self._init_from_rosbag()
+        else:
+            logger.error(f"Unrecognized file format {self._path}")
+            raise ValueError
+
+        if not all(
+            self._data[i].ts < self._data[i + 1].ts for i in range(len(self._data) - 1)
+        ):
+            logger.warning("Data sequence is not sorted by ascending ts.")
+
+    def _init_from_bddf(self) -> None:
+        data_reader = DataReader(None, str(self._path))
         proto_reader = ProtobufReader(data_reader)
 
         series_index: int = proto_reader.series_index("bosdyn.api.RobotStateResponse")
@@ -193,10 +207,8 @@ class ImuData:
 
             self._data.append(SensorMetrics.from_bosdyn(response))
 
-        if not all(
-            self._data[i].ts < self._data[i + 1].ts for i in range(len(self._data) - 1)
-        ):
-            logger.warning("Data sequence is not sorted by ascending ts.")
+    def _init_from_rosbag(self) -> None:
+        ...
 
     def __len__(self) -> int:
         return len(self._data)
