@@ -36,6 +36,10 @@ class SensorMetrics:
         self.tf_tree: FrameTreeSnapshot = FrameTreeSnapshot()
         """The transform tree from this state."""
 
+        self.body_tform_frames: Dict[str, npt.NDArray[np.float64]] = {}
+        """The parsed transform tree from this state. Stores the transformation
+        from the body frame to all other frames."""
+
         self.power: np.float32 = np.float32(0)
         """Power consumption measured by battery discharge."""
 
@@ -79,6 +83,10 @@ class SensorMetrics:
         )
 
         metrics.tf_tree = kinematic_state.transforms_snapshot
+        for frame in metrics.tf_tree.child_to_parent_edge_map.keys():
+            metrics.body_tform_frames[frame] = proto_to_numpy.body_tform_frame(
+                metrics.tf_tree, frame
+            )
 
         metrics.power = np.float32(0)
         for battery in robot_state.battery_states:
