@@ -1,3 +1,5 @@
+from collections import defaultdict
+import sys
 from functools import lru_cache, cached_property
 from pathlib import Path
 from typing import ClassVar, Dict, List, Tuple, Union
@@ -11,6 +13,12 @@ from bosdyn.api.robot_state_pb2 import FootState, RobotStateResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
 from spot_vrl.data import proto_to_numpy
+
+if sys.platform == "linux":
+    import geometry_msgs.msg
+    import spot_msgs.msg
+    import rosbag
+    from spot_vrl.data import ros_to_numpy
 
 
 class SensorMetrics:
@@ -27,6 +35,22 @@ class SensorMetrics:
         "hr.hx": 9,
         "hr.hy": 10,
         "hr.kn": 11,
+    }
+
+    # The spot_ros library uses "friendly" joint names
+    ros_joint_order: ClassVar[Dict[str, int]] = {
+        "front_left_hip_x": 0,
+        "front_left_hip_y": 1,
+        "front_left_knee": 2,
+        "front_right_hip_x": 3,
+        "front_right_hip_y": 4,
+        "front_right_knee": 5,
+        "rear_left_hip_x": 6,
+        "rear_left_hip_y": 7,
+        "rear_left_knee": 8,
+        "rear_right_hip_x": 9,
+        "rear_right_hip_y": 10,
+        "rear_right_knee": 11,
     }
 
     def __init__(self) -> None:
@@ -153,8 +177,75 @@ class SensorMetrics:
         return metrics
 
     @classmethod
-    def from_ros(cls) -> "SensorMetrics":
-        ...
+    def from_ros(cls, msgs: ros_to_numpy.TimeSyncedMessages) -> "SensorMetrics":
+        metrics = cls()
+
+        metrics.ts = msgs.odom.header.stamp.to_sec()
+        metrics.body_tform_frames = ros_to_numpy.body_tform_frames(msgs.tf)
+
+        battery: spot_msgs.msg.BatteryState
+        for battery in msgs.battery_states.battery_states:
+            if battery.current >= 0:
+                logger.warning(
+                    f"Expected negative current reading, got {battery.current}"
+                )
+            metrics.power += -battery.current * battery.voltage
+
+        if len(msgs.joint_states.name) != 12:
+            logger.warning(
+                f"Expected 12 joint states, got {len(msgs.joint_states.name)}"
+            )
+        joint_name: str
+        for i, joint_name in enumerate(msgs.joint_states.name):
+            joint_idx = metrics.ros_joint_order[joint_name]
+            metrics.joint_pos[joint_idx] = msgs.joint_states.position[i]
+            metrics.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
+            # TODO: ROS JointState does not have acceleration
+
+        odom_vel = msgs.twist.twist.twist
+        metrics.linear_vel[:] = (
+            odom_vel.linear.x,
+            odom_vel.linear.y,
+            odom_vel.linear.z,
+        )
+        metrics.angular_vel[:] = (
+            odom_vel.angular.x,
+            odom_vel.angular.y,
+            odom_vel.angular.z,
+        )
+
+        body_tform_odom = metrics.body_tform_frames["odom"]
+        metrics.linear_vel = body_tform_odom[:3, :3] @ metrics.linear_vel
+        metrics.angular_vel = body_tform_odom[:3, :3] @ metrics.angular_vel
+
+        feet_in_contact = 0
+        foot_state: spot_msgs.msg.FootState
+        for foot_state in msgs.feet.states:
+            if foot_state.contact != spot_msgs.msg.FootState.CONTACT_MADE:
+                continue
+            feet_in_contact += 1
+            if foot_state.frame_name != "odom":
+                logger.warning(
+                    f"Expected 'odom' as foot reference frame, got {foot_state.frame_name}"
+                )
+
+            def _vec3_norm(v: geometry_msgs.msg.Point) -> np.float32:
+                return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
+
+            metrics.foot_slip_dist += _vec3_norm(foot_state.foot_slip_distance_rt_frame)
+            metrics.foot_slip_vel += _vec3_norm(foot_state.foot_slip_velocity_rt_frame)
+            metrics.foot_depth_mean += foot_state.visual_surface_ground_penetration_mean
+            metrics.foot_depth_std += foot_state.visual_surface_ground_penetration_std
+
+        if feet_in_contact != 0:
+            metrics.foot_slip_dist /= feet_in_contact
+            metrics.foot_slip_vel /= feet_in_contact
+            metrics.foot_depth_mean /= feet_in_contact
+            metrics.foot_depth_std /= feet_in_contact
+        else:
+            logger.warning("Spot is flying (no feet made contact with the ground)")
+
+        return metrics
 
 
 class ImuData:
@@ -208,7 +299,21 @@ class ImuData:
             self._data.append(SensorMetrics.from_bosdyn(response))
 
     def _init_from_rosbag(self) -> None:
-        ...
+        # times don't match so the best we can do is use indices as keys
+        synced_msgs: Dict[int, ros_to_numpy.TimeSyncedMessages] = defaultdict(
+            ros_to_numpy.TimeSyncedMessages  # type: ignore
+        )
+        topic_count: Dict[str, int] = defaultdict(int)
+
+        bag = rosbag.Bag(str(self._path))
+        for topic, msg, _ in bag.read_messages():
+            key = topic_count[topic]
+            synced_msgs[key].set(topic, msg)
+            topic_count[topic] += 1
+
+        for v in synced_msgs.values():
+            if v.valid():
+                self._data.append(SensorMetrics.from_ros(v))
 
     def __len__(self) -> int:
         return len(self._data)
@@ -326,12 +431,14 @@ class ImuData:
 
         for i, datum in enumerate(self._data):
             # "body" is the root of the transform tree
-            body_tform_ref = proto_to_numpy.body_tform_frame(
-                datum.tf_tree, reference_frame
-            )
-            body_tform_interest = proto_to_numpy.body_tform_frame(
-                datum.tf_tree, frame_of_interest
-            )
+            # body_tform_ref = proto_to_numpy.body_tform_frame(
+            #     datum.tf_tree, reference_frame
+            # )
+            # body_tform_interest = proto_to_numpy.body_tform_frame(
+            #     datum.tf_tree, frame_of_interest
+            # )
+            body_tform_ref = datum.body_tform_frames[reference_frame]
+            body_tform_interest = datum.body_tform_frames[frame_of_interest]
             ref_tform_interest = np.linalg.inv(body_tform_ref) @ body_tform_interest
             transforms[i] = ref_tform_interest.astype(np.float32)
 
