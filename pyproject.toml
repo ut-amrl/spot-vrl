@@ -26,6 +26,7 @@ PyYAML = "^6.0"
 pycryptodomex = "^3.14.1"
 python-gnupg = "^0.4.8"
 rospkg = "^1.4.0"
+simplejpeg = "^1.6.4"
 
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.1"
