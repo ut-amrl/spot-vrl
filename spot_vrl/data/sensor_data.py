@@ -1,6 +1,6 @@
 from functools import lru_cache, cached_property
 from pathlib import Path
-from typing import Dict, Iterator, List, Tuple, Union, overload
+from typing import ClassVar, Dict, List, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -11,6 +11,142 @@ from bosdyn.api.robot_state_pb2 import FootState, RobotStateResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
 from spot_vrl.data import proto_to_numpy
+
+
+class SensorMetrics:
+    joint_order: ClassVar[Dict[str, int]] = {
+        "fl.hx": 0,
+        "fl.hy": 1,
+        "fl.kn": 2,
+        "fr.hx": 3,
+        "fr.hy": 4,
+        "fr.kn": 5,
+        "hl.hx": 6,
+        "hl.hy": 7,
+        "hl.kn": 8,
+        "hr.hx": 9,
+        "hr.hy": 10,
+        "hr.kn": 11,
+    }
+
+    def __init__(self) -> None:
+        self.ts: np.float64 = np.float64(0)
+        """Robot system timestamp of the data in seconds."""
+
+        self.tf_tree: FrameTreeSnapshot = FrameTreeSnapshot()
+        """The transform tree from this state."""
+
+        self.power: np.float32 = np.float32(0)
+        """Power consumption measured by battery discharge."""
+
+        self.joint_pos: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
+        """Angular position of each leg joint."""
+
+        self.joint_vel: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
+        """Velocity (angular?) of each leg joint."""
+
+        self.joint_acc: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
+        """Acceleration (angular?) of each leg joint."""
+
+        self.linear_vel: npt.NDArray[np.float32] = np.zeros(3, dtype=np.float32)
+        """Linear velocity measured by odometry."""
+
+        self.angular_vel: npt.NDArray[np.float32] = np.zeros(3, dtype=np.float32)
+        """Angular velocity measured by odometry."""
+
+        self.foot_slip_dist: np.float32 = np.float32(0)
+        """Mean foot slip distance (vector norm)."""
+
+        self.foot_slip_vel: np.float32 = np.float32(0)
+        """Mean foot slip velocity (vector norm)."""
+
+        self.foot_depth_mean: np.float32 = np.float32(0)
+        """Mean of foot depth values in the ground plane estimate."""
+
+        self.foot_depth_std: np.float32 = np.float32(0)
+        """Mean of foot depth uncertainties in the ground plane estimate."""
+
+    @classmethod
+    def from_bosdyn(cls, response: RobotStateResponse) -> "SensorMetrics":
+        metrics = cls()
+
+        robot_state = response.robot_state
+        kinematic_state = robot_state.kinematic_state
+
+        metrics.ts = (
+            kinematic_state.acquisition_timestamp.seconds
+            + kinematic_state.acquisition_timestamp.nanos * 1e-9
+        )
+
+        metrics.tf_tree = kinematic_state.transforms_snapshot
+
+        metrics.power = np.float32(0)
+        for battery in robot_state.battery_states:
+            if battery.current.value >= 0:
+                logger.warning(
+                    f"Expected negative current reading, got {battery.current.value}"
+                )
+            metrics.power += -battery.current.value * battery.voltage.value
+
+        if len(kinematic_state.joint_states) != 12:
+            logger.warning(
+                f"Expected 12 joint states, got {len(kinematic_state.joint_states)}"
+            )
+        for joint in kinematic_state.joint_states:
+            joint_idx = metrics.joint_order[joint.name]
+            metrics.joint_pos[joint_idx] = joint.position.value
+            metrics.joint_vel[joint_idx] = joint.velocity.value
+            metrics.joint_acc[joint_idx] = joint.acceleration.value
+
+        odom_vel = kinematic_state.velocity_of_body_in_odom
+        metrics.linear_vel[:] = (
+            odom_vel.linear.x,
+            odom_vel.linear.y,
+            odom_vel.linear.z,
+        )
+        metrics.angular_vel[:] = (
+            odom_vel.angular.x,
+            odom_vel.angular.y,
+            odom_vel.angular.z,
+        )
+
+        # Rotate the odometry velocities into the robot frame
+        body_tform_odom = proto_to_numpy.body_tform_frame(metrics.tf_tree, "odom")
+        metrics.linear_vel = body_tform_odom[:3, :3] @ metrics.linear_vel
+        metrics.angular_vel = body_tform_odom[:3, :3] @ metrics.angular_vel
+
+        feet_in_contact = 0
+        for foot in robot_state.foot_state:
+            if foot.contact != FootState.CONTACT_MADE:
+                continue
+            feet_in_contact += 1
+            terrain = foot.terrain
+            if terrain.frame_name != "odom":
+                logger.warning(
+                    f"Expected 'odom' as foot reference frame, got {terrain.frame_name}"
+                )
+
+            def _vec3_norm(v: geometry_pb2.Vec3) -> np.float32:
+                return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
+
+            metrics.foot_slip_dist += _vec3_norm(terrain.foot_slip_distance_rt_frame)
+            metrics.foot_slip_vel += _vec3_norm(terrain.foot_slip_velocity_rt_frame)
+            metrics.foot_depth_mean += terrain.visual_surface_ground_penetration_mean
+            metrics.foot_depth_std += terrain.visual_surface_ground_penetration_std
+
+        if feet_in_contact != 0:
+            metrics.foot_slip_dist /= feet_in_contact
+            metrics.foot_slip_vel /= feet_in_contact
+            metrics.foot_depth_mean /= feet_in_contact
+            metrics.foot_depth_std /= feet_in_contact
+        else:
+            logger.warning("Spot is flying (no feet made contact with the ground)")
+
+        return metrics
+
+    @classmethod
+    def from_ros(cls) -> "SensorMetrics":
+        ...
 
 
 class ImuData:
@@ -25,135 +161,12 @@ class ImuData:
     represented as a row vector.
     """
 
-    class Datum:
-        """Deconstructed RobotStateResponse instance."""
-
-        joint_order: Dict[str, int] = {
-            "fl.hx": 0,
-            "fl.hy": 1,
-            "fl.kn": 2,
-            "fr.hx": 3,
-            "fr.hy": 4,
-            "fr.kn": 5,
-            "hl.hx": 6,
-            "hl.hy": 7,
-            "hl.kn": 8,
-            "hr.hx": 9,
-            "hr.hy": 10,
-            "hr.kn": 11,
-        }
-
-        def __init__(self, response: RobotStateResponse) -> None:
-            self.ts: np.float64 = np.float64(0)
-            """Robot system timestamp of the data in seconds."""
-
-            self.tf_tree: FrameTreeSnapshot = FrameTreeSnapshot()
-            """The transform tree from this state."""
-
-            self.power: np.float32 = np.float32(0)
-            """Power consumption measured by battery discharge."""
-
-            self.joint_pos: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
-            """Angular position of each leg joint."""
-
-            self.joint_vel: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
-            """Velocity (angular?) of each leg joint."""
-
-            self.joint_acc: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
-            """Acceleration (angular?) of each leg joint."""
-
-            self.linear_vel: npt.NDArray[np.float32] = np.zeros(3, dtype=np.float32)
-            """Linear velocity measured by odometry."""
-
-            self.angular_vel: npt.NDArray[np.float32] = np.zeros(3, dtype=np.float32)
-            """Angular velocity measured by odometry."""
-
-            self.foot_slip_dist: np.float32 = np.float32(0)
-            """Mean foot slip distance (vector norm)."""
-
-            self.foot_slip_vel: np.float32 = np.float32(0)
-            """Mean foot slip velocity (vector norm)."""
-
-            self.foot_depth_mean: np.float32 = np.float32(0)
-            """Mean of foot depth values in the ground plane estimate."""
-
-            self.foot_depth_std: np.float32 = np.float32(0)
-            """Mean of foot depth uncertainties in the ground plane estimate."""
-
-            robot_state = response.robot_state
-            kinematic_state = robot_state.kinematic_state
-
-            self.ts = (
-                kinematic_state.acquisition_timestamp.seconds
-                + kinematic_state.acquisition_timestamp.nanos * 1e-9
-            )
-
-            self.tf_tree = kinematic_state.transforms_snapshot
-
-            self.power = np.float32(0)
-            for battery in robot_state.battery_states:
-                if battery.current.value >= 0:
-                    logger.warning(
-                        f"Expected negative current reading, got {battery.current.value}"
-                    )
-                self.power += -battery.current.value * battery.voltage.value
-
-            if len(kinematic_state.joint_states) != 12:
-                logger.warning(
-                    f"Expected 12 joint states, got {len(kinematic_state.joint_states)}"
-                )
-            for joint in kinematic_state.joint_states:
-                joint_idx = self.joint_order[joint.name]
-                self.joint_pos[joint_idx] = joint.position.value
-                self.joint_vel[joint_idx] = joint.velocity.value
-                self.joint_acc[joint_idx] = joint.acceleration.value
-
-            odom_vel = kinematic_state.velocity_of_body_in_odom
-            self.linear_vel[:] = odom_vel.linear.x, odom_vel.linear.y, odom_vel.linear.z
-            self.angular_vel[:] = (
-                odom_vel.angular.x,
-                odom_vel.angular.y,
-                odom_vel.angular.z,
-            )
-
-            # Rotate the odometry velocities into the robot frame
-            body_tform_odom = proto_to_numpy.body_tform_frame(self.tf_tree, "odom")
-            self.linear_vel = body_tform_odom[:3, :3] @ self.linear_vel
-            self.angular_vel = body_tform_odom[:3, :3] @ self.angular_vel
-
-            feet_in_contact = 0
-            for foot in robot_state.foot_state:
-                if foot.contact != FootState.CONTACT_MADE:
-                    continue
-                feet_in_contact += 1
-                terrain = foot.terrain
-                if terrain.frame_name != "odom":
-                    logger.warning(
-                        f"Expected 'odom' as foot reference frame, got {terrain.frame_name}"
-                    )
-
-                def _vec3_norm(v: geometry_pb2.Vec3) -> np.float32:
-                    return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
-
-                self.foot_slip_dist += _vec3_norm(terrain.foot_slip_distance_rt_frame)
-                self.foot_slip_vel += _vec3_norm(terrain.foot_slip_velocity_rt_frame)
-                self.foot_depth_mean += terrain.visual_surface_ground_penetration_mean
-                self.foot_depth_std += terrain.visual_surface_ground_penetration_std
-
-            if feet_in_contact != 0:
-                self.foot_slip_dist /= feet_in_contact
-                self.foot_slip_vel /= feet_in_contact
-                self.foot_depth_mean /= feet_in_contact
-                self.foot_depth_std /= feet_in_contact
-            else:
-                logger.warning("Spot is flying (no feet made contact with the ground)")
-
     def __init__(self, filename: Union[str, Path]) -> None:
         """
         Args:
             filename (str | Path): Path to a BDDF file.
         """
-        self._data: List["ImuData.Datum"] = []
+        self._data: List[SensorMetrics] = []
 
         self.path: Path = Path(filename)
         data_reader = DataReader(None, str(filename))
@@ -170,7 +183,7 @@ class ImuData:
                 series_index, RobotStateResponse, msg_idx
             )
 
-            self._data.append(ImuData.Datum(response))
+            self._data.append(SensorMetrics.from_bosdyn(response))
 
         if not all(
             self._data[i].ts < self._data[i + 1].ts for i in range(len(self._data) - 1)
@@ -179,20 +192,6 @@ class ImuData:
 
     def __len__(self) -> int:
         return len(self._data)
-
-    @overload
-    def __getitem__(self, idx: int) -> Datum:
-        ...
-
-    @overload
-    def __getitem__(self, idx: slice) -> List[Datum]:
-        ...
-
-    def __getitem__(self, idx: Union[int, slice]) -> Union[Datum, List[Datum]]:
-        return self._data[idx]
-
-    def __iter__(self) -> Iterator[Datum]:
-        return iter(self._data)
 
     @cached_property
     def timestamp_sec(self) -> npt.NDArray[np.float64]:
