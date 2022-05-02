@@ -6,6 +6,7 @@ from typing import ClassVar, Dict, Final, Iterator, List, Tuple, Union, overload
 import cv2
 import numpy as np
 import numpy.typing as npt
+import simplejpeg
 from bosdyn.api import image_pb2
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
@@ -241,19 +242,23 @@ class KinectImage(CameraImage):
 
     def __init__(self, compressed_image: CompressedImage) -> None:
         self._ts = np.float64(compressed_image.header.stamp.to_sec())
-        imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
-        self._img: npt.NDArray[np.uint8] = cv2.imdecode(imgbuf, cv2.IMREAD_UNCHANGED)
+        self._imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
 
-        if self._img.shape != (self.EXPECTED_HEIGHT, self.EXPECTED_WIDTH, 3):
+    def decoded_image(self) -> npt.NDArray[np.uint8]:
+        img: npt.NDArray[np.uint8] = simplejpeg.decode_jpeg(
+            self._imgbuf,
+            colorspace="BGR",
+            min_height=self.EXPECTED_HEIGHT,
+            min_width=self.EXPECTED_WIDTH,
+        )
+        if img.shape != (self.EXPECTED_HEIGHT, self.EXPECTED_WIDTH, 3):
             logger.critical(
-                f"CompressedImage dimensions {self._img.shape} does not match "
+                f"Decoded image dimensions {img.shape} do not match "
                 f"expected {(self.EXPECTED_HEIGHT, self.EXPECTED_WIDTH, 3)}. "
                 "Cannot proceed."
             )
             raise ValueError
-
-    def decoded_image(self) -> npt.NDArray[np.uint8]:
-        return self._img
+        return img
 
     def _sky_mask(self) -> npt.NDArray[np.bool_]:
         """Calculates the image mask of the sky for the camera corresponding to
@@ -294,7 +299,7 @@ class KinectImage(CameraImage):
             npt.NDArray[np.uint8]: A 3D matrix of size (self.height, self.width, 3)
                 containing a BGR image of the visible ground plane.
         """
-        img = np.copy(self._img)
+        img = self.decoded_image()
         img[img == 0] = 1
         img[self._sky_mask()] = 0
         return img
