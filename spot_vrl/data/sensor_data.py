@@ -73,8 +73,8 @@ class SensorMetrics:
         self.joint_vel: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
         """Velocity (angular?) of each leg joint."""
 
-        self.joint_acc: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
-        """Acceleration (angular?) of each leg joint."""
+        self.joint_load: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
+        """Load (torque, Newton-meters) of each leg joint."""
 
         self.linear_vel: npt.NDArray[np.float32] = np.zeros(3, dtype=np.float32)
         """Linear velocity measured by odometry."""
@@ -128,7 +128,7 @@ class SensorMetrics:
             joint_idx = metrics.joint_order[joint.name]
             metrics.joint_pos[joint_idx] = joint.position.value
             metrics.joint_vel[joint_idx] = joint.velocity.value
-            metrics.joint_acc[joint_idx] = joint.acceleration.value
+            metrics.joint_load[joint_idx] = joint.load.value
 
         odom_vel = kinematic_state.velocity_of_body_in_odom
         metrics.linear_vel[:] = (
@@ -200,7 +200,7 @@ class SensorMetrics:
             joint_idx = metrics.ros_joint_order[joint_name]
             metrics.joint_pos[joint_idx] = msgs.joint_states.position[i]
             metrics.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
-            # TODO: ROS JointState does not have acceleration
+            metrics.joint_load[joint_idx] = msgs.joint_states.effort[i]
 
         odom_vel = msgs.twist.twist.twist
         metrics.linear_vel[:] = (
@@ -341,10 +341,10 @@ class ImuData:
         return tensor
 
     @cached_property
-    def joint_acc(self) -> npt.NDArray[np.float32]:
+    def joint_load(self) -> npt.NDArray[np.float32]:
         tensor = np.empty((len(self._data), 12), dtype=np.float32)
         for i, d in enumerate(self._data):
-            tensor[i] = d.joint_acc
+            tensor[i] = d.joint_load
         return tensor
 
     @cached_property
@@ -384,7 +384,7 @@ class ImuData:
                 self.power[:, np.newaxis],
                 self.joint_pos,
                 self.joint_vel,
-                self.joint_acc,
+                self.joint_load,
                 self.linear_vel,
                 self.angular_vel,
                 self.foot_slip_dist[:, np.newaxis],
@@ -478,7 +478,7 @@ class ImuData:
 
         if start > self.timestamp_sec[-1] + 1 or end < self.timestamp_sec[0] - 1:
             logger.warning(
-                f"Specified time range ({start}, {end}) and dataset ({self.path}) are disjoint "
+                f"Specified time range ({start}, {end}) and dataset ({self._path}) are disjoint "
             )
 
         start_i = int(np.searchsorted(self.timestamp_sec, start))
