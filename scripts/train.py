@@ -70,8 +70,8 @@ class CustomDataset(Dataset):
 		angular_velocity = self.data[idx]['angular_velocity'][-26:, [0, 1]].flatten()
 		foot_depth_sensor = self.data[idx]['depth_info'][-26:, :].flatten()
 
-		# inertial_data = np.hstack((linear_velocity, angular_velocity, foot_depth_sensor, joint_positions, joint_velocities, joint_accelerations))
-		inertial_data = np.hstack((linear_velocity, angular_velocity, joint_positions, joint_velocities, joint_accelerations))
+		inertial_data = np.hstack((linear_velocity, angular_velocity, foot_depth_sensor, joint_positions, joint_velocities, joint_accelerations))
+		# inertial_data = np.hstack((linear_velocity, angular_velocity, joint_positions, joint_velocities, joint_accelerations))
 		inertial_data = np.expand_dims(inertial_data, axis=0)
 
 		# randomize the inertial data
@@ -155,14 +155,39 @@ class BarlowModel(pl.LightningModule):
 			nn.Linear(1024, 128)
 		)
 
+		# self.visual_encoder = nn.Sequential(
+		# 	nn.utils.spectral_norm(nn.Conv2d(1, 16, kernel_size=3, stride=2, bias=False)),  # 63 x 63
+		# 	nn.ReLU(),
+		# 	nn.utils.spectral_norm(nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False)),  # 31 x 31
+		# 	nn.ReLU(),
+		# 	nn.utils.spectral_norm(nn.Conv2d(32, 64, kernel_size=5, stride=2, bias=False)),  # 14 x 14
+		# 	nn.ReLU(),
+		# 	nn.utils.spectral_norm(nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False)),  # 5 x 5
+		# 	nn.ReLU(),
+		# 	nn.utils.spectral_norm(nn.Conv2d(128, 256, kernel_size=3, stride=2)),  # 2 x 2
+		# 	nn.ReLU(),
+		# 	Flatten(),  # 1024 output
+		# 	nn.utils.spectral_norm(nn.Linear(1024, 128))
+		# )
+
+		# self.inertial_encoder = nn.Sequential(
+		# 	nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(16), nn.ReLU(), # 558
+		# 	nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False), nn.BatchNorm1d(32), nn.ReLU(), # 185
+		# 	nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False), nn.BatchNorm1d(64), nn.ReLU(), # 60
+		# 	nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(128), nn.ReLU(), # 30
+		# 	nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False), nn.ReLU(), # 8
+		# 	nn.Flatten(),
+		# 	nn.Linear(2048, 128)
+		# )
+
 		self.inertial_encoder = nn.Sequential(
-			nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(16), nn.ReLU(), # 558
-			nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False), nn.BatchNorm1d(32), nn.ReLU(), # 185
-			nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False), nn.BatchNorm1d(64), nn.ReLU(), # 60
-			nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(128), nn.ReLU(), # 30
-			nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False), nn.ReLU(), # 8
+			nn.utils.spectral_norm(nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False)), nn.ReLU(), # 558
+			nn.utils.spectral_norm(nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False)), nn.ReLU(), # 185
+			nn.utils.spectral_norm(nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False)), nn.ReLU(), # 60
+			nn.utils.spectral_norm(nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False)), nn.ReLU(), # 30
+			nn.utils.spectral_norm(nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False)), nn.ReLU(), # 8
 			nn.Flatten(),
-			nn.Linear(2048, 128)
+			nn.utils.spectral_norm(nn.Linear(2048, 128))
 		)
 
 		self.projector = nn.Sequential(
@@ -233,6 +258,7 @@ class BarlowModel(pl.LightningModule):
 		c2.div_(self.per_device_batch_size * self.trainer.num_processes)
 		c1b.div_(self.per_device_batch_size * self.trainer.num_processes)
 		c2b.div_(self.per_device_batch_size * self.trainer.num_processes)
+
 		self.all_reduce(c)
 		self.all_reduce(c1)
 		self.all_reduce(c2)
@@ -242,10 +268,10 @@ class BarlowModel(pl.LightningModule):
 		on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
 		off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
 		# off_diag_match = (self.off_diagonal(c1) - self.off_diagonal(c2)).pow_(2).sum().mul(self.scale_loss)
-		off_diag_match_loss = (c1b - c2b).pow_(2).sum()
+		off_diag_match_loss = (c1b - c2b).pow_(2).sum().mul(self.scale_loss)
 		off_diag_IV_loss = self.off_diagonal(c2).pow_(2).sum().mul(self.scale_loss) #+ self.off_diagonal(c1).pow_(2).sum().mul(self.scale_loss)
 
-		loss = on_diag + self.lambd * off_diag_IV_loss + self.lambd * off_diag_match_loss
+		loss = on_diag + self.lambd * off_diag_IV_loss #+ self.lambd * off_diag_match_loss
 
 		return loss, on_diag, self.lambd * off_diag_IV_loss, self.lambd * off_diag_match_loss
 
@@ -266,18 +292,18 @@ class BarlowModel(pl.LightningModule):
 	def training_step(self, batch, batch_idx):
 		loss, on_diag, off_diag, off_diag_match_loss = self.common_step(batch, batch_idx)
 		self.log('train_loss', loss, prog_bar=True, logger=True)
-		self.log('train_on_diag', on_diag, prog_bar=True, logger=True)
-		self.log('train_off_diag', off_diag, prog_bar=True, logger=True)
-		self.log('train_off_diag_match_loss', off_diag_match_loss, prog_bar=True, logger=True)
+		self.log('train_on_diag', on_diag, prog_bar=False, logger=True)
+		self.log('train_off_diag', off_diag, prog_bar=False, logger=True)
+		self.log('train_off_diag_match_loss', off_diag_match_loss, prog_bar=False, logger=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
 		with torch.no_grad():
 			loss, on_diag, off_diag, off_diag_match_loss = self.common_step(batch, batch_idx)
 		self.log('val_loss', loss, prog_bar=True, logger=True)
-		self.log('val_on_diag', on_diag, prog_bar=True, logger=True)
-		self.log('val_off_diag', off_diag, prog_bar=True, logger=True)
-		self.log('val_off_diag_match_loss', off_diag_match_loss, prog_bar=True, logger=True)
+		self.log('val_on_diag', on_diag, prog_bar=False, logger=True)
+		self.log('val_off_diag', off_diag, prog_bar=False, logger=True)
+		self.log('val_off_diag_match_loss', off_diag_match_loss, prog_bar=False, logger=True)
 
 	# def configure_optimizers(self):
 	# 	optimizer = LARS(
