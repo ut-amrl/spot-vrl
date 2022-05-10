@@ -183,7 +183,10 @@ def main() -> None:
         help="Path to saved TripletNet model.",
     )
     parser.add_argument(
-        "--dataset", type=str, required=True, choices=("0.5-speedway-holdout",)
+        "--dataset",
+        type=str,
+        required=True,
+        choices=("0.5-speedway-holdout", "0.5-kinect-poc"),
     )
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--margin", type=float, default=1)
