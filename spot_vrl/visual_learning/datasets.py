@@ -66,7 +66,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         viewpoints."""
 
         imu_data = ImuData(self.path)
-        img_data = ImageData(self.path, lazy=False)
+        img_data = ImageData.factory(self.path, lazy=False)
 
         fwd_patches: Dict[int, Dict[int, Tuple[slice, slice]]] = defaultdict(dict)
         """Mapping of image sequence numbers to the future image slices
@@ -94,13 +94,17 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             # (0,0) in the body frame. Using this coordinate as the first patch
             # causes the first few patches in each subtrajectory to contain pixels
             # that are out of view (channel == 0).
-            origin_y = 866
-            origin_x = 732
+            # origin_y = 866
+            # origin_x = 732
+            # origin_y = images[0].height - 30
+            # origin_x = (images[0].width // 2) - 30
 
-            front_images = [img for img in images if "front" in img.frame_name]
-            td = TopDown(front_images, GROUND_TFORM_BODY).get_view(
-                resolution, horizon_dist
-            )
+            # front_images = [img for img in images if "front" in img.frame_name]
+            td = TopDown(images, GROUND_TFORM_BODY).get_view(resolution, horizon_dist)
+
+            # Assume (0, 0) in the body frame is at the center-bottom of this image.
+            origin_y = td.shape[0] - 30
+            origin_x = (td.shape[1] // 2) - 30
 
             total_dist = np.float64(0)
             last_odom_pose = poses[0]
@@ -141,12 +145,12 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 patch = torch.from_numpy(td[patch_slice].copy())
 
                 # Filter out patches that contain out-of-view areas
-                if patch.shape == (60, 60) and (patch != 0).all():
-                    self.patches[j][i] = patch
+                if patch.shape == (60, 60, 3) and (patch != 0).all():
+                    self.patches[j][i] = torch.permute(patch, (2, 0, 1))
                     fwd_patches[i][j] = patch_slice
 
             if video_writer is not None:
-                td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)
+                # td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)
                 for _, s in fwd_patches[i].items():
                     # rectangle() takes x,y point order
                     td = cv2.rectangle(
@@ -186,8 +190,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         """
 
         path = Path(path)
-        if path.suffix == ".bddf":
-            path = cls.output_dir / cls.get_serialized_filename(path, start, end)
+        path = cls.output_dir / cls.get_serialized_filename(path, start, end)
 
         with open(path, "rb") as f:
             obj: SingleTerrainDataset = pickle.load(f)

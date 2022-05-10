@@ -8,7 +8,7 @@ import torch
 import tqdm
 from loguru import logger
 
-from spot_vrl.data.image_data import ImageData, SpotImage
+from spot_vrl.data.image_data import ImageData, SpotImage, CameraImage
 from spot_vrl.homography import camera_transform, perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
 from spot_vrl.visual_learning.network import (
@@ -39,7 +39,7 @@ def load_cost_model(path: Path, embedding_dim: int) -> FullPairCostNet:
 
 @torch.no_grad()  # type: ignore
 def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
-    imgdata = ImageData(filename, lazy=True)
+    imgdata = ImageData.factory(filename, lazy=True)
 
     BODY_HEIGHT_EST = 0.48938  # meters
     GROUND_TFORM_BODY = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
@@ -49,17 +49,18 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
 
     count = 0
 
-    images: List[SpotImage]
+    images: List[CameraImage]
     for _, images in tqdm.tqdm(
         imgdata, desc="Processing Cost Video", total=len(imgdata), dynamic_ncols=True
     ):
-        images = [image for image in images if "front" in image.frame_name]
+        # images = [image for image in images if "front" in image.frame_name]
         td = perspective_transform.TopDown(images, GROUND_TFORM_BODY)
-        view = td.get_view(resolution=150)
-        cost_view = np.zeros((*view.shape, 3), dtype=np.uint8)
+        view = td.get_view(resolution=150, horizon_dist=4.0)
+        # cost_view = np.zeros((*view.shape, 3), dtype=np.uint8)
+        cost_view = np.zeros(view.shape, dtype=np.uint8)
 
         PATCH_SIZE = 60
-        MAX_COST = 2.0
+        MAX_COST = 2.5
         for row in range(0, view.shape[0], PATCH_SIZE):
             patch_y = np.s_[row : min(view.shape[0], row + PATCH_SIZE)]
 
@@ -69,10 +70,13 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
 
             for col in range(0, view.shape[1], PATCH_SIZE):
                 patch_x = np.s_[col : min(view.shape[1], col + PATCH_SIZE)]
-                patch = torch.from_numpy(view[patch_y, patch_x])[None, ...]
+                patch = torch.from_numpy(view[patch_y, patch_x]).permute((2, 0, 1))[
+                    None, :
+                ]
+                # logger.debug(patch.shape)
 
                 # TODO: find actual min size limits based on kernel sizes
-                if patch.shape[1] < 16 or patch.shape[2] < 16 or 0 in patch:
+                if patch.shape[2] < 60 or patch.shape[3] < 60 or 0 in patch:
                     continue
 
                 patch_slices.append(patch_x)
@@ -80,13 +84,14 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
 
             if len(patch_imgs) == 0:
                 continue
-
+            #
             costs = cost_model.get_cost(torch.cat(patch_imgs))
 
             for i in range(len(patch_slices)):
                 patch_x = patch_slices[i]
 
                 cost = costs[i]
+                # logger.debug(cost)
 
                 # color map:
                 # gradient:
@@ -96,13 +101,13 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
                 red = np.clip(red, 0.0, 1.0)
                 cost_view[patch_y, patch_x, 2] = int(red * 255)
 
-        view = cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
+        # view = cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
         view = np.vstack((view, cost_view))
         video_writer.add_frame(view)
 
-        count += 1
-        if count > 1000:
-            break
+        # count += 1
+        # if count > 1000:
+        #     break
 
     video_writer.close()
 

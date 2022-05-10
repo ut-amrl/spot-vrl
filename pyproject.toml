@@ -54,7 +54,21 @@ module = [
     "matplotlib.*",
     "scipy.*",
     "seaborn",
+    "simplejpeg",
     "torchvision.*",
     "tqdm",
+]
+ignore_missing_imports = true
+
+# ROS system packages
+[[tool.mypy.overrides]]
+module = [
+    "geometry_msgs.*",
+    "nav_msgs.*",
+    "rosbag",
+    "rospy",
+    "sensor_msgs.*",
+    "spot_msgs.*",
+    "tf2_msgs.*",
 ]
 ignore_missing_imports = true
