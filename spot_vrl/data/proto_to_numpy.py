@@ -8,6 +8,7 @@ import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 from bosdyn.api import geometry_pb2, image_pb2
+from google.protobuf.timestamp_pb2 import Timestamp
 
 
 def se3pose_to_affine(pose: geometry_pb2.SE3Pose) -> npt.NDArray[np.float64]:
@@ -85,3 +86,7 @@ def camera_intrinsic_matrix(
     s = intrinsic_proto.skew
 
     return np.array([[f.x, s.x, p.x], [s.y, f.y, p.y], [0, 0, 1]])
+
+
+def timestamp_float64(timestamp: Timestamp) -> np.float64:
+    return np.float64(timestamp.seconds) + np.float64(timestamp.nanos) * 1e-9

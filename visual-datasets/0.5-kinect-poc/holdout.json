@@ -1,0 +1,19 @@
+{
+    "_comment": "Kinect Camera Proof-of-Concept dataset",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-04-27/2022-04-27-23-23-18.bag",
+                "start": 1651101804,
+                "end": 1651102013
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-04-27/2022-04-27-23-18-08.bag",
+                "start": 1651101492,
+                "end": 1651101668
+            }
+        ]
+    }
+}

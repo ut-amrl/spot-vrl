@@ -12,6 +12,7 @@ import numpy as np
 import torch
 import tqdm
 from loguru import logger
+from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data import ImuData, ImageData
@@ -65,7 +66,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         viewpoints."""
 
         imu_data = ImuData(self.path)
-        img_data = ImageData(self.path, lazy=False)
+        img_data = ImageData.factory(self.path, lazy=False)
 
         fwd_patches: Dict[int, Dict[int, Tuple[slice, slice]]] = defaultdict(dict)
         """Mapping of image sequence numbers to the future image slices
@@ -88,16 +89,25 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             first_tform_odom = np.linalg.inv(poses[0])
 
             resolution = 150
-            origin_y = 334
-            origin_x = 383
+            horizon_dist = 4.0
+            # The center of the 60x60 patch with this top-left coordinate is
+            # (0,0) in the body frame. Using this coordinate as the first patch
+            # causes the first few patches in each subtrajectory to contain pixels
+            # that are out of view (channel == 0).
+            # origin_y = 866
+            # origin_x = 732
+            # origin_y = images[0].height - 30
+            # origin_x = (images[0].width // 2) - 30
 
-            front_images = [img for img in images if "front" in img.frame_name]
-            td = TopDown(front_images, GROUND_TFORM_BODY).get_view(resolution)
+            # front_images = [img for img in images if "front" in img.frame_name]
+            td = TopDown(images, GROUND_TFORM_BODY).get_view(resolution, horizon_dist)
 
-            patch_slice = np.s_[origin_y : origin_y + 60, origin_x : origin_x + 60]
-            self.patches[i][i] = torch.from_numpy(td[patch_slice].copy())
-            fwd_patches[i][i] = patch_slice
+            # Assume (0, 0) in the body frame is at the center-bottom of this image.
+            origin_y = td.shape[0] - 30
+            origin_x = (td.shape[1] // 2) - 30
 
+            total_dist = np.float64(0)
+            last_odom_pose = poses[0]
             for j in range(i, len(img_data)):
                 jmg_ts, _ = img_data[j]
 
@@ -108,7 +118,21 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                     imu_data.tforms("odom", "body"), jmg_ts
                 )
                 disp = first_tform_odom @ poses[0]
-                dist = np.linalg.norm(disp[:2, 3])
+
+                inst_odom_disp = np.linalg.inv(last_odom_pose) @ poses[0]
+                total_dist += np.linalg.norm(inst_odom_disp[:2, 3])
+                last_odom_pose = poses[0]
+
+                # The viewable distance is greater than horizon_dist
+                # TODO: is this a bug in the TopDown class?
+                if total_dist > 6:
+                    break
+
+                # Odometry suffers from inaccuracies when turning. Truncate the
+                # subtrajectory if the robot turned more than 90 degrees.
+                yaw = Rotation.from_matrix(disp[:3, :3]).as_euler("ZXY")[0]
+                if abs(yaw) > np.pi / 2:
+                    break
 
                 disp_x = disp[0, 3]
                 disp_y = disp[1, 3]
@@ -117,14 +141,16 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 tl_x = origin_x - int(disp_y * resolution)
                 tl_y = origin_y - int(disp_x * resolution)
                 patch_slice = np.s_[tl_y : tl_y + 60, tl_x : tl_x + 60]
-                self.patches[j][i] = torch.from_numpy(td[patch_slice].copy())
-                fwd_patches[i][j] = patch_slice
 
-                if dist > 1.25:
-                    break
+                patch = torch.from_numpy(td[patch_slice].copy())
+
+                # Filter out patches that contain out-of-view areas
+                if patch.shape == (60, 60, 3) and (patch != 0).all():
+                    self.patches[j][i] = torch.permute(patch, (2, 0, 1))
+                    fwd_patches[i][j] = patch_slice
 
             if video_writer is not None:
-                td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)
+                # td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)
                 for _, s in fwd_patches[i].items():
                     # rectangle() takes x,y point order
                     td = cv2.rectangle(
@@ -164,8 +190,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         """
 
         path = Path(path)
-        if path.suffix == ".bddf":
-            path = cls.output_dir / cls.get_serialized_filename(path, start, end)
+        path = cls.output_dir / cls.get_serialized_filename(path, start, end)
 
         with open(path, "rb") as f:
             obj: SingleTerrainDataset = pickle.load(f)
@@ -187,12 +212,21 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         return len(self.keys)
 
     def __getitem__(self, idx: int) -> Tuple[Patch, Patch]:
-        """Return an anchor and positive patch."""
+        """Returns an anchor and similar patch of the same geolocation as viewed
+        from two different viewpoints."""
 
         viewpoint = self.keys[idx]
         patch_ids = tuple(self.patches[viewpoint].keys())
-        singleton = len(patch_ids) == 1
-        a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
+
+        # Use the clearest possible view of the patch as an anchor
+        a_id = max(patch_ids)
+        s_id = np.random.choice(patch_ids, size=1)[0]
+
+        # Debug option: use only the clearest and fuzziest patches
+        # s_id = min(patch_ids)
+
+        # Completely random sampling
+        # a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
 
         return self.patches[viewpoint][a_id], self.patches[viewpoint][s_id]
 
@@ -302,7 +336,7 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
 
         # anchor, pos = self._categories[cat_names[cat_idx]][index]
         anchor, _ = self._categories[cat_names[cat_idx]][index]
-        pos, _ = self._get_random_datum((cat_names[cat_idx],))
+        _, pos = self._get_random_datum((cat_names[cat_idx],))
         neg, _ = self._get_random_datum(
             (*cat_names[:cat_idx], *cat_names[cat_idx + 1 :])
         )

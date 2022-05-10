@@ -34,7 +34,7 @@ class EmbeddingGenerator:
 
         for terrain, ds in train_set._categories.items():
             t = self.tensors.get("train", torch.empty(0))
-            t2 = torch.cat([ds[i][0][None, ...] for i in range(len(ds))], dim=0)
+            t2 = torch.cat([ds[i][1][None, ...] for i in range(len(ds))], dim=0)
             self.tensors["train"] = torch.cat((t, t2), dim=0)
             self.labels.setdefault("train", []).extend(
                 [terrain for _ in range(len(ds))]
@@ -42,7 +42,7 @@ class EmbeddingGenerator:
 
         for terrain, ds in holdout_set._categories.items():
             t = self.tensors.get("holdout", torch.empty(0))
-            t2 = torch.cat([ds[i][0][None, ...] for i in range(len(ds))], dim=0)
+            t2 = torch.cat([ds[i][1][None, ...] for i in range(len(ds))], dim=0)
             self.tensors["holdout"] = torch.cat((t, t2), dim=0)
             self.labels.setdefault("holdout", []).extend(
                 [terrain for _ in range(len(ds))]
@@ -80,7 +80,7 @@ def fit(
     model: TripletNet,
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
-    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
@@ -119,7 +119,7 @@ def fit(
             embedder.write(model, epoch)
 
         pbar.clear()
-        scheduler.step()
+        scheduler.step(val_loss)
 
 
 def train_epoch(

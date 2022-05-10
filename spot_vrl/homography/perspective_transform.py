@@ -6,18 +6,22 @@ import numpy as np
 import numpy.typing as npt
 import cv2
 
-from spot_vrl.data import SpotImage
+from spot_vrl.data.image_data import CameraImage
 from spot_vrl.homography import camera_transform
 
 
 class TopDown:
     def __init__(
-        self, spot_images: List[SpotImage], ground_tform_body: npt.NDArray[np.float64]
+        self,
+        camera_images: List[CameraImage],
+        ground_tform_body: npt.NDArray[np.float64],
     ) -> None:
-        self.spot_images = spot_images
+        self.camera_images = camera_images
         self.ground_tform_body = ground_tform_body
 
-    def get_view(self, resolution: int = 100) -> npt.NDArray[np.uint8]:
+    def get_view(
+        self, resolution: int = 100, horizon_dist: float = 2.0
+    ) -> npt.NDArray[np.uint8]:
         """Generate a top-down view of the ground around the robot.
 
         The image is oriented such that:
@@ -34,16 +38,18 @@ class TopDown:
                 invalid (e.g. out of view).
         """
         all_plane_limits: Dict[str, npt.NDArray[np.float64]] = {}
-        for spot_image in self.spot_images:
-            ground_tform_camera = self.ground_tform_body @ spot_image.body_tform_camera
+        for camera_image in self.camera_images:
+            ground_tform_camera = (
+                self.ground_tform_body @ camera_image.body_tform_camera
+            )
             all_plane_limits[
-                spot_image.frame_name
+                camera_image.frame_name
             ] = camera_transform.visible_ground_plane_limits(
                 ground_tform_camera,
-                spot_image.camera_matrix,
-                spot_image.width,
-                spot_image.height,
-                horizon_dist=2,
+                camera_image.intrinsic_matrix,
+                camera_image.width,
+                camera_image.height,
+                horizon_dist=horizon_dist,
             )
 
         view_limits = np.zeros((2, 2))  # min, max as xy row vectors
@@ -55,20 +61,23 @@ class TopDown:
         output_width = int(np.ceil((view_limits[1] - view_limits[0])[1] * resolution))
         output_height = int(np.ceil((view_limits[1] - view_limits[0])[0] * resolution))
 
+        channels = self.camera_images[0].channels
         output_img: npt.NDArray[np.uint8] = np.zeros(
-            (output_height, output_width), dtype=np.uint8
-        )
+            (output_height, output_width, channels), dtype=np.uint8
+        ).squeeze()
 
-        for spot_image in self.spot_images:
-            ground_tform_camera = self.ground_tform_body @ spot_image.body_tform_camera
+        for camera_image in self.camera_images:
+            ground_tform_camera = (
+                self.ground_tform_body @ camera_image.body_tform_camera
+            )
             camera_tform_ground = np.linalg.inv(ground_tform_camera)
 
-            plane_limits = all_plane_limits[spot_image.frame_name]
+            plane_limits = all_plane_limits[camera_image.frame_name]
 
             # Calculate the source image coordinates of this camera's ground
             # plane limits.
             limits_source_coords = camera_transform.ground_to_image(
-                plane_limits, camera_tform_ground, spot_image.camera_matrix
+                plane_limits, camera_tform_ground, camera_image.intrinsic_matrix
             )
 
             # Calculate the output image coordinates of this camera's ground
@@ -82,7 +91,7 @@ class TopDown:
                 limits_output_coords.astype(np.float32).T,
             )
 
-            ground_img = spot_image.decoded_image_ground_plane()
+            ground_img = camera_image.decoded_image_ground_plane()
             warped_ground_img: npt.NDArray[np.uint8] = cv2.warpPerspective(
                 ground_img, perspective_transform, (output_width, output_height)
             )
