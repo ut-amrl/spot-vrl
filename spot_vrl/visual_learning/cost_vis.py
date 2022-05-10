@@ -47,8 +47,6 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
     fps = estimate_fps(imgdata)
     video_writer = VideoWriter(Path("images") / f"{filename.stem}-cost.mp4", fps=fps)
 
-    count = 0
-
     images: List[CameraImage]
     for _, images in tqdm.tqdm(
         imgdata, desc="Processing Cost Video", total=len(imgdata), dynamic_ncols=True
@@ -56,7 +54,6 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
         # images = [image for image in images if "front" in image.frame_name]
         td = perspective_transform.TopDown(images, GROUND_TFORM_BODY)
         view = td.get_view(resolution=150, horizon_dist=4.0)
-        # cost_view = np.zeros((*view.shape, 3), dtype=np.uint8)
         cost_view = np.zeros(view.shape, dtype=np.uint8)
 
         PATCH_SIZE = 60
@@ -73,9 +70,7 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
                 patch = torch.from_numpy(view[patch_y, patch_x]).permute((2, 0, 1))[
                     None, :
                 ]
-                # logger.debug(patch.shape)
 
-                # TODO: find actual min size limits based on kernel sizes
                 if patch.shape[2] < 60 or patch.shape[3] < 60 or 0 in patch:
                     continue
 
@@ -84,7 +79,7 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
 
             if len(patch_imgs) == 0:
                 continue
-            #
+
             costs = cost_model.get_cost(torch.cat(patch_imgs))
 
             for i in range(len(patch_slices)):
@@ -104,10 +99,6 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
         # view = cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
         view = np.vstack((view, cost_view))
         video_writer.add_frame(view)
-
-        # count += 1
-        # if count > 1000:
-        #     break
 
     video_writer.close()
 

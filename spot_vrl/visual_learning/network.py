@@ -35,7 +35,7 @@ class EmbeddingNet(nn.Module):
         # Reduce 1x60x60 image into a 128x1x1 image
         self.convnet = nn.Sequential(
             # 1x60x60
-            self.ConvBlock(1, 16, 7),
+            self.ConvBlock(3, 16, 7),
             # 16x30x30
             self.ConvBlock(16, 64, 5),
             # 64x15x15
@@ -46,9 +46,7 @@ class EmbeddingNet(nn.Module):
         self.fc = nn.Linear(128, embedding_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # input is BxHxW, convnet wants BxCxHxW
-        # TODO: do input scaling outside of network?
-        x = x[:, None, :, :].float() / 255
+        x = x.float() / 255
         output: torch.Tensor = self.convnet(x)
         output = output.mean(dim=(2, 3))
         output = self.fc(output)
