@@ -6,7 +6,8 @@ import numpy as np
 import numpy.typing as npt
 import tqdm
 
-from spot_vrl.data import ImuData, ImageData, SpotImage
+from spot_vrl.data import ImuData, ImageData
+from spot_vrl.data.image_data import CameraImage
 from spot_vrl.homography import camera_transform
 from spot_vrl.homography.perspective_transform import TopDown
 
@@ -53,10 +54,10 @@ class SynchronizedData:
         """
 
         imu_container = ImuData(filename)
-        image_container = ImageData(filename, lazy=True)
+        image_container = ImageData.factory(filename, lazy=True)
 
         image_timestamp: np.float64
-        image_list: List[SpotImage]
+        image_list: List[CameraImage]
         for image_timestamp, image_list in tqdm.tqdm(
             image_container, desc="Loading SyncedData", total=len(image_container)
         ):
@@ -68,7 +69,9 @@ class SynchronizedData:
                 break
 
             # Compute the top-down view of only the front two cameras.
-            front_images = [img for img in image_list if "front" in img.frame_name]
+            front_images: List[CameraImage] = [
+                img for img in image_list if "front" in img.frame_name
+            ]
             top_down_view = TopDown(front_images, GROUND_TFORM_BODY).get_view(
                 resolution=150
             )

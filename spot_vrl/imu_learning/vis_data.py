@@ -9,7 +9,7 @@ In general, windows can be filtered/selected based on:
 
 import argparse
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import cv2
 import numpy as np
@@ -21,6 +21,7 @@ from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from spot_vrl import homography
 from spot_vrl.data import ImuData, SpotImage
+from spot_vrl.data.image_data import CameraImage
 from spot_vrl.homography.perspective_transform import TopDown
 from spot_vrl.scripts.gp import ImageWithText  # maybe a bad dependency
 from spot_vrl.utils.video_writer import VideoWriter
@@ -57,7 +58,7 @@ class ImageIterator:
             self._series_index, GetImageResponse, self._iter_idx
         )
 
-        images = []
+        images: List[CameraImage] = []
         for image_response in response.image_responses:
             image = SpotImage(image_response)
             if image.frame_name.startswith("front"):

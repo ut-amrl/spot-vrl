@@ -21,6 +21,13 @@ tensorboard = "^2.8.0"
 scikit-learn = "^1.0.2"
 loguru = "^0.6.0"
 
+# Dependencies for rosbag
+PyYAML = "^6.0"
+pycryptodomex = "^3.14.1"
+python-gnupg = "^0.4.8"
+rospkg = "^1.4.0"
+simplejpeg = "^1.6.4"
+
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.1"
 mypy = "^0.931"
@@ -47,7 +54,21 @@ module = [
     "matplotlib.*",
     "scipy.*",
     "seaborn",
+    "simplejpeg",
     "torchvision.*",
     "tqdm",
+]
+ignore_missing_imports = true
+
+# ROS system packages
+[[tool.mypy.overrides]]
+module = [
+    "geometry_msgs.*",
+    "nav_msgs.*",
+    "rosbag",
+    "rospy",
+    "sensor_msgs.*",
+    "spot_msgs.*",
+    "tf2_msgs.*",
 ]
 ignore_missing_imports = true

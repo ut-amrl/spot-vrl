@@ -22,7 +22,8 @@ from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.api.robot_id_pb2 import RobotIdResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 
-from spot_vrl.data import ImuData, SpotImage
+from spot_vrl.data import ImuData
+from spot_vrl.data.image_data import SpotImage, CameraImage
 from spot_vrl.homography import camera_transform, perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
 
@@ -125,7 +126,7 @@ class SensorData:
             )
             ts = float(ts) * 1e-9 - self._start_ts
 
-            images: List[SpotImage] = []
+            images: List[CameraImage] = []
             for image_response in response.image_responses:
                 image = SpotImage(image_response)
                 if image.frame_name.startswith("front"):
