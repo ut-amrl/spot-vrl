@@ -1,6 +1,4 @@
 import glob
-
-import matplotlib.pyplot as plt
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -8,7 +6,7 @@ import torch.nn.functional as F
 import argparse
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
 import pickle
-from scipy import fftpack
+from scipy import fftpack, gradient
 import numpy as np
 from datetime import datetime
 from torchvision.utils import make_grid
@@ -17,7 +15,6 @@ import random
 import tensorflow as tf
 import tensorboard as tb
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
-
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from scripts.recurrent_model import Encoder, Decoder
@@ -60,8 +57,8 @@ class CustomDataset(Dataset):
 
 		# randomly pick a patch from the list
 		patch = random.sample(self.data[idx]['patches'], 1)[0]
-		patch = patch.astype(np.float32) / 255.0
-		patch = np.expand_dims(patch, axis=0)
+		patch = patch.astype(np.float32) / 255.0 # normalize
+		patch = np.expand_dims(patch, axis=0) # add batch dimension
 
 		joint_positions = self.data[idx]['joint_positions'][-26:, :].flatten()
 		joint_velocities = self.data[idx]['joint_velocities'][-26:, :].flatten()
@@ -170,30 +167,35 @@ class BarlowModel(pl.LightningModule):
 		# 	nn.utils.spectral_norm(nn.Linear(1024, 128))
 		# )
 
-		# self.inertial_encoder = nn.Sequential(
-		# 	nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(16), nn.ReLU(), # 558
-		# 	nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False), nn.BatchNorm1d(32), nn.ReLU(), # 185
-		# 	nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False), nn.BatchNorm1d(64), nn.ReLU(), # 60
-		# 	nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(128), nn.ReLU(), # 30
-		# 	nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False), nn.ReLU(), # 8
-		# 	nn.Flatten(),
-		# 	nn.Linear(2048, 128)
-		# )
-
 		self.inertial_encoder = nn.Sequential(
-			nn.utils.spectral_norm(nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False)), nn.ReLU(), # 558
-			nn.utils.spectral_norm(nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False)), nn.ReLU(), # 185
-			nn.utils.spectral_norm(nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False)), nn.ReLU(), # 60
-			nn.utils.spectral_norm(nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False)), nn.ReLU(), # 30
-			nn.utils.spectral_norm(nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False)), nn.ReLU(), # 8
+			nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(16), nn.ReLU(), # 558
+			nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False), nn.BatchNorm1d(32), nn.ReLU(), # 185
+			nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False), nn.BatchNorm1d(64), nn.ReLU(), # 60
+			nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(128), nn.ReLU(), # 30
+			nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False), nn.ReLU(), # 8
 			nn.Flatten(),
-			nn.utils.spectral_norm(nn.Linear(2048, 128))
+			nn.Linear(2048, 128)
 		)
+
+		# self.inertial_encoder = nn.Sequential(
+		# 	nn.utils.spectral_norm(nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False)), nn.ReLU(), # 558
+		# 	nn.utils.spectral_norm(nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False)), nn.ReLU(), # 185
+		# 	nn.utils.spectral_norm(nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False)), nn.ReLU(), # 60
+		# 	nn.utils.spectral_norm(nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False)), nn.ReLU(), # 30
+		# 	nn.utils.spectral_norm(nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False)), nn.ReLU(), # 8
+		# 	nn.Flatten(),
+		# 	nn.utils.spectral_norm(nn.Linear(2048, 128))
+		# )
 
 		self.projector = nn.Sequential(
 			nn.Linear(128, 1024, bias=False), nn.BatchNorm1d(1024), nn.ReLU(),
 			nn.Linear(1024, latent_size)
 		)
+  
+		# self.projector = nn.Sequential(
+		# 	nn.utils.spectral_norm(nn.Linear(128, 1024, bias=True)), nn.ReLU(),
+		# 	nn.utils.spectral_norm(nn.Linear(1024, latent_size))
+		# )
 
 		self.mean, self.std = torch.tensor(mean).float(), torch.tensor(std).float()
 
@@ -343,7 +345,7 @@ class BarlowModel(pl.LightningModule):
 			visual_patch, imu_history, label = batch
 			label = np.asarray(label)
 			visual_patch = visual_patch.float()
-			visual_encoding = self.visual_encoder(visual_patch)
+			visual_encoding = self.visual_encoder(visual_patch.cuda())
 
 
 			if batch_idx == 0:
@@ -385,9 +387,9 @@ if __name__ == '__main__':
 	# parse command line arguments
 	parser = argparse.ArgumentParser(description='Dual Auto Encoder')
 	parser.add_argument('--batch_size', type=int, default=1024, metavar='N',
-						help='input batch size for training (default: 32)')
+						help='input batch size for training (default: 1024)')
 	parser.add_argument('--epochs', type=int, default=1000, metavar='N',
-						help='number of epochs to train (default: 100)')
+						help='number of epochs to train (default: 1000)')
 	parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
 						help='learning rate (default: 3e-4)')
 	parser.add_argument('--data_dir', type=str, default='data/', metavar='N',
@@ -399,10 +401,10 @@ if __name__ == '__main__':
 	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
 						help='number of GPUs to use (default: 1)')
 	parser.add_argument('--latent_size', type=int, default=1024, metavar='N',
-						help='Size of the common latent space (default: 6)')
+						help='Size of the common latent space (default: 1024)')
 	args = parser.parse_args()
 
-	device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	dm = MyDataLoader(data_path=args.data_dir, batch_size=args.batch_size)
 	model = BarlowModel(lr=args.lr, latent_size=args.latent_size, mean=dm.mean, std=dm.std,
 						inertial_shape=dm.inertial_shape, scale_loss=1.0, lambd=0.0051, per_device_batch_size=args.batch_size).to(device)
@@ -424,11 +426,3 @@ if __name__ == '__main__':
 						 )
 
 	trainer.fit(model, dm)
-
-
-
-
-
-
-
-
