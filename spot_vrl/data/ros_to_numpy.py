@@ -3,11 +3,10 @@ This module provides helper functions to convert ROS messages to numpy
 structures.
 """
 
-from typing import Any, Dict, Optional, Tuple, Type
+from typing import Any, Dict, Tuple, Type
 
 import numpy as np
 import numpy.typing as npt
-from loguru import logger
 from scipy.spatial.transform import Rotation
 
 
@@ -71,6 +70,37 @@ def body_tform_frames(
         body_tform_frames[child] = affine
 
     return body_tform_frames
+
+
+def est_kinect_rot(imu: sensor_msgs.msg.Imu) -> npt.NDArray[np.float64]:
+    """Estimates the rotation of an Azure Kinect DK using an IMU reading taken
+    at rest.
+
+    Uses Rodrigues' rotation formula to calculate the rotation from the reported
+    gravity vector to the unit vector pointing straight up from the body of the
+    Kinect.
+
+    IMU readings from the Kinect use the Z-towards-ground coordinate frame.
+    (Thus, when a Kinect is flat and at rest, acceleration due to gravity is
+    reported as approximately [0, 0, -9.8])
+    """
+    accel = imu.linear_acceleration
+    v_g = np.array([accel.x, accel.y, accel.z], dtype=np.float64)
+    unit_up = np.array([0, 0, -1], dtype=np.float64)
+
+    v_g /= np.linalg.norm(v_g)
+    cross = np.cross(v_g, unit_up)
+    sin_a = np.linalg.norm(cross)
+    cos_a = np.dot(v_g, unit_up)
+    cross /= sin_a
+    K = np.array(
+        [
+            [0, -cross[2], cross[1]],
+            [cross[2], 0, -cross[0]],
+            [-cross[1], cross[0], 0],
+        ]
+    )
+    return np.identity(3) + sin_a * K + (1 - cos_a) * K @ K  # type: ignore
 
 
 class TimeSyncedMessages:
