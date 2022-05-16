@@ -22,8 +22,6 @@ from spot_vrl.data.image_data import ImageData, CameraImage
 from spot_vrl.homography import camera_transform, perspective_transform
 from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
 
-# TODO(eyang): use values from robot states
-BODY_HEIGHT_EST = 0.48938  # meters
 
 
 def estimate_fps(img_data: ImageData) -> int:
@@ -49,7 +47,6 @@ def fuse_images(filename: str) -> None:
     imu = ImuData(filepath)
     img_data = ImageData.factory(filepath, lazy=True)
 
-    ground_tform_body = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
     start_ts = img_data[0][0]
     start_tform_odom: npt.NDArray[np.float32] = imu.tforms("body", "odom")[0]
 
@@ -70,7 +67,7 @@ def fuse_images(filename: str) -> None:
         _, lin_vels = imu.query_time_range(imu.linear_vel, ts)
         lin_vel = lin_vels[0]
 
-        td = perspective_transform.TopDown(images, ground_tform_body)
+        td = perspective_transform.TopDown(images)
 
         # img_wrapper = ImageWithText(cv2.cvtColor(td.get_view(), cv2.COLOR_GRAY2BGR))
         img_wrapper = ImageWithText(td.get_view(resolution=250, horizon_dist=4))

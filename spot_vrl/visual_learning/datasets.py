@@ -16,13 +16,9 @@ from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data import ImuData, ImageData
-from spot_vrl.homography import camera_transform
 from spot_vrl.homography.perspective_transform import TopDown
 from spot_vrl.utils.video_writer import VideoWriter
 
-# TODO(eyang): use values from robot states
-BODY_HEIGHT_EST = 0.48938  # meters
-GROUND_TFORM_BODY = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
 
 Patch = torch.Tensor
 """Single channel uint8 image."""
@@ -100,7 +96,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             # origin_x = (images[0].width // 2) - 30
 
             # front_images = [img for img in images if "front" in img.frame_name]
-            td = TopDown(images, GROUND_TFORM_BODY).get_view(resolution, horizon_dist)
+            td = TopDown(images).get_view(resolution, horizon_dist)
 
             # Assume (0, 0) in the body frame is at the center-bottom of this image.
             origin_y = td.shape[0] - 30

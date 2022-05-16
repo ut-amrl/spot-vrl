@@ -24,11 +24,8 @@ from bosdyn.bddf import DataReader, ProtobufReader
 
 from spot_vrl.data import ImuData
 from spot_vrl.data.image_data import SpotImage, CameraImage
-from spot_vrl.homography import camera_transform, perspective_transform
+from spot_vrl.homography import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
-
-# TODO(eyang): use values from robot states
-BODY_HEIGHT_EST = 0.48938  # meters
 
 
 class ImageWithText:
@@ -116,10 +113,6 @@ class SensorData:
         )
         num_msgs = len(series_block_index.block_entries)
 
-        ground_tform_body = camera_transform.affine3d(
-            [0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST]
-        )
-
         for msg_idx in range(num_msgs):
             _, ts, response = self._proto_reader.get_message(
                 series_index, GetImageResponse, msg_idx
@@ -132,7 +125,7 @@ class SensorData:
                 if image.frame_name.startswith("front"):
                     images.append(image)
 
-            fused = perspective_transform.TopDown(images, ground_tform_body)
+            fused = perspective_transform.TopDown(images)
             yield ts, fused.get_view()
 
     def save_video(self) -> None:

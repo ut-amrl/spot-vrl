@@ -19,7 +19,6 @@ import tqdm
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
-from spot_vrl import homography
 from spot_vrl.data import ImuData, SpotImage
 from spot_vrl.data.image_data import CameraImage
 from spot_vrl.homography.perspective_transform import TopDown
@@ -42,10 +41,6 @@ class ImageIterator:
         self.num_msgs = len(series_block_index.block_entries)
         self._iter_idx = 0
 
-        self._ground_tform_body = homography.camera_transform.affine3d(
-            [0, 0, 0, 1], [0, 0, 0.48938]
-        )
-
     def __iter__(self) -> "ImageIterator":
         self._iter_idx = 0
         return self
@@ -64,7 +59,7 @@ class ImageIterator:
             if image.frame_name.startswith("front"):
                 images.append(image)
 
-        fused = TopDown(images, self._ground_tform_body)
+        fused = TopDown(images)
 
         self._iter_idx += 1
         return float(ts) * 1e-9, fused.get_view(resolution=150)

@@ -9,7 +9,7 @@ import tqdm
 from loguru import logger
 
 from spot_vrl.data.image_data import ImageData, SpotImage, CameraImage
-from spot_vrl.homography import camera_transform, perspective_transform
+from spot_vrl.homography import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
 from spot_vrl.visual_learning.network import (
     CostNet,
@@ -41,9 +41,6 @@ def load_cost_model(path: Path, embedding_dim: int) -> FullPairCostNet:
 def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
     imgdata = ImageData.factory(filename, lazy=True)
 
-    BODY_HEIGHT_EST = 0.48938  # meters
-    GROUND_TFORM_BODY = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
-
     fps = estimate_fps(imgdata)
     video_writer = VideoWriter(Path("images") / f"{filename.stem}-cost.mp4", fps=fps)
 
@@ -52,7 +49,7 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
         imgdata, desc="Processing Cost Video", total=len(imgdata), dynamic_ncols=True
     ):
         # images = [image for image in images if "front" in image.frame_name]
-        td = perspective_transform.TopDown(images, GROUND_TFORM_BODY)
+        td = perspective_transform.TopDown(images)
         view = td.get_view(resolution=150, horizon_dist=4.0)
         cost_view = np.zeros(view.shape, dtype=np.uint8)
 

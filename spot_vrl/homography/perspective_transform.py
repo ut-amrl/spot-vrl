@@ -14,10 +14,8 @@ class TopDown:
     def __init__(
         self,
         camera_images: List[CameraImage],
-        ground_tform_body: npt.NDArray[np.float64],
     ) -> None:
         self.camera_images = camera_images
-        self.ground_tform_body = ground_tform_body
 
     def get_view(
         self, resolution: int = 100, horizon_dist: float = 2.0
@@ -39,13 +37,10 @@ class TopDown:
         """
         all_plane_limits: Dict[str, npt.NDArray[np.float64]] = {}
         for camera_image in self.camera_images:
-            ground_tform_camera = (
-                self.ground_tform_body @ camera_image.body_tform_camera
-            )
             all_plane_limits[
                 camera_image.frame_name
             ] = camera_transform.visible_ground_plane_limits(
-                ground_tform_camera,
+                camera_image.ground_tform_camera,
                 camera_image.intrinsic_matrix,
                 camera_image.width,
                 camera_image.height,
@@ -67,10 +62,7 @@ class TopDown:
         ).squeeze()
 
         for camera_image in self.camera_images:
-            ground_tform_camera = (
-                self.ground_tform_body @ camera_image.body_tform_camera
-            )
-            camera_tform_ground = np.linalg.inv(ground_tform_camera)
+            camera_tform_ground = np.linalg.inv(camera_image.ground_tform_camera)
 
             plane_limits = all_plane_limits[camera_image.frame_name]
 

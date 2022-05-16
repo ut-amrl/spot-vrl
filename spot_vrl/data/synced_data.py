@@ -8,14 +8,7 @@ import tqdm
 
 from spot_vrl.data import ImuData, ImageData
 from spot_vrl.data.image_data import CameraImage
-from spot_vrl.homography import camera_transform
 from spot_vrl.homography.perspective_transform import TopDown
-
-BODY_HEIGHT_EST = 0.48938  # meters
-GROUND_TFORM_BODY = camera_transform.affine3d([0, 0, 0, 1], [0, 0, BODY_HEIGHT_EST])
-"""
-A hardcoded estimate of the robot body pose in the ground plane frame.
-"""
 
 
 @dataclass
@@ -72,9 +65,7 @@ class SynchronizedData:
             front_images: List[CameraImage] = [
                 img for img in image_list if "front" in img.frame_name
             ]
-            top_down_view = TopDown(front_images, GROUND_TFORM_BODY).get_view(
-                resolution=150
-            )
+            top_down_view = TopDown(front_images).get_view(resolution=150)
 
             # Query the IMU data window immediately before this image was taken.
             _, imu_history = imu_container.query_time_range(

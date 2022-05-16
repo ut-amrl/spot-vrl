@@ -81,6 +81,20 @@ class CameraImage(abc.ABC):
 
     @property
     @abc.abstractmethod
+    def body_height(self) -> np.float64:
+        """The height of the body frame above the ground, used for
+        homography."""
+
+    @property
+    def ground_tform_camera(self) -> npt.NDArray[np.float64]:
+        """The 4x4 Affine3D pose of this camera relative to the ground
+        below the body frame."""
+        tform = np.copy(self.body_tform_camera)
+        tform[2, 3] += self.body_height
+        return tform
+
+    @property
+    @abc.abstractmethod
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
         """The 3x3 intrinsic matrix of this camera."""
 
@@ -205,6 +219,10 @@ class SpotImage(CameraImage):
         return self._body_tform_camera
 
     @property
+    def body_height(self) -> np.float64:
+        return KinectDefaults.BODY_HEIGHT["spot"]
+
+    @property
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
         return self._intrinsic_matrix
 
@@ -231,12 +249,14 @@ class KinectImage(CameraImage):
         compressed_image: CompressedImage,
         intrinsic_matrix: npt.NDArray[np.float64],
         body_tform_camera: npt.NDArray[np.float64],
+        body_height: np.float64,
     ) -> None:
         self._ts = np.float64(compressed_image.header.stamp.to_sec())
         self._imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
 
         self._intrinsic_matrix = intrinsic_matrix
         self._body_tform_camera = body_tform_camera
+        self._body_height = body_height
 
     def decoded_image(self) -> npt.NDArray[np.uint8]:
         img: npt.NDArray[np.uint8] = simplejpeg.decode_jpeg(
@@ -317,6 +337,10 @@ class KinectImage(CameraImage):
     @property
     def body_tform_camera(self) -> npt.NDArray[np.float64]:
         return self._body_tform_camera
+
+    @property
+    def body_height(self) -> np.float64:
+        return self._body_height
 
     @property
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
@@ -546,6 +570,12 @@ class KinectDefaults:
     information was estimated using a ruler.
     """
 
+    BODY_HEIGHT: ClassVar[Dict[str, np.float64]] = {
+        "spot": np.float64(0.48938),  # TODO: hardcoded value, try to use GPE frame?
+        "jackal": np.float64(0),
+        "unknown": np.float64(0),
+    }
+
     INTRINSIC_MATRIX: ClassVar[Dict[str, npt.NDArray[np.float64]]] = {
         "spot": np.array(
             [
@@ -637,6 +667,7 @@ class KinectImageData(ImageData):
                         msg,
                         KinectDefaults.INTRINSIC_MATRIX[robot_name],
                         body_tform_camera,
+                        KinectDefaults.BODY_HEIGHT[robot_name],
                     )
                 ]
             )
