@@ -17,9 +17,9 @@ from scipy.spatial.transform.rotation import Rotation
 if sys.platform == "linux":
     import rospy
     import rosbag
-    from sensor_msgs.msg import CompressedImage
+    from sensor_msgs.msg import CompressedImage, Imu
 
-from spot_vrl.data import proto_to_numpy
+from spot_vrl.data import proto_to_numpy, ros_to_numpy
 from spot_vrl.homography import camera_transform
 
 
@@ -222,27 +222,21 @@ class KinectImage(CameraImage):
     # setting. Extrinsic information was estimated using a ruler and gyroscope.
     EXPECTED_HEIGHT: Final[int] = 1536
     EXPECTED_WIDTH: Final[int] = 2048
-    INTRINSIC_MATRIX: Final[npt.NDArray[np.float64]] = np.array(
-        [
-            [984.822632, 0, 1020.586365],
-            [0, 984.730103, 780.647827],
-            [0, 0, 1],
-        ],
-        dtype=np.float64,
-    )
-    BODY_ROT_FRAME: Final[npt.NDArray[np.float64]] = Rotation.from_euler(
-        "XYZ", (0, 20.5, 0), degrees=True
-    ).as_matrix()
-    BODY_TRANS_FRAME: Final[npt.NDArray[np.float64]] = np.array(
-        [0.35, 0, 0.245], dtype=np.float64
-    )
 
     # TODO: same structure as SpotImage, can put this in CameraImage
     _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}
 
-    def __init__(self, compressed_image: CompressedImage) -> None:
+    def __init__(
+        self,
+        compressed_image: CompressedImage,
+        intrinsic_matrix: npt.NDArray[np.float64],
+        body_tform_camera: npt.NDArray[np.float64],
+    ) -> None:
         self._ts = np.float64(compressed_image.header.stamp.to_sec())
         self._imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
+
+        self._intrinsic_matrix = intrinsic_matrix
+        self._body_tform_camera = body_tform_camera
 
     def decoded_image(self) -> npt.NDArray[np.uint8]:
         img: npt.NDArray[np.uint8] = simplejpeg.decode_jpeg(
@@ -322,22 +316,11 @@ class KinectImage(CameraImage):
 
     @property
     def body_tform_camera(self) -> npt.NDArray[np.float64]:
-        mat = np.identity(4)
-
-        # TODO: this math seems to work, but maybe on accident
-        # e.g. is "XYZ" order correct in BODY_ROT_FRAME ?
-        # Need to formalize the math, update variable names to make more sense
-
-        # second transform such that z points out of the camera
-        camera_fwd = Rotation.from_euler("XYZ", (-90, 90, 0), degrees=True).as_matrix()
-        mat[:3, :3] = self.BODY_ROT_FRAME @ camera_fwd
-        mat[:3, 3] = self.BODY_TRANS_FRAME
-
-        return mat
+        return self._body_tform_camera
 
     @property
     def intrinsic_matrix(self) -> npt.NDArray[np.float64]:
-        return self.INTRINSIC_MATRIX
+        return self._intrinsic_matrix
 
     @property
     def timestamp(self) -> np.float64:
@@ -557,19 +540,106 @@ class SpotImageData(ImageData):
             return self._timestamps[idx], self._images[idx]
 
 
+class KinectDefaults:
+    """Hardcoded properties for Kinect cameras. Intrinsic information was
+    generated from the k4a_ros repository using the 1536p setting. Extrinsic
+    information was estimated using a ruler.
+    """
+
+    INTRINSIC_MATRIX: ClassVar[Dict[str, npt.NDArray[np.float64]]] = {
+        "spot": np.array(
+            [
+                [984.822632, 0, 1020.586365],
+                [0, 984.730103, 780.647827],
+                [0, 0, 1],
+            ],
+            dtype=np.float64,
+        ),
+        "jackal": np.array(
+            [
+                [984.822632, 0, 1020.586365],
+                [0, 984.730103, 780.647827],
+                [0, 0, 1],
+            ],
+            dtype=np.float64,
+        ),  # TODO: this is a copy of the spot matrix; get the proper calibration from jackal
+        "unknown": np.zeros((3, 3)),
+    }
+
+    BODY_TRANS_KINECT: ClassVar[Dict[str, npt.NDArray[np.float64]]] = {
+        "spot": np.array([0.35, 0, 0.245], dtype=np.float64),
+        "jackal": np.array([0.127, 0, 0.559], dtype=np.float64),
+        "unknown": np.zeros(3),
+    }
+
+    BODY_ROT_KINECT_FALLBACK: ClassVar[npt.NDArray[np.float64]] = Rotation.from_euler(
+        "XYZ", (0, 20, 0), degrees=True
+    ).as_matrix()
+
+    @staticmethod
+    def detect_robot(bag: rosbag.Bag) -> str:
+        """Tries to determine which robot the specified bagfile came from by
+        searching for robot-specific topics.
+
+        These topic lists will likely need to change over time.
+        """
+
+        spot_topics = [
+            "/spot/odometry/twist",
+            "/spot/status/battery_states",
+            "/spot/status/feet",
+        ]
+        jackal_topics = ["/jackal_velocity_controller/odom"]
+
+        if bag.get_message_count(spot_topics) > 0:
+            return "spot"
+        elif bag.get_message_count(jackal_topics) > 0:
+            return "jackal"
+        else:
+            logger.error(
+                f"Could not determine robot using bagfile topics ({bag.filename})."
+            )
+            return "unknown"
+
+
 class KinectImageData(ImageData):
     def __init__(self, filename: Union[str, Path]) -> None:
         super().__init__(filename, False)
 
         bag = rosbag.Bag(str(self._path))
+        robot_name = KinectDefaults.detect_robot(bag)
 
-        topic: str
+        body_rot_kinect: npt.NDArray[np.float64]
+        if bag.get_message_count("/kinect_imu") > 0:
+            first_imu: Imu
+            _, first_imu, _ = next(bag.read_messages("/kinect_imu"))
+            body_rot_kinect = ros_to_numpy.est_kinect_rot(first_imu)
+        else:
+            logger.warning(
+                "Bagfile does not contain /kinect_imu msgs. Using default fallback of 20º pitch."
+            )
+            body_rot_kinect = KinectDefaults.BODY_ROT_KINECT_FALLBACK
+
+        kinect_rot_camera = Rotation.from_euler(
+            "XYZ", (-90, 90, 0), degrees=True
+        ).as_matrix()
+
+        body_tform_camera = np.identity(4)
+        body_tform_camera[:3, 3] = KinectDefaults.BODY_TRANS_KINECT[robot_name]
+        body_tform_camera[:3, :3] = body_rot_kinect @ kinect_rot_camera
+
         msg: CompressedImage
         ts: rospy.Time  # hmm does this match the KinectImage time?
-        for topic, msg, ts in bag.read_messages(
-            topics="/camera/rgb/image_raw/compressed"
-        ):
-            self._images.append([KinectImage(msg)])
+        for _, msg, ts in bag.read_messages(topics="/camera/rgb/image_raw/compressed"):
+            self._images.append(
+                [
+                    KinectImage(
+                        msg,
+                        KinectDefaults.INTRINSIC_MATRIX[robot_name],
+                        body_tform_camera,
+                    )
+                ]
+            )
 
         self._timestamps = np.array(
             [img_list[0].timestamp for img_list in self._images], dtype=np.float64
