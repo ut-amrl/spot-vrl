@@ -1,3 +1,6 @@
 [submodule "src/LeGO-LOAM"]
 	path = src/LeGO-LOAM
 	url = git@github.com:RobustFieldAutonomyLab/LeGO-LOAM.git
+[submodule "src/geometry2"]
+	path = src/geometry2
+	url = https://github.com/ros/geometry2

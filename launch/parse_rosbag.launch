@@ -1,7 +1,7 @@
 <launch>
 
     <!--    run lego-loam-->
-    <include file="$(find lego_loam)/launch/run.launch" />
+    <!-- <include file="$(find lego_loam)/launch/run.launch"/> -->
 
     <arg name="rosbag_path" default="None"/>
     <arg name="save_data_path" default="/robodata/haresh92/spot-vrl/jackal_data/processed_pickle_files/" />
@@ -10,6 +10,6 @@
     <param name="rosbag_path" type="str" value="$(arg rosbag_path)" />
     <param name="save_data_path" type="str" value="$(arg save_data_path)" />
     <param name="robot_name" type="str" value="jackal" />
-    <node name="listen_record_data" pkg="lidar_rosbag_parser" type="listen_record_data.py" output="screen" required="true"/>
+    <node name="lidar_rosbag_parser" pkg="lidar_rosbag_parser" type="rosbag_data_rerecorder.py" output="screen" required="true"/>
 
 </launch>
