@@ -6,12 +6,11 @@ and saves the processed data into a pickle file.
 
 # import sys
 # sys.path.remove('/opt/ros/melodic/lib/python2.7/dist-packages')
-# from copyreg import pickle
-import pickle
+from copyreg import pickle
 import numpy as np
 import time
+
 from torch import dtype
-from tqdm import tqdm
 import rospy
 import os
 import cv2
@@ -22,8 +21,8 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import CompressedImage, Imu
 import tf2_ros
 from termcolor import cprint
-import message_filters
 from scipy.spatial.transform import Rotation as R
+import message_filters
 
 PATCH_SIZE = 64
 PATCH_EPSILON = 0.5 * PATCH_SIZE * PATCH_SIZE
@@ -61,9 +60,7 @@ class ListenRecordData:
         and saves the processed data into a pickle file after the rosbag play is finished.
         """
 
-    def __init__(self, save_data_path, rosbag_play_process):
-        self.rosbag_play_process = rosbag_play_process
-        self.save_data_path = save_data_path
+    def __init__(self):
 
         # we have 2 imus - one from jackal and one from azure kinect
         self.imu_msgs_jackal = np.zeros((200, 6), dtype=np.float32)  # past 200 imu messages ~ 1.98 s
@@ -80,6 +77,9 @@ class ListenRecordData:
             'imu_jackal_orientation': [],
             'odom': []
         }
+        
+        self.storage_buffer = {'image':[], 'odom':[]}
+        
 
         # counter to keep count of the number of messages received
         self.counter = 0
@@ -88,12 +88,13 @@ class ListenRecordData:
         rospy.Subscriber('/imu/data', Imu, self.imu_callback_jackal)
         rospy.Subscriber('/kinect_imu', Imu, self.imu_callback_kinect)
         # rospy.Subscriber('/camera/rgb/image_raw/compressed', CompressedImage, self.image_callback)
-        
-        # approximate syncronization of the odom and camera topics
+        # rospy.Subscriber('/jackal_velocity_controller/odom', Odometry, self.wheel_odom_callback)
         image_topic = message_filters.Subscriber('/camera/rgb/image_raw/compressed', CompressedImage)
         odom_topic = message_filters.Subscriber('/jackal_velocity_controller/odom', Odometry)
+        # approximate syncronization of the two topics
         ts = message_filters.ApproximateTimeSynchronizer([image_topic, odom_topic], 10, 0.05, allow_headerless=True)
         ts.registerCallback(self.image_odom_callback)
+        
         
     def imu_callback_jackal(self, msg):
         self.imu_msgs_jackal = np.roll(self.imu_msgs_jackal, -1, axis=0)
@@ -105,6 +106,10 @@ class ListenRecordData:
         self.imu_msgs_kinect = np.roll(self.imu_msgs_kinect, -1, axis=0)
         self.imu_msgs_kinect[-1] = np.array([msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z,
                                              msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z])
+        
+    def wheel_odom_callback(self, msg):
+        orientation = R.from_quat([msg.pose.pose.orientation.x, msg.pose.pose.orientation.y, msg.pose.pose.orientation.z, msg.pose.pose.orientation.w]).as_euler('XYZ')[-1]
+        self.odom = np.asarray([msg.pose.pose.position.x, msg.pose.pose.position.y, orientation])
     
     def get_localization(self):
         try:
@@ -114,83 +119,110 @@ class ListenRecordData:
             print(str(e))
 
     def image_odom_callback(self, image, odom):
+        
         print('Receiving data... : ', self.counter)
         
         orientation = R.from_quat([odom.pose.pose.orientation.x, odom.pose.pose.orientation.y, odom.pose.pose.orientation.z, odom.pose.pose.orientation.w]).as_euler('XYZ')[-1]
-        odom_val = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, orientation])
+        self.odom = np.asarray([odom.pose.pose.position.x, odom.pose.pose.position.y, orientation])
         
+        # if self.trans is None: return
         self.msg_data['image_msg'].append(image)
         self.msg_data['imu_kinect_history'].append(self.imu_msgs_kinect.flatten())
         self.msg_data['imu_jackal_history'].append(self.imu_msgs_jackal.flatten())
-        self.msg_data['odom'].append(odom_val.copy())
+        self.msg_data['odom'].append(self.odom.copy())
         self.msg_data['imu_jackal_orientation'].append(self.imu_jackal_orientation)
         
         # bevimage, img = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][-1], self.msg_data['image_msg'][-1])
-        # img = cv2.resize(img, (bevimage.shape[1]//3, bevimage.shape[0]//3))
-        # bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
+        # img = cv2.resize(img, (bevimage.shape[1]//2, bevimage.shape[0]//2))
+        # bevimage = cv2.resize(bevimage, (bevimage.shape[1]//2, bevimage.shape[0]//2))
         # cv2.imshow('disp', np.hstack((bevimage, img)))        
+        # # cv2.imshow('disp', bevimage)
         # cv2.waitKey(1)
-        # self.counter += 1
+        
+        # # check if the robot crossed 0.15 meters
+        # if len(self.storage_buffer['odom']) == 0 or np.linalg.norm(self.storage_buffer['odom'][-1][:2] - self.odom[:2]) > 0.0:
+        #     bevimage, _ = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][-1], 
+        #                                                          image)
+        #     self.storage_buffer['image'].append(bevimage)
+        #     self.storage_buffer['odom'].append(self.odom.copy())
 
-    def save_data(self):
-        # dict to hold all the processed data
-        data = {
-            'patches': [],
-            'imu_kinect': [],
-            'imu_jackal': []
-        } 
+        # # now find the patches for this image
+        # curr_odom = self.odom
+
+        # found_patch = False
+        # # for j in range(len(self.storage_buffer['odom'])-1, -1, -1):
+        # for j in range(0, len(self.storage_buffer['odom'])):
         
-        # storage buffer to hold the past recent 20 BEV images on which we perform patch extraction
-        self.storage_buffer = {'image':[], 'odom':[]}
+        #     prev_image = self.storage_buffer['image'][j]
+        #     prev_odom = self.storage_buffer['odom'][j]
+        #     patch, vis_img = ListenRecordData.get_patch_from_odom_delta(self.odom.copy(), prev_odom, prev_image)
+        #     if patch is not None:
+        #         bevimage, _ = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][-1],  image)
+        #         bevimage = cv2.resize(bevimage, (bevimage.shape[1]//2, bevimage.shape[0]//2))
+        #         vis_img = cv2.resize(vis_img, (vis_img.shape[1]//2, vis_img.shape[0]//2))
+        #         cv2.imshow('vis_img', vis_img)
+        #         cv2.imshow('disp', bevimage)
+        #         # cv2.imshow('patch', patch)
+                
+        #         cv2.waitKey(1)
+        #         cprint('Found patch!', 'green')
+        #         break
+        #     else:
+        #         cprint('PATCH NOT FOUND', 'red')
+            
+
+        # # maintain only 10 imgs in buffer
+        # while len(self.storage_buffer['image']) > 20:
+        #     self.storage_buffer['image'].pop(0)
+        #     self.storage_buffer['odom'].pop(0)
+
+        self.counter += 1
+
         
-        for i in tqdm(range(len(self.msg_data['image_msg']))):
-            bevimage, _ = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][i], self.msg_data['image_msg'][i])
-            self.storage_buffer['image'].append(bevimage)
-            self.storage_buffer['odom'].append(self.msg_data['odom'][i])
-            
-            # bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
-            # cv2.imshow('curr', bevimage)
-            
+    def process_bev_image_and_patches(self, msg_data):
+        processed_data = {'image':[], 'odom': []}
+        msg_data['patches'] = {}
+        msg_data['patches_found'] = {}
+
+        for i in tqdm(range(len(msg_data['image_msg']))):
+            bevimage, _ = ListenRecordData.camera_imu_homography(msg_data['imu_jackal_orientation'][i], msg_data['image_msg'][i])
+            processed_data['image'].append(bevimage)
+            processed_data['odom'].append(msg_data['odom'][i])
+
             # now find the patches for this image
-            curr_odom = self.msg_data['odom'][i]
-            
-            patch_list = []
-            
-            # search for the patches in the storage buffer
-            for j in range(0, len(self.storage_buffer['odom'])):
-                # print('j : ', j)
-                prev_image = self.storage_buffer['image'][j]
-                prev_odom = self.storage_buffer['odom'][j]
+            curr_odom = msg_data['odom'][i]
+
+            found_patch = False
+            for j in range(0, len(processed_data['odom'])):
+                prev_image = processed_data['image'][j]
+                prev_odom = processed_data['odom'][j]
                 
                 # extract the patch
                 patch, vis_img = ListenRecordData.get_patch_from_odom_delta(curr_odom, 
-                                                                            prev_odom,
+                                                                            prev_odom, 
                                                                             prev_image)
                 if patch is not None:
-                    patch_list.append(patch)
-                    
-                    # vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
-                    # cv2.imshow('vis_img', vis_img)
-                    # cv2.waitKey(5)
-                    
-                if len(patch_list) >= 10: break
-                
-            while len(self.storage_buffer['image']) > 20:
-                self.storage_buffer['image'].pop(0)
-                self.storage_buffer['odom'].pop(0)
-                
-            if len(patch_list) > 0:
-                print('Num patches : ', len(patch_list))
-                # patches have been found. add it to data dict
-                data['patches'].append(patch_list)
-                data['imu_jackal'].append(self.msg_data['imu_jackal_history'][i])
-                data['imu_kinect'].append(self.msg_data['imu_kinect_history'][i])
-                                
-        # dumping data
-        cprint('Saving data of size {}'.format(len(data['imu_kinect'])), 'yellow')
-        cprint('Keys in the dataset : '+str(data.keys()), 'yellow')
-        pickle.dump(data, open(os.path.join(self.save_data_path, 'data.pkl'), 'wb'))
-        cprint('Saved data successfully ', 'yellow', attrs=['blink'])
+                    found_patch = True
+                    if i not in msg_data['patches']:
+                        msg_data['patches'][i] = []
+                    msg_data['patches'][i].append(patch)
+
+                # stop adding more than 10 patches for a single data point
+                if found_patch and len(msg_data['patches'][i]) > 5: break
+
+            if not found_patch:
+                print("Unable to find patch for idx: ", i)
+                msg_data['patches'][i] = [processed_data['image'][i][500:564, 613:677]]
+
+            # remove the i-30th image from RAM
+            if i > 30:
+                processed_data['image'][i-30] = None
+
+            # was the patch found or no ?
+            if found_patch: msg_data['patches_found'][i] = True
+            else: msg_data['patches_found'][i] = False
+
+        return msg_data['patches'], msg_data['patches_found']
 
     @staticmethod
     def get_patch_from_odom_delta(curr_pos, prev_pos, prev_image):
@@ -326,28 +358,13 @@ class ListenRecordData:
     
 if __name__ == '__main__':
     # create the node
-    rospy.init_node('patch_extractor', anonymous=True)
-    rosbag_path = rospy.get_param('rosbag_path')
-    save_data_path = rospy.get_param('save_data_path')
-    
-    print('rosbag_path: ', rosbag_path)
-    if not os.path.exists(rosbag_path):
-        raise FileNotFoundError('ROSBAG path does not exist')
-    
-    # start a subprocess to play the rosbag
-    rosbag_play_process = subprocess.Popen(['rosbag', 'play', rosbag_path, '-r', '1','--clock'])
+    rospy.init_node('homography_jackal', anonymous=True)
     
     # start the rosbag recorder    
-    recorder = ListenRecordData(save_data_path=save_data_path, rosbag_play_process=rosbag_play_process)
+    recorder = ListenRecordData()
     
     while not rospy.is_shutdown():
         recorder.get_localization()
-        if rosbag_play_process.poll() is not None:
-            print('rosbag_play_process is finished, now saving the extracted patch data into a pickle file...')
-            recorder.save_data()
-            exit(0)
     
     rospy.spin()
-    rosbag_play_process.kill()
-    
     

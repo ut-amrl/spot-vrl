@@ -9,3 +9,5 @@ __pycache__/
 /images/
 /*models*/
 /*embeddings*/
+
+jackal_data/*
