@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.6
 """
-A rosnode that listens to camera and legoloam localization info
+A rosnode that listens to camera and odom info
 and saves the processed data into a pickle file.
 """
 
@@ -332,11 +332,14 @@ if __name__ == '__main__':
     if not os.path.exists(rosbag_path):
         raise FileNotFoundError('ROSBAG path does not exist')
     
+    
+    rosbag_file_name = rosbag_path.split('/')[-1].split('.')[0]
+    
     # start a subprocess to play the rosbag
     rosbag_play_process = subprocess.Popen(['rosbag', 'play', rosbag_path, '-r', '1','--clock'])
     
     # start the rosbag recorder    
-    recorder = ListenRecordData(save_data_path=save_data_path, 
+    recorder = ListenRecordData(save_data_path=save_data_path + '/' + rosbag_file_name, 
                                 rosbag_play_process=rosbag_play_process,
                                 visualize_results=visualize_results)
     
