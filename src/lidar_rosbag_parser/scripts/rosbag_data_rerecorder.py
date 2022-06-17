@@ -61,9 +61,10 @@ class ListenRecordData:
         and saves the processed data into a pickle file after the rosbag play is finished.
         """
 
-    def __init__(self, save_data_path, rosbag_play_process):
+    def __init__(self, save_data_path, rosbag_play_process, visualize_results=False):
         self.rosbag_play_process = rosbag_play_process
         self.save_data_path = save_data_path
+        self.visualize_results = visualize_results
 
         # we have 2 imus - one from jackal and one from azure kinect
         self.imu_msgs_jackal = np.zeros((200, 6), dtype=np.float32)  # past 200 imu messages ~ 1.98 s
@@ -124,13 +125,6 @@ class ListenRecordData:
         self.msg_data['imu_jackal_history'].append(self.imu_msgs_jackal.flatten())
         self.msg_data['odom'].append(odom_val.copy())
         self.msg_data['imu_jackal_orientation'].append(self.imu_jackal_orientation)
-        
-        # bevimage, img = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][-1], self.msg_data['image_msg'][-1])
-        # img = cv2.resize(img, (bevimage.shape[1]//3, bevimage.shape[0]//3))
-        # bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
-        # cv2.imshow('disp', np.hstack((bevimage, img)))        
-        # cv2.waitKey(1)
-        # self.counter += 1
 
     def save_data(self):
         # dict to hold all the processed data
@@ -148,8 +142,8 @@ class ListenRecordData:
             self.storage_buffer['image'].append(bevimage)
             self.storage_buffer['odom'].append(self.msg_data['odom'][i])
             
-            # bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
-            # cv2.imshow('curr', bevimage)
+            if self.visualize_results:
+                bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
             
             # now find the patches for this image
             curr_odom = self.msg_data['odom'][i]
@@ -165,13 +159,15 @@ class ListenRecordData:
                 # extract the patch
                 patch, vis_img = ListenRecordData.get_patch_from_odom_delta(curr_odom, 
                                                                             prev_odom,
-                                                                            prev_image)
+                                                                            prev_image, 
+                                                                            visualize=self.visualize_results)
                 if patch is not None:
                     patch_list.append(patch)
                     
-                    # vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
-                    # cv2.imshow('vis_img', vis_img)
-                    # cv2.waitKey(5)
+                    if self.visualize_results:
+                        vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
+                        cv2.imshow('current img <-> previous img', np.hstack((bevimage, vis_img)))
+                        cv2.waitKey(5)
                     
                 if len(patch_list) >= 10: break
                 
@@ -193,7 +189,7 @@ class ListenRecordData:
         cprint('Saved data successfully ', 'yellow', attrs=['blink'])
 
     @staticmethod
-    def get_patch_from_odom_delta(curr_pos, prev_pos, prev_image):
+    def get_patch_from_odom_delta(curr_pos, prev_pos, prev_image, visualize=False):
         curr_pos_np = np.array([curr_pos[0], curr_pos[1], 1])
         prev_pos_transform = np.zeros((3, 3))
         prev_pos_transform[:2, :2] = R.from_euler('XYZ', [0, 0, prev_pos[2]]).as_matrix()[:2,:2] # figure this out
@@ -229,41 +225,41 @@ class ListenRecordData:
             CENTER + np.array((-scaled_patch_corners[3][1], -scaled_patch_corners[3][0]))
         ]
         
-        
-        vis_img = prev_image.copy()
+        vis_img = None
+        if visualize:
+            vis_img = prev_image.copy()
 
-        # draw the patch rectangle
-        cv2.line(
-            vis_img,
-            (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
-            (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
-            (0, 255, 0),
-            2
-        )
-        cv2.line(
-            vis_img,
-            (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
-            (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
-            (0, 255, 0),
-            2
-        )
-        cv2.line(
-            vis_img,
-            (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
-            (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
-            (0, 255, 0),
-            2
-        )
-        cv2.line(
-            vis_img,
-            (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
-            (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
-            (0, 255, 0),
-            2
-        )
+            # draw the patch rectangle
+            cv2.line(
+                vis_img,
+                (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
+                (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
+                (0, 255, 0),
+                2
+            )
+            cv2.line(
+                vis_img,
+                (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
+                (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
+                (0, 255, 0),
+                2
+            )
+            cv2.line(
+                vis_img,
+                (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
+                (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
+                (0, 255, 0),
+                2
+            )
+            cv2.line(
+                vis_img,
+                (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
+                (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
+                (0, 255, 0),
+                2
+            )
         
         persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
-        # persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [127, 0], [127, 127], [0, 127]]))
 
         patch = cv2.warpPerspective(
             prev_image,
@@ -274,7 +270,7 @@ class ListenRecordData:
         zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
 
         if np.sum(zero_count) > PATCH_EPSILON:
-            return None, None
+            return None, vis_img
 
         return patch, vis_img
     
@@ -329,6 +325,8 @@ if __name__ == '__main__':
     rospy.init_node('patch_extractor', anonymous=True)
     rosbag_path = rospy.get_param('rosbag_path')
     save_data_path = rospy.get_param('save_data_path')
+    visualize_results = rospy.get_param('visualize_results')
+    print('visualize results bool : ', visualize_results)
     
     print('rosbag_path: ', rosbag_path)
     if not os.path.exists(rosbag_path):
@@ -338,7 +336,9 @@ if __name__ == '__main__':
     rosbag_play_process = subprocess.Popen(['rosbag', 'play', rosbag_path, '-r', '1','--clock'])
     
     # start the rosbag recorder    
-    recorder = ListenRecordData(save_data_path=save_data_path, rosbag_play_process=rosbag_play_process)
+    recorder = ListenRecordData(save_data_path=save_data_path, 
+                                rosbag_play_process=rosbag_play_process,
+                                visualize_results=visualize_results)
     
     while not rospy.is_shutdown():
         recorder.get_localization()

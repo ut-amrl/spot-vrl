@@ -5,10 +5,12 @@
 
     <arg name="rosbag_path" default="None"/>
     <arg name="save_data_path" default="/robodata/haresh92/spot-vrl/jackal_data/processed_pickle_files/" />
+    <arg name="visualize" default="false"/>
 
     <!--    data parser node -->
     <param name="rosbag_path" type="str" value="$(arg rosbag_path)" />
     <param name="save_data_path" type="str" value="$(arg save_data_path)" />
+    <param name="visualize_results" type="bool" value="$(arg visualize)" />
     <param name="robot_name" type="str" value="jackal" />
     <node name="lidar_rosbag_parser" pkg="lidar_rosbag_parser" type="rosbag_data_rerecorder.py" output="screen" required="true"/>
 
