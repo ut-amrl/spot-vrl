@@ -1,0 +1,7 @@
+train:
+  - /home/haresh/PycharmProjects/spot-vrl/jackal_data/concrete/_2022-05-10-16-07-18_data.pkl
+  - /home/haresh/PycharmProjects/spot-vrl/jackal_data/concrete/_2022-05-10-15-51-08_data.pkl
+
+val:
+  - /home/haresh/PycharmProjects/spot-vrl/jackal_data/concrete/_2022-05-10-16-07-18_data.pkl
+  - /home/haresh/PycharmProjects/spot-vrl/jackal_data/concrete/_2022-05-10-15-51-08_data.pkl

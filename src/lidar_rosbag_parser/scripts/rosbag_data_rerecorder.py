@@ -185,7 +185,7 @@ class ListenRecordData:
         # dumping data
         cprint('Saving data of size {}'.format(len(data['imu_kinect'])), 'yellow')
         cprint('Keys in the dataset : '+str(data.keys()), 'yellow')
-        pickle.dump(data, open(os.path.join(self.save_data_path, 'data.pkl'), 'wb'))
+        pickle.dump(data, open(self.save_data_path + '_data.pkl', 'wb'))
         cprint('Saved data successfully ', 'yellow', attrs=['blink'])
 
     @staticmethod
@@ -339,7 +339,7 @@ if __name__ == '__main__':
     rosbag_play_process = subprocess.Popen(['rosbag', 'play', rosbag_path, '-r', '1','--clock'])
     
     # start the rosbag recorder    
-    recorder = ListenRecordData(save_data_path=save_data_path + '/' + rosbag_file_name, 
+    recorder = ListenRecordData(save_data_path=save_data_path + rosbag_file_name, 
                                 rosbag_play_process=rosbag_play_process,
                                 visualize_results=visualize_results)
     
