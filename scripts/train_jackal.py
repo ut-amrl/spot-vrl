@@ -45,6 +45,9 @@ class CustomDataset(Dataset):
 		# randomly pick a patch from the list
 		patch = random.sample(self.data['patches'][idx], 1)[0]
 		patch = cv2.resize(patch, (128, 128))
+		cv2.imshow('patch', patch)
+		cv2.waitKey(0)
+  
 		patch = patch.astype(np.float32) / 255.0 # normalize
 		patch = np.moveaxis(patch, -1, 0)
 
