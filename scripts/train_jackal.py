@@ -43,18 +43,20 @@ class CustomDataset(Dataset):
 
 	def __getitem__(self, idx):
 		# randomly pick a patch from the list
-		patch = random.sample(self.data['patches'][idx], 1)[0]
-		patch = cv2.resize(patch, (128, 128))
-		cv2.imshow('patch', patch)
-		cv2.waitKey(0)
+		patch_1 = random.sample(self.data['patches'][idx], 1)[0]
+		patch_1 = cv2.resize(patch_1, (128, 128))
+		patch_1 = patch_1.astype(np.float32) / 255.0 # normalize
+		patch_1 = np.moveaxis(patch_1, -1, 0)
   
-		patch = patch.astype(np.float32) / 255.0 # normalize
-		patch = np.moveaxis(patch, -1, 0)
+		patch_2 = random.sample(self.data['patches'][idx], 1)[0]
+		patch_2 = cv2.resize(patch_2, (128, 128))
+		patch_2 = patch_2.astype(np.float32) / 255.0 # normalize
+		patch_2 = np.moveaxis(patch_2, -1, 0)
 
-		inertial_data = self.data['imu_kinect'][idx]
-		inertial_data = np.expand_dims(inertial_data, axis=0)
+		inertial_data = self.data['imu_jackal'][idx]
+		# inertial_data = np.expand_dims(inertial_data, axis=0)
 
-		return patch, inertial_data, self.label
+		return patch_1, patch_2, inertial_data, self.label
 
 class MyDataLoader(pl.LightningDataModule):
 	def __init__(self, data_config_path, batch_size=32):
@@ -77,7 +79,7 @@ class MyDataLoader(pl.LightningDataModule):
 		print('Finding mean and std statistics of inertial data in the training set...')
 		tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
 		tmp_list = []
-		for _, i, _ in tmp:
+		for _,_, i, _ in tmp:
 			i = i.numpy()
 			tmp_list.append(i)
 		tmp_list = np.asarray(tmp_list)
@@ -131,49 +133,46 @@ class BarlowModel(pl.LightningModule):
 			nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
 			nn.ReLU(),
 			Flatten(), # 1024 output
-			nn.Linear(1024, 128)
+			nn.Linear(1024, 64)
 		)
 
-		# self.visual_encoder = nn.Sequential(
-		# 	nn.utils.spectral_norm(nn.Conv2d(1, 16, kernel_size=3, stride=2, bias=False)),  # 63 x 63
-		# 	nn.ReLU(),
-		# 	nn.utils.spectral_norm(nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False)),  # 31 x 31
-		# 	nn.ReLU(),
-		# 	nn.utils.spectral_norm(nn.Conv2d(32, 64, kernel_size=5, stride=2, bias=False)),  # 14 x 14
-		# 	nn.ReLU(),
-		# 	nn.utils.spectral_norm(nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False)),  # 5 x 5
-		# 	nn.ReLU(),
-		# 	nn.utils.spectral_norm(nn.Conv2d(128, 256, kernel_size=3, stride=2)),  # 2 x 2
-		# 	nn.ReLU(),
-		# 	Flatten(),  # 1024 output
-		# 	nn.utils.spectral_norm(nn.Linear(1024, 128))
-		# )
-
 		self.inertial_encoder = nn.Sequential(
-			nn.Conv1d(1, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(16), nn.ReLU(), # 558
-			nn.Conv1d(16, 32, kernel_size=5, stride=3, bias=False), nn.BatchNorm1d(32), nn.ReLU(), # 185
-			nn.Conv1d(32, 64, kernel_size=7, stride=3, bias=False), nn.BatchNorm1d(64), nn.ReLU(), # 60
-			nn.Conv1d(64, 128, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(128), nn.ReLU(), # 30
-			nn.Conv1d(128, 256, kernel_size=7, stride=3, bias=False), nn.ReLU(), # 8
-			nn.Flatten(),
-			nn.Linear(2304, 128)
+			nn.Linear(inertial_shape, 512), nn.BatchNorm1d(512), nn.ReLU(),
+			nn.Linear(512, 256), nn.BatchNorm1d(256), nn.ReLU(),
+			nn.Linear(256, 64), nn.ReLU(),
 		)
 
 		self.projector = nn.Sequential(
-			nn.Linear(128, 1024, bias=False), nn.BatchNorm1d(1024), nn.ReLU(),
-			nn.Linear(1024, latent_size)
+			nn.Linear(64, 256, bias=False), nn.BatchNorm1d(256), nn.ReLU(),
+			nn.Linear(256, latent_size)
 		)
 
 		# normalization layer for the representations z1 and z2
 		self.bn = nn.BatchNorm1d(latent_size, affine=False)
 
 	def forward(self, visual_patch, imu_history):
+     
+		# self.visual_encoder.train()
+		# self.inertial_encoder.train()
+		# self.projector.train()
+     
+		v_encoded = self.visual_encoder(visual_patch)
+		# i_encoded = self.inertial_encoder(imu_history)
+		i_encoded = self.visual_encoder(imu_history)
+  
+		# L2 normalize along encoding dimension
+		# v_encoded = F.normalize(v_encoded, dim=1)
+		# i_encoded = F.normalize(i_encoded, dim=1)
 	
-		z1 = self.projector(self.visual_encoder(visual_patch))
-		z2 = self.projector(self.inertial_encoder(imu_history))
+		z1 = self.projector(v_encoded)
+		z2 = self.projector(i_encoded)
+  
+		z1 = (z1 - torch.mean(z1, dim=0))/(torch.std(z1, dim=0) + 1e-7)
+		z2 = (z2 - torch.mean(z2, dim=0))/(torch.std(z2, dim=0) + 1e-7)
 	
 		# empirical cross-correlation matrix
-		c = self.bn(z1).T @ self.bn(z2)
+		# c = self.bn(z1).T @ self.bn(z2)
+		c = z1.T @ z2
 	
 		# sum the cross-correlation matrix between all gpus
 		c.div_(self.per_device_batch_size * self.trainer.num_processes)
@@ -244,7 +243,7 @@ class BarlowModel(pl.LightningModule):
 			torch.distributed.all_reduce(c)
 
 	def common_step(self, batch, batch_idx):
-		visual, inertial, _ = batch
+		visual, inertial, _, _ = batch
 		return self(visual, inertial)
 
 	def training_step(self, batch, batch_idx):
@@ -259,7 +258,7 @@ class BarlowModel(pl.LightningModule):
 
 	def configure_optimizers(self):
 		# return torch.optim.SGD(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-		opt_v_i = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+		return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 		# opt_v = torch.optim.AdamW(list(self.projector.parameters()) + list(self.visual_encoder.parameters()),
 		# 						  lr=self.lr/10., weight_decay=self.weight_decay)
 		# return [opt_v_i, opt_v], []
@@ -267,11 +266,11 @@ class BarlowModel(pl.LightningModule):
 	def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
 		if self.current_epoch % 10 == 0:
 
-			visual_patch, imu_history, label = batch
+			visual_patch, visual_patch_2, imu_history, label = batch
 			label = np.asarray(label)
 			visual_patch = visual_patch.float()
 			visual_encoding = self.visual_encoder(visual_patch.cuda())
-
+			# visual_encoding = F.normalize(visual_encoding, dim=1)
 
 			if batch_idx == 0:
 				self.visual_encoding = visual_encoding[:, :]
@@ -311,14 +310,12 @@ class BarlowModel(pl.LightningModule):
 if __name__ == '__main__':
 	# parse command line arguments
 	parser = argparse.ArgumentParser(description='Dual Auto Encoder')
-	parser.add_argument('--batch_size', type=int, default=1024, metavar='N',
+	parser.add_argument('--batch_size', type=int, default=256, metavar='N',
 						help='input batch size for training (default: 1024)')
 	parser.add_argument('--epochs', type=int, default=1000, metavar='N',
 						help='number of epochs to train (default: 1000)')
-	parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
+	parser.add_argument('--lr', type=float, default=3e-3, metavar='LR',
 						help='learning rate (default: 3e-4)')
-	# parser.add_argument('--data_dir', type=str, default='data/', metavar='N',
-						# help='data directory (default: data)')
 	parser.add_argument('--log_dir', type=str, default='logs/', metavar='N',
 						help='log directory (default: logs)')
 	parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
@@ -326,7 +323,7 @@ if __name__ == '__main__':
 	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
 						help='number of GPUs to use (default: 1)')
 	parser.add_argument('--latent_size', type=int, default=512, metavar='N',
-						help='Size of the common latent space (default: 1024)')
+						help='Size of the common latent space (default: 512)')
 	parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
 	args = parser.parse_args()
 	
