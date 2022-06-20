@@ -587,12 +587,12 @@ class KinectDefaults:
         ),
         "jackal": np.array(
             [
-                [984.822632, 0, 1020.586365],
-                [0, 984.730103, 780.647827],
+                [983.322571, 0, 1021.098450],
+                [0, 983.123108, 775.020630],
                 [0, 0, 1],
             ],
             dtype=np.float64,
-        ),  # TODO: this is a copy of the spot matrix; get the proper calibration from jackal
+        ),
         "unknown": np.zeros((3, 3)),
     }
 
