@@ -151,14 +151,9 @@ class BarlowModel(pl.LightningModule):
 		self.bn = nn.BatchNorm1d(latent_size, affine=False)
 
 	def forward(self, visual_patch, imu_history):
-     
-		# self.visual_encoder.train()
-		# self.inertial_encoder.train()
-		# self.projector.train()
-     
 		v_encoded = self.visual_encoder(visual_patch)
-		# i_encoded = self.inertial_encoder(imu_history)
-		i_encoded = self.visual_encoder(imu_history)
+		i_encoded = self.inertial_encoder(imu_history)
+		# i_encoded = self.visual_encoder(imu_history)
   
 		# L2 normalize along encoding dimension
 		# v_encoded = F.normalize(v_encoded, dim=1)
@@ -173,10 +168,16 @@ class BarlowModel(pl.LightningModule):
 		# empirical cross-correlation matrix
 		# c = self.bn(z1).T @ self.bn(z2)
 		c = z1.T @ z2
+		c1b = (z1.T).T @ z1.T
+		c2b = (z2.T).T @ z2.T
 	
 		# sum the cross-correlation matrix between all gpus
 		c.div_(self.per_device_batch_size * self.trainer.num_processes)
+		c1b.div_(self.per_device_batch_size * self.trainer.num_processes)
+		c2b.div_(self.per_device_batch_size * self.trainer.num_processes)
 		self.all_reduce(c)
+		self.all_reduce(c1b)
+		self.all_reduce(c2b)
 	
 		# use --scale-loss to multiply the loss by a constant factor
 		# In order to match the code that was used to develop Barlow Twins,
@@ -184,7 +185,10 @@ class BarlowModel(pl.LightningModule):
 		# that multiplies the loss by a constant factor.
 		on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
 		off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
-		loss = on_diag + self.lambd * off_diag #+ 1e-3*torch.mean((z1 - z2)**2)
+		# off_diag_match_loss = (c1b - c2b).pow_(2).sum().mul(self.scale_loss)
+		off_diag_match_loss = F.cosine_similarity(c1b.flatten(c1b.shape[0], -1), c2b.flatten(c2b.shape[0], -1)).sum().mul(self.scale_loss)
+  
+		loss = on_diag + self.lambd * off_diag + self.lambd * off_diag_match_loss
 		return loss
 
 	# def forward(self, visual_patch, imu_history):
@@ -243,7 +247,7 @@ class BarlowModel(pl.LightningModule):
 			torch.distributed.all_reduce(c)
 
 	def common_step(self, batch, batch_idx):
-		visual, inertial, _, _ = batch
+		visual, visual2, inertial, _ = batch
 		return self(visual, inertial)
 
 	def training_step(self, batch, batch_idx):
