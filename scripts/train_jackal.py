@@ -10,6 +10,7 @@ from scipy import fftpack, gradient
 import numpy as np
 from datetime import datetime
 from torchvision.utils import make_grid
+from termcolor import cprint
 import cv2
 import random
 import tensorflow as tf
@@ -35,6 +36,7 @@ class UnFlatten(nn.Module):
 class CustomDataset(Dataset):
 	def __init__(self, pickle_file_path):
 		self.pickle_file_path = pickle_file_path
+		cprint('Loading data from {}'.format(pickle_file_path))
 		self.data = pickle.load(open(self.pickle_file_path, 'rb'))
 		self.label = pickle_file_path.split('/')[-2]
 
@@ -186,7 +188,7 @@ class BarlowModel(pl.LightningModule):
 		on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
 		off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
 		# off_diag_match_loss = (c1b - c2b).pow_(2).sum().mul(self.scale_loss)
-		off_diag_match_loss = F.cosine_similarity(c1b.flatten(c1b.shape[0], -1), c2b.flatten(c2b.shape[0], -1)).sum().mul(self.scale_loss)
+		off_diag_match_loss = F.cosine_similarity(c1b.view((c1b.shape[0], -1)), c2b.view((c2b.shape[0], -1))).sum().mul(self.scale_loss)
   
 		loss = on_diag + self.lambd * off_diag + self.lambd * off_diag_match_loss
 		return loss
@@ -318,7 +320,7 @@ if __name__ == '__main__':
 						help='input batch size for training (default: 1024)')
 	parser.add_argument('--epochs', type=int, default=1000, metavar='N',
 						help='number of epochs to train (default: 1000)')
-	parser.add_argument('--lr', type=float, default=3e-3, metavar='LR',
+	parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
 						help='learning rate (default: 3e-4)')
 	parser.add_argument('--log_dir', type=str, default='logs/', metavar='N',
 						help='log directory (default: logs)')
