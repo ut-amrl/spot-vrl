@@ -165,10 +165,8 @@ class BarlowModel(pl.LightningModule):
 		)
 
 		self.projector = nn.Sequential(
-			nn.Linear(128, 256), nn.ReLU(inplace=True),
-			nn.Linear(256, 256), nn.ReLU(inplace=True),
-			nn.Linear(256, 256), nn.ReLU(inplace=True),
-			nn.Linear(256, latent_size, bias=False)
+			nn.Linear(128, 512, bias=False),  nn.BatchNorm1d(512), nn.ReLU(inplace=True),
+			nn.Linear(512, latent_size, bias=False)
 		)
 
 		# normalization layer for the representations z1 and z2
@@ -284,33 +282,33 @@ class BarlowModel(pl.LightningModule):
 			loss = self.common_step(batch, batch_idx)
 		self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=False)
 
-	# def configure_optimizers(self):
-	# 	return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-	
 	def configure_optimizers(self):
-		optimizer = LARS(
-			self.parameters(),
-			lr=0,  # Initialize with a LR of 0
-			weight_decay=self.weight_decay,
-			weight_decay_filter=exclude_bias_and_norm,
-			lars_adaptation_filter=exclude_bias_and_norm
-		)
+		return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+	
+	# def configure_optimizers(self):
+	# 	optimizer = LARS(
+	# 		self.parameters(),
+	# 		lr=0,  # Initialize with a LR of 0
+	# 		weight_decay=self.weight_decay,
+	# 		weight_decay_filter=exclude_bias_and_norm,
+	# 		lars_adaptation_filter=exclude_bias_and_norm
+	# 	)
 
-		total_training_steps = self.total_training_steps
-		num_warmup_steps = self.compute_warmup(total_training_steps, self.num_warmup_steps_or_ratio)
-		lr_scheduler = CosineWarmupScheduler(
-			optimizer=optimizer,
-			batch_size=self.per_device_batch_size,
-			warmup_steps=num_warmup_steps,
-			max_steps=total_training_steps,
-			lr=self.lr
-		)
-		return [optimizer], [
-			{
-				'scheduler': lr_scheduler,  # The LR scheduler instance (required)
-				'interval': 'step',  # The unit of the scheduler's step size
-			}
-		]
+	# 	total_training_steps = self.total_training_steps
+	# 	num_warmup_steps = self.compute_warmup(total_training_steps, self.num_warmup_steps_or_ratio)
+	# 	lr_scheduler = CosineWarmupScheduler(
+	# 		optimizer=optimizer,
+	# 		batch_size=self.per_device_batch_size,
+	# 		warmup_steps=num_warmup_steps,
+	# 		max_steps=total_training_steps,
+	# 		lr=self.lr
+	# 	)
+	# 	return [optimizer], [
+	# 		{
+	# 			'scheduler': lr_scheduler,  # The LR scheduler instance (required)
+	# 			'interval': 'step',  # The unit of the scheduler's step size
+	# 		}
+	# 	]
 
 	def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
 		if self.current_epoch % 10 == 0:
@@ -379,7 +377,7 @@ if __name__ == '__main__':
 						help='model directory (default: models)')
 	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
 						help='number of GPUs to use (default: 1)')
-	parser.add_argument('--latent_size', type=int, default=512, metavar='N',
+	parser.add_argument('--latent_size', type=int, default=1024, metavar='N',
 						help='Size of the common latent space (default: 512)')
 	parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
 	args = parser.parse_args()
