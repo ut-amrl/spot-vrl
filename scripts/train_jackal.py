@@ -1,6 +1,7 @@
 import glob
 import pytorch_lightning as pl
 import torch
+from torch import uint8
 import torch.nn as nn
 import torch.nn.functional as F
 import argparse
@@ -14,7 +15,9 @@ from termcolor import cprint
 import cv2
 import random
 import tensorflow as tf
+import copy
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 import tensorboard as tb
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
@@ -25,6 +28,8 @@ import yaml
 from scripts.optimizer import LARS, CosineWarmupScheduler
 # import librosa
 # import librosa.display as display
+import albumentations as A
+from albumentations.pytorch import ToTensorV2
 
 def exclude_bias_and_norm(p):
 	return p.ndim == 1
@@ -43,20 +48,28 @@ class CustomDataset(Dataset):
 		cprint('Loading data from {}'.format(pickle_file_path))
 		self.data = pickle.load(open(self.pickle_file_path, 'rb'))
 		self.label = pickle_file_path.split('/')[-2]
+  
+		# self.transforms = A.Compose([
+		# 	A.Normalize(mean=[0.5599, 0.5599, 0.5599], std=[0.1558, 0.1558, 0.1558]),
+		# 	ToTensorV2(),
+		# ])
+
 
 	def __len__(self):
 		return len(self.data['patches'])
 
 	def __getitem__(self, idx):
 		# randomly pick a patch from the list
-		patch_1 = random.sample(self.data['patches'][idx], 1)[0]
+		patch_1 = copy.deepcopy(random.sample(self.data['patches'][idx], 1)[0])
 		patch_1 = cv2.resize(patch_1, (128, 128))
 		patch_1 = patch_1.astype(np.float32) / 255.0 # normalize
+		# patch_1 = self.transforms(image=patch_1)['image']
 		patch_1 = np.moveaxis(patch_1, -1, 0)
   
-		patch_2 = random.sample(self.data['patches'][idx], 1)[0]
+		patch_2 = copy.deepcopy(random.sample(self.data['patches'][idx], 1)[0])
 		patch_2 = cv2.resize(patch_2, (128, 128))
 		patch_2 = patch_2.astype(np.float32) / 255.0 # normalize
+		# patch_2 = self.transforms(image=patch_2)['image']
 		patch_2 = np.moveaxis(patch_2, -1, 0)
 
 		inertial_data = self.data['imu_jackal'][idx]
@@ -68,6 +81,7 @@ class CustomDataset(Dataset):
 		# plt.plot(ft)
 		# plt.savefig('hola.png')
 		# os.exit(0)
+  
   
 		return patch_1, patch_2, inertial_data, self.label
 
@@ -87,18 +101,21 @@ class MyDataLoader(pl.LightningDataModule):
 
 		self.train_dataset = ConcatDataset([CustomDataset(file) for file in train_data_path])
 		self.val_dataset = ConcatDataset([CustomDataset(file) for file in val_data_path])
-
+  
 		# find mean, std statistics of inertial data in the training set
-		print('Finding mean and std statistics of inertial data in the training set...')
-		tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
-		for _,_, i, _ in tmp:
-			i = i.numpy()
-			break
-		self.inertial_shape = i.shape[1]
-		print('Inertial shape:', self.inertial_shape)
-		print('Data statistics have been found.')
-		del tmp
-
+		# print('Finding mean and std statistics of images in training...')
+		# tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
+		# patch_list = []
+		# for patch,_, _, _ in tqdm(tmp):
+		# 	patch_list.append(patch)
+		# patch_list = torch.cat(patch_list, dim=0).reshape((-1, 3))
+		# self.mean = torch.mean(patch_list, dim=0)
+		# self.std = torch.std(patch_list, dim=0)
+		# print('Data statistics have been found.')
+		# print('Mean: ', self.mean)
+		# print('Std: ', self.std)
+		# del tmp, patch_list
+  
 		print('Train dataset size:', len(self.train_dataset))
 		print('Val dataset size:', len(self.val_dataset))
 
@@ -140,24 +157,19 @@ class BarlowModel(pl.LightningModule):
 			nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False),  # 5 x 5
 			nn.BatchNorm2d(128), nn.ReLU(inplace=True),
 			nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
-			nn.ReLU(inplace=True),
-			nn.MaxPool2d(kernel_size=2, stride=2),
+			nn.BatchNorm2d(256), nn.ReLU(inplace=True),
+			nn.AvgPool2d(kernel_size=2, stride=2),
 			Flatten(), # 256 output
 			nn.Linear(256, 128)
 		)
 
-		# self.inertial_encoder = nn.Sequential(
-		# 	nn.Linear(inertial_shape, 512, bias=False), nn.BatchNorm1d(512), nn.PReLU(),
-		# 	nn.Linear(512, 256), nn.PReLU(),
-		# 	nn.Linear(256, 64), nn.ReLU(inplace=True)
-		# )
 		self.inertial_encoder = nn.Sequential(
-			nn.Conv1d(inertial_shape, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(8), nn.PReLU(),
-			nn.MaxPool1d(kernel_size=3, stride=2),
+			nn.Conv1d(1, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(8), nn.PReLU(),
+			nn.AvgPool1d(kernel_size=3, stride=2),
 			nn.Conv1d(8, 16, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(16), nn.PReLU(),
-			nn.MaxPool1d(kernel_size=3, stride=2),
+			nn.AvgPool1d(kernel_size=3, stride=2),
 			nn.Conv1d(16, 32, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(32), nn.PReLU(),
-			nn.MaxPool1d(kernel_size=3, stride=2),
+			nn.AvgPool1d(kernel_size=3, stride=2),
 			nn.Conv1d(32, 64, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(64), nn.PReLU(),
 			nn.AvgPool1d(kernel_size=2, stride=2),
 			nn.Flatten(),
@@ -165,17 +177,21 @@ class BarlowModel(pl.LightningModule):
 		)
 
 		self.projector = nn.Sequential(
-			nn.Linear(128, 512, bias=False),  nn.BatchNorm1d(512), nn.ReLU(inplace=True),
-			nn.Linear(512, latent_size, bias=False)
+			nn.Linear(128, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
+			nn.Linear(latent_size, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
+			nn.Linear(latent_size, latent_size, bias=False)
 		)
 
 		# normalization layer for the representations z1 and z2
-		# self.bn = nn.BatchNorm1d(latent_size, affine=False)
+		self.bn = nn.BatchNorm1d(latent_size, affine=False, track_running_stats=False)
+  
+		self.sim_coeff = 25.0
+		self.std_coeff = 25.0
+		self.cov_coeff = 1.0
 
 	def forward(self, visual_patch, imu_history):
 		v_encoded = self.visual_encoder(visual_patch)
 		i_encoded = self.inertial_encoder(imu_history)
-		# i_encoded = self.visual_encoder(imu_history)
   
 		# L2 normalize along encoding dimension
 		# v_encoded = F.normalize(v_encoded, dim=1)
@@ -184,79 +200,44 @@ class BarlowModel(pl.LightningModule):
 		z1 = self.projector(v_encoded)
 		z2 = self.projector(i_encoded)
   
-		z1 = (z1 - torch.mean(z1, dim=0))/(torch.std(z1, dim=0) + 1e-4)
-		z2 = (z2 - torch.mean(z2, dim=0))/(torch.std(z2, dim=0) + 1e-4)
-	
+		return z1, z2
+
+	def barlow_loss(self, z1, z2):
+		# z1 = (z1 - torch.mean(z1, dim=0))/(torch.std(z1, dim=0) + 1e-4)
+		# z2 = (z2 - torch.mean(z2, dim=0))/(torch.std(z2, dim=0) + 1e-4)
+  
+		z1 = self.bn(z1)
+		z2 = self.bn(z2)
+
 		# empirical cross-correlation matrix
-		# c = self.bn(z1).T @ self.bn(z2)
 		c = z1.T @ z2
-		# c1b = (z1.T).T @ z1.T
-		# c2b = (z2.T).T @ z2.T
 	
 		# sum the cross-correlation matrix between all gpus
 		c.div_(self.per_device_batch_size * self.trainer.num_processes)
-		# c1b.div_(self.per_device_batch_size * self.trainer.num_processes)
-		# c2b.div_(self.per_device_batch_size * self.trainer.num_processes)
 		self.all_reduce(c)
-		# self.all_reduce(c1b)
-		# self.all_reduce(c2b)
 	
-		# use --scale-loss to multiply the loss by a constant factor
-		# In order to match the code that was used to develop Barlow Twins,
-		# the authors included an additional parameter, --scale-loss,
-		# that multiplies the loss by a constant factor.
 		on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
 		off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
-		# off_diag_match_loss = (c1b - c2b).pow_(2).sum().mul(self.scale_loss)
-		# off_diag_match_loss = F.cosine_similarity(c1b.view((c1b.shape[0], -1)), c2b.view((c2b.shape[0], -1))).sum().mul(self.scale_loss)
   
-		loss = on_diag + self.lambd * off_diag #+ self.lambd * off_diag_match_loss
+		loss = on_diag + self.lambd * off_diag 
 		return loss
 
-	# def forward(self, visual_patch, imu_history):
-	# 	z1 = self.projector(self.visual_encoder(visual_patch))
-	# 	z2 = self.projector(self.inertial_encoder(imu_history))
+	def vicreg_loss(self, z1, z2):
+		repr_loss = F.mse_loss(z1, z2)
 
-	# 	# z1 = self.bn(z1)
-	# 	# z2 = self.bn(z2)
+		z1 = z1 - z1.mean(dim=0)
+		z2 = z2 - z2.mean(dim=0)
+  
+		std_z1 = torch.sqrt(z1.var(dim=0) + 0.0001)
+		std_z2 = torch.sqrt(z2.var(dim=0) + 0.0001)
+		std_loss = torch.mean(F.relu(1 - std_z1)) / 2 + torch.mean(F.relu(1 - std_z2)) / 2
 
-	# 	# empirical cross-correlation matrix
-	# 	c = self.bn(z1).T @ self.bn(z2)
-
-	# 	# z1 = z1 / z1.norm(dim=1, keepdim=True)
-	# 	# z2 = z2 / z2.norm(dim=1, keepdim=True)
-	# 	#
-	# 	# c1 = z1 @ z1.T
-	# 	# c2 = z2 @ z2.T
-
-	# 	c1b = self.bn(z1.T).T @ self.bn(z1.T)
-	# 	c2b = self.bn(z2.T).T @ self.bn(z2.T)
-
-	# 	c1 = self.bn(z1).T @ self.bn(z1)
-	# 	c2 = self.bn(z2).T @ self.bn(z2)
-
-	# 	# sum the cross-correlation matrix between all gpus
-	# 	c.div_(self.per_device_batch_size  * self.trainer.num_processes)
-	# 	c1.div_(self.per_device_batch_size * self.trainer.num_processes)
-	# 	c2.div_(self.per_device_batch_size * self.trainer.num_processes)
-	# 	c1b.div_(self.per_device_batch_size * self.trainer.num_processes)
-	# 	c2b.div_(self.per_device_batch_size * self.trainer.num_processes)
-
-	# 	self.all_reduce(c)
-	# 	self.all_reduce(c1)
-	# 	self.all_reduce(c2)
-	# 	self.all_reduce(c1b)
-	# 	self.all_reduce(c2b)
-
-	# 	on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
-	# 	off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
-	# 	# off_diag_match = (self.off_diagonal(c1) - self.off_diagonal(c2)).pow_(2).sum().mul(self.scale_loss)
-	# 	off_diag_match_loss = (c1b - c2b).pow_(2).sum().mul(self.scale_loss)
-	# 	off_diag_IV_loss = self.off_diagonal(c2).pow_(2).sum().mul(self.scale_loss) #+ self.off_diagonal(c1).pow_(2).sum().mul(self.scale_loss)
-
-	# 	loss = on_diag + self.lambd * off_diag_IV_loss #+ self.lambd * off_diag_match_loss
-
-	# 	return loss, on_diag, self.lambd * off_diag_IV_loss, self.lambd * off_diag_match_loss
+		cov_x = (z1.T @ z1) / (z1.shape[0] - 1)
+		cov_y = (z2.T @ z2) / (z2.shape[0] - 1)
+		cov_loss = self.off_diagonal(cov_x).pow_(2).sum().div_(z1.shape[1]) + self.off_diagonal(cov_y).pow_(2).sum().div_(z2.shape[1])
+  
+		loss = self.sim_coeff * repr_loss + self.std_coeff * std_loss + self.cov_coeff * cov_loss
+		return loss
 
 	def off_diagonal(self, x):
 		# return a flattened view of the off-diagonal elements of a square matrix
@@ -268,22 +249,27 @@ class BarlowModel(pl.LightningModule):
 		if torch.distributed.is_initialized():
 			torch.distributed.all_reduce(c)
 
-	def common_step(self, batch, batch_idx):
-		visual, visual2, inertial, _ = batch
-		return self(visual, inertial) + self(visual2, inertial)
-
 	def training_step(self, batch, batch_idx):
-		loss = self.common_step(batch, batch_idx)
+		visual, visual2, inertial, _ = batch
+		visual_emb, inertial_emb = self(visual, inertial)
+		# loss = self.barlow_loss(visual_emb, inertial_emb)
+		loss = self.vicreg_loss(visual_emb, inertial_emb)
 		self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
-		with torch.no_grad():
-			loss = self.common_step(batch, batch_idx)
-		self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=False)
+		self.visual_encoder.eval()
+		self.inertial_encoder.eval()
+		self.projector.eval()
+		visual, visual2, inertial, _ = batch
+		visual_emb, inertial_emb = self(visual, inertial)
+		# loss = self.barlow_loss(visual_emb, inertial_emb)
+		loss = self.vicreg_loss(visual_emb, inertial_emb)
+		self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+		return loss
 
 	def configure_optimizers(self):
-		return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+		return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
 	
 	# def configure_optimizers(self):
 	# 	optimizer = LARS(
@@ -316,20 +302,17 @@ class BarlowModel(pl.LightningModule):
 			visual_patch, visual_patch_2, imu_history, label = batch
 			label = np.asarray(label)
 			visual_patch = visual_patch.float()
-			visual_encoding = self.visual_encoder(visual_patch.cuda())
-			# visual_encoding = F.normalize(visual_encoding, dim=1)
-
+			with torch.no_grad():
+				visual_encoding = self.visual_encoder(visual_patch.cuda())
+			visual_encoding = visual_encoding.cpu()
+			visual_patch = visual_patch.cpu()
+   			# visual_encoding = F.normalize(visual_encoding, dim=1)
+			
 			if batch_idx == 0:
-				# self.visual_encoding = visual_encoding[:, :]
-				# self.visual_patch = visual_patch[:, :, :, :]
-				# self.label = label[:]
 				self.visual_encoding = [visual_encoding[:, :]]
 				self.visual_patch = [visual_patch[:, :, :, :]]
 				self.label = label[:]
 			else:
-				# self.visual_patch = torch.cat((self.visual_patch, visual_patch[:, :, :, :]), dim=0)
-				# self.visual_encoding = torch.cat((self.visual_encoding, visual_encoding[:, :]), dim=0)
-				# self.label = np.concatenate((self.label, label[:]))
 				self.visual_patch.append(visual_patch[:, :, :, :])
 				self.visual_encoding.append(visual_encoding[:, :])
 				self.label = np.concatenate((self.label, label[:]))
@@ -375,9 +358,9 @@ if __name__ == '__main__':
 						help='log directory (default: logs)')
 	parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
 						help='model directory (default: models)')
-	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
+	parser.add_argument('--num_gpus', type=int, default=8, metavar='N',
 						help='number of GPUs to use (default: 1)')
-	parser.add_argument('--latent_size', type=int, default=1024, metavar='N',
+	parser.add_argument('--latent_size', type=int, default=512, metavar='N',
 						help='Size of the common latent space (default: 512)')
 	parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
 	args = parser.parse_args()
@@ -388,7 +371,8 @@ if __name__ == '__main__':
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 	dm = MyDataLoader(data_config_path=args.dataset_config_path, batch_size=args.batch_size)
 	model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
-						inertial_shape=dm.inertial_shape, scale_loss=1.0, lambd=0.0051, per_device_batch_size=args.batch_size).to(device)
+						inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
+      					per_device_batch_size=args.batch_size).to(device)
 
 	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
 	model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
@@ -400,7 +384,7 @@ if __name__ == '__main__':
 						 max_epochs=args.epochs,
 						 callbacks=[model_checkpoint_cb],
 						 log_every_n_steps=10,
-						 distributed_backend='dp',
+						 distributed_backend='ddp',
 						 num_sanity_val_steps=0,
 						 logger=True,
 						 )
