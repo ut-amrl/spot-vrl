@@ -25,7 +25,7 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from typing import List, Union, Tuple
 import os
 import yaml
-from scripts.optimizer import LARS, CosineWarmupScheduler
+#from scripts.optimizer import LARS, CosineWarmupScheduler
 # import librosa
 # import librosa.display as display
 import albumentations as A
@@ -358,8 +358,8 @@ if __name__ == '__main__':
 						help='log directory (default: logs)')
 	parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
 						help='model directory (default: models)')
-	parser.add_argument('--num_gpus', type=int, default=8, metavar='N',
-						help='number of GPUs to use (default: 1)')
+	parser.add_argument('--num_gpus', type=int, default=1, metavar='N',
+						help='number of GPUs to use (default: 8)')
 	parser.add_argument('--latent_size', type=int, default=512, metavar='N',
 						help='Size of the common latent space (default: 512)')
 	parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
@@ -384,7 +384,7 @@ if __name__ == '__main__':
 						 max_epochs=args.epochs,
 						 callbacks=[model_checkpoint_cb],
 						 log_every_n_steps=10,
-						 distributed_backend='ddp',
+						 strategy='ddp',
 						 num_sanity_val_steps=0,
 						 logger=True,
 						 )

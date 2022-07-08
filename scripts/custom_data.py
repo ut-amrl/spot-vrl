@@ -24,6 +24,9 @@ class CustomDataset(Dataset):
 
     def __getitem__(self, idx):
 
+        if idx < 70:
+            idx = random.randint(0,self.__len__()-1)
+
         idx_path = self.file_path + "/" + str(idx)
 
         main_patch_path = idx_path + "/10"
@@ -47,7 +50,7 @@ class CustomDataset(Dataset):
             main_patch_1 = main_patch_1.astype(np.float32) / 255.0 # normalize
             main_patch_1 = np.moveaxis(main_patch_1, -1, 0)
 
-            main_rand_2 = random.choice([i for i in range(0,num_entries-1) if i not in [main_rand_1]])
+            main_rand_2 = random.choice([i for i in range(0,num_entries) if i not in [main_rand_1]])
             main_patch_path_2 = main_patch_path +"/"+str(main_rand_2)+ ".png"
             main_patch_2 = image.imread(main_patch_path_2)
             main_patch_2 = cv2.resize(main_patch_2, (128, 128))
@@ -74,7 +77,7 @@ class CustomDataset(Dataset):
                 patch_1 = np.moveaxis(patch_1, -1, 0)
 
                 
-                rand_2 = random.choice([i for i in range(0,num_entries-1) if i not in [rand_1]])
+                rand_2 = random.choice([i for i in range(0,num_entries) if i not in [rand_1]])
                 patch_path_2 = patch_path +"/"+str(rand_2)+ ".png"
                 patch_2 = image.imread(patch_path_2)
                 patch_2 = cv2.resize(patch_2, (128, 128))
@@ -86,6 +89,7 @@ class CustomDataset(Dataset):
             else:
                 valid = False
                 while valid == False:
+                    print("Current idx: "+str(idx))
                     print("No patch "+str(i))
                     fix_rand_idx= random.randint(0,self.__len__()-1)
                     print("New idx: "+str(fix_rand_idx))
@@ -105,7 +109,7 @@ class CustomDataset(Dataset):
                 patch_1 = np.moveaxis(patch_1, -1, 0)
 
                 
-                rand_2 = random.choice([i for i in range(0,fix_num_entries-1) if i not in [rand_1]])
+                rand_2 = random.choice([i for i in range(0,fix_num_entries) if i not in [rand_1]])
                 patch_path_2 = fix_patch_path +"/"+str(rand_2)+ ".png"
                 patch_2 = image.imread(patch_path_2)
                 patch_2 = cv2.resize(patch_2, (128, 128))
