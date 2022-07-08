@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.6
+#!/usr/bin/env python3
 """
 A rosnode that listens to camera and odom info
 and saves the processed data into a pickle file.
@@ -24,6 +24,7 @@ import tf2_ros
 from termcolor import cprint
 import message_filters
 from scipy.spatial.transform import Rotation as R
+from PIL import Image
 
 PATCH_SIZE = 64
 PATCH_EPSILON = 0.5 * PATCH_SIZE * PATCH_SIZE
@@ -127,6 +128,104 @@ class ListenRecordData:
         self.msg_data['imu_jackal_orientation'].append(self.imu_jackal_orientation)
 
     def save_data(self):
+
+        cprint("Created folder:"+str(self.save_data_path), 'yellow')                
+        os.mkdir(self.save_data_path)
+
+        imu_jackal = []
+
+        # storage buffer to hold the past recent 20 BEV images on which we perform patch extraction
+        self.storage_buffer = {'image':[], 'odom':[]}
+        
+        for i in tqdm(range(len(self.msg_data['image_msg']))):
+            bevimage, _ = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][i], self.msg_data['image_msg'][i])
+            self.storage_buffer['image'].append(bevimage)
+            self.storage_buffer['odom'].append(self.msg_data['odom'][i])
+            
+            if self.visualize_results:
+                bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
+            
+            # now find the patches for this image
+            curr_odom = self.msg_data['odom'][i]
+                        
+            num_added = 0
+            
+            folder_path = os.path.join(self.save_data_path,str(i))
+            os.mkdir(folder_path)
+
+
+            counts = {}
+            avail_patches = {}
+            for h in range(25):
+                sub_folder_path = os.path.join(folder_path,str(h))
+                os.mkdir(sub_folder_path)
+                counts[h] = 0
+                avail_patches[h]=[]
+
+            
+
+            # search for the patches in the storage buffer
+            for j in range(0, len(self.storage_buffer['odom'])):
+               
+                # if num_added < 250:
+                prev_image = self.storage_buffer['image'][j]
+                prev_odom = self.storage_buffer['odom'][j]
+                
+                # extract the patch
+                patches, vis_img = ListenRecordData.get_patch_from_odom_delta(curr_odom, 
+                                                                                prev_odom,
+                                                                                prev_image, 
+                                                                visualize=self.visualize_results)
+                    
+                for k in range(len(patches)):
+                    # if counts[k] < 10:
+                    patch = patches[k]                                     
+                    zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
+                    if np.sum(zero_count) < PATCH_EPSILON:
+                        counts[k]+=1
+                        num_added=num_added+1
+                        avail_patches[k].append(patch)
+
+                if self.visualize_results:
+                    vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
+                    cv2.imshow('current img <-> previous img', np.hstack((bevimage, vis_img)))
+                    cv2.waitKey(5)
+
+
+            for l in range(25):
+                if counts[l] <11 :
+                    for m in range(counts[l]):
+                        im = Image.fromarray(avail_patches[l][m])
+                        img_name = "/" + str(m) +".png"
+                        img_path = folder_path + "/" + str(l) + img_name
+                        im.save(img_path)
+
+                else:
+                    # print("yes")
+                    step = int(counts[l]/10)
+                    # print(counts[l])
+                    for m in range(10):
+                        place = m*step
+                        im = Image.fromarray(avail_patches[l][place])
+                        img_name = "/" + str(m) +".png"
+                        img_path = folder_path + "/" + str(l) + img_name
+                        im.save(img_path)
+                
+            while len(self.storage_buffer['image']) > 40:
+                self.storage_buffer['image'].pop(0)
+                self.storage_buffer['odom'].pop(0)
+                
+            if num_added>0:
+                print('Num patches : ', num_added)
+                # patches have been found. add it to data dict
+                imu_jackal.append(self.msg_data['imu_jackal_history'][i])
+
+        cprint('Saving data of size {}'.format(len(imu_jackal)), 'yellow')
+        pickle.dump(imu_jackal, open(self.save_data_path + "/inertial_data.pkl", 'wb'))
+        cprint('Saved data successfully ', 'yellow', attrs=['blink'])
+
+
+    def save_data_pkl(self):
         # dict to hold all the processed data
         data = {
             'patches': [],
@@ -148,7 +247,9 @@ class ListenRecordData:
             # now find the patches for this image
             curr_odom = self.msg_data['odom'][i]
             
-            patch_list = []
+            #patch_list = []
+            num_added = 0
+            patch_dict = {}
             
             # search for the patches in the storage buffer
             for j in range(0, len(self.storage_buffer['odom'])):
@@ -157,28 +258,40 @@ class ListenRecordData:
                 prev_odom = self.storage_buffer['odom'][j]
                 
                 # extract the patch
-                patch, vis_img = ListenRecordData.get_patch_from_odom_delta(curr_odom, 
+                patches, vis_img = ListenRecordData.get_patch_from_odom_delta(curr_odom, 
                                                                             prev_odom,
                                                                             prev_image, 
                                                                             visualize=self.visualize_results)
-                if patch is not None:
-                    patch_list.append(patch)
+                for k in range(len(patches)): 
+                    patch = patches[k]                                     
+                    zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
+                    if np.sum(zero_count) < PATCH_EPSILON:
+                        num_added=num_added+1
+                        #print(data['patches'])
+                        #print(data['patches'].keys())
+                        if k in patch_dict.keys():
+                            #print((data['patches'])[k])
+                            patch_dict[k].append(patch)
+                        else:
+                            patch_dict[k] = [patch]
+                            #print((data['patches'])[k])
+                        #patch_list.append(patch)
+                        
+                if self.visualize_results:
+                    vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
+                    cv2.imshow('current img <-> previous img', np.hstack((bevimage, vis_img)))
+                    cv2.waitKey(5)
                     
-                    if self.visualize_results:
-                        vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
-                        cv2.imshow('current img <-> previous img', np.hstack((bevimage, vis_img)))
-                        cv2.waitKey(5)
-                    
-                if len(patch_list) >= 10: break
+                #if len(patch_list) >= 10: break
                 
             while len(self.storage_buffer['image']) > 20:
                 self.storage_buffer['image'].pop(0)
                 self.storage_buffer['odom'].pop(0)
                 
-            if len(patch_list) > 0:
-                print('Num patches : ', len(patch_list))
+            if num_added>0:
+                print('Num patches : ', num_added)
                 # patches have been found. add it to data dict
-                data['patches'].append(patch_list)
+                data['patches'].append(patch_dict)
                 data['imu_jackal'].append(self.msg_data['imu_jackal_history'][i])
                 data['imu_kinect'].append(self.msg_data['imu_kinect_history'][i])
                                 
@@ -198,81 +311,112 @@ class ListenRecordData:
         inv_pos_transform = np.linalg.inv(prev_pos_transform)
         curr_z_rotation = R.from_euler('XYZ', [0, 0, curr_pos[2]]).as_matrix()
 
-        patch_corners = [
-            curr_pos_np + curr_z_rotation @ np.array([0.3, 0.3, 0]),
-            curr_pos_np + curr_z_rotation @ np.array([0.3, -0.3, 0]),
-            curr_pos_np + curr_z_rotation @ np.array([-0.3, -0.3, 0]),
-            curr_pos_np + curr_z_rotation @ np.array([-0.3, 0.3, 0])
-        ]
-        patch_corners_prev_frame = [
-            inv_pos_transform @ patch_corners[0],
-            inv_pos_transform @ patch_corners[1],
-            inv_pos_transform @ patch_corners[2],
-            inv_pos_transform @ patch_corners[3],
-        ]
-        scaled_patch_corners = [
-            (patch_corners_prev_frame[0] * 132.003788).astype(np.int),
-            (patch_corners_prev_frame[1] * 132.003788).astype(np.int),
-            (patch_corners_prev_frame[2] * 132.003788).astype(np.int),
-            (patch_corners_prev_frame[3] * 132.003788).astype(np.int),
-        ]
-        
+
         CENTER = np.array((1024-20, (768-55)*2))
-        patch_corners_image_frame = [
-            CENTER + np.array((-scaled_patch_corners[0][1], -scaled_patch_corners[0][0])),
-            CENTER + np.array((-scaled_patch_corners[1][1], -scaled_patch_corners[1][0])),
-            CENTER + np.array((-scaled_patch_corners[2][1], -scaled_patch_corners[2][0])),
-            CENTER + np.array((-scaled_patch_corners[3][1], -scaled_patch_corners[3][0]))
-        ]
+
+        patch_corners_image_frame_lst = []
+        patch_lst = []
+        # Must be odd:
+        num_side_patches=5
+        num_forward_patches = 5
+        for i in range(num_side_patches):
+            for j in range(num_forward_patches):
+                h_shift = -1*(i - int(num_side_patches/2))
+                patch_corners = [
+                    curr_pos_np + curr_z_rotation @ np.array([0.3 +0.6*j, 0.3 +0.6*h_shift, 0]),
+                    curr_pos_np + curr_z_rotation @ np.array([0.3 +0.6*j, -0.3 +0.6*h_shift, 0]),
+                    curr_pos_np + curr_z_rotation @ np.array([-0.3 +0.6*j, -0.3 +0.6*h_shift, 0]),
+                    curr_pos_np + curr_z_rotation @ np.array([-0.3 +0.6*j, 0.3 +0.6*h_shift, 0])
+                ]
+
+                patch_corners_prev_frame = [
+                    inv_pos_transform @ patch_corners[0],
+                    inv_pos_transform @ patch_corners[1],
+                    inv_pos_transform @ patch_corners[2],
+                    inv_pos_transform @ patch_corners[3],
+                ]
+
+                scaled_patch_corners = [
+                    (patch_corners_prev_frame[0] * 132.003788).astype(np.int),
+                    (patch_corners_prev_frame[1] * 132.003788).astype(np.int),
+                    (patch_corners_prev_frame[2] * 132.003788).astype(np.int),
+                    (patch_corners_prev_frame[3] * 132.003788).astype(np.int),
+                ]
+
+
+                patch_corners_image_frame = [
+                    CENTER + np.array((-scaled_patch_corners[0][1], -scaled_patch_corners[0][0])),
+                    CENTER + np.array((-scaled_patch_corners[1][1], -scaled_patch_corners[1][0])),
+                    CENTER + np.array((-scaled_patch_corners[2][1], -scaled_patch_corners[2][0])),
+                    CENTER + np.array((-scaled_patch_corners[3][1], -scaled_patch_corners[3][0]))
+                ]
+
+                patch_corners_image_frame_lst.append(patch_corners_image_frame)
+
+                persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
+
+                patch = cv2.warpPerspective(
+                    prev_image,
+                    persp,
+                    (64, 64)
+                )
+                patch_lst.append(patch)
+
         
         vis_img = None
         if visualize:
             vis_img = prev_image.copy()
 
             # draw the patch rectangle
-            cv2.line(
-                vis_img,
-                (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
-                (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
-                (0, 255, 0),
-                2
-            )
-            cv2.line(
-                vis_img,
-                (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
-                (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
-                (0, 255, 0),
-                2
-            )
-            cv2.line(
-                vis_img,
-                (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
-                (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
-                (0, 255, 0),
-                2
-            )
-            cv2.line(
-                vis_img,
-                (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
-                (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
-                (0, 255, 0),
-                2
-            )
+            for patch_corners_image_frame in patch_corners_image_frame_lst:
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
+                    (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
+                    (0, 255, 0),
+                    2
+                )
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
+                    (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
+                    (0, 255, 0),
+                    2
+                )
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
+                    (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
+                    (0, 255, 0),
+                    2
+                )
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
+                    (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
+                    (0, 255, 0),
+                    2
+                )
         
-        persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
+        # patch_lst = []
+        # for patch_corners_image_frame in patch_corners_image_frame_lst:
 
-        patch = cv2.warpPerspective(
-            prev_image,
-            persp,
-            (64, 64)
-        )
+        #     persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
 
-        zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
+        #     patch = cv2.warpPerspective(
+        #         prev_image,
+        #         persp,
+        #         (64, 64)
+        #     )
 
-        if np.sum(zero_count) > PATCH_EPSILON:
-            return None, vis_img
+            # zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
 
-        return patch, vis_img
+            # if np.sum(zero_count) > PATCH_EPSILON:
+            #     patch_lst.append(None)
+            # else:
+            # patch_lst.append(patch)
+
+        return patch_lst, vis_img
     
     @staticmethod
     def camera_imu_homography(orientation_quat, image):
