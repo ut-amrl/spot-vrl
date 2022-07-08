@@ -1,0 +1,9 @@
+#!/bin/bash
+
+for dir in /robodata/dfarkash/expanded_data/*
+do  
+    for file in $dir/*
+    do
+        python3 ./disk_img.py --out /robodata/dfarkash/expanded_data/ --input $file
+    done
+done
