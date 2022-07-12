@@ -32,7 +32,7 @@ import yaml
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cluster_jackal
-from custom_data import CustomDataset, MyDataLoader
+from dict_custom_data import CustomDataset, MyDataLoader
 
 def exclude_bias_and_norm(p):
     return p.ndim == 1
@@ -67,20 +67,34 @@ class BarlowModel(pl.LightningModule):
         self.per_device_batch_size = per_device_batch_size
         self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
 
+        # self.visual_encoder = nn.Sequential(
+        #     nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63, 31 x 31
+        #     nn.BatchNorm2d(16), nn.ReLU(inplace=True),
+        #     nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), # 31 x 31, 15 x 15
+        #     nn.BatchNorm2d(32), nn.ReLU(inplace=True),
+        #     nn.Conv2d(32, 64, kernel_size=5, stride=2, bias=False), # 14 x 14, 6 x 6
+        #     nn.BatchNorm2d(64), nn.ReLU(inplace=True),
+        #     nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False),  # 5 x 5, 
+        #     nn.BatchNorm2d(128), nn.ReLU(inplace=True),
+        #     nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
+        #     nn.BatchNorm2d(256), nn.ReLU(inplace=True),
+        #     nn.AvgPool2d(kernel_size=2, stride=2),
+        #     Flatten(), # 256 output
+        #     nn.Linear(128, 128)
+        # )
+
         self.visual_encoder = nn.Sequential(
-            nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
+            nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 31 x 31
             nn.BatchNorm2d(16), nn.ReLU(inplace=True),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), # 31 x 31
+            nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), # 15 x 15
             nn.BatchNorm2d(32), nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=5, stride=2, bias=False), # 14 x 14
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, bias=False), # 7 x 7
             nn.BatchNorm2d(64), nn.ReLU(inplace=True),
-            nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False),  # 5 x 5
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, bias=False), # 3 x 3 
             nn.BatchNorm2d(128), nn.ReLU(inplace=True),
-            nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
-            nn.BatchNorm2d(256), nn.ReLU(inplace=True),
             nn.AvgPool2d(kernel_size=2, stride=2),
             Flatten(), # 256 output
-            nn.Linear(256, 128)
+            nn.Linear(128, 128)
         )
 
         self.inertial_encoder = nn.Sequential(
@@ -109,20 +123,12 @@ class BarlowModel(pl.LightningModule):
         self.std_coeff = 25.0
         self.cov_coeff = 1.0
 
-    def forward(self, main_patch_lst, inertial_data, patch_list_1, patch_list_2):
+    def forward(self, main_patch_lst, inertial_data, patch_list_1):
         visual_patch = main_patch_lst[0]
         imu_history = inertial_data
 
         v_encoded = self.visual_encoder(visual_patch)
         i_encoded = self.inertial_encoder(imu_history)
-
-        lst1_encoded = []
-        lst2_encoded = []
-
-        for i in range(25):
-           lst1_encoded.append(self.visual_encoder(patch_list_1[i])) 
-           lst2_encoded.append(self.visual_encoder(patch_list_2[i])) 
-
   
         # L2 normalize along encoding dimension
         # v_encoded = F.normalize(v_encoded, dim=1)
@@ -130,14 +136,8 @@ class BarlowModel(pl.LightningModule):
     
         z1 = self.projector(v_encoded)
         z2 = self.projector(i_encoded)
-
-        lst1_projected =[]
-        lst2_projected =[]
-        for i in range(25):
-           lst1_projected.append(self.projector(lst1_encoded[i])) 
-           lst2_projected.append(self.projector(lst2_encoded[i])) 
   
-        return z1, z2, lst1_projected, lst2_projected
+        return z1, z2
 
     def barlow_loss(self, z1, z2):
         # z1 = (z1 - torch.mean(z1, dim=0))/(torch.std(z1, dim=0) + 1e-4)
@@ -188,18 +188,9 @@ class BarlowModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
-        visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
+        visual_emb, inertial_emb = self(main_patch_lst, inertial_data, patch_list_1)
         # loss = self.barlow_loss(visual_emb, inertial_emb)
-        l1 = self.vicreg_loss(visual_emb, inertial_emb)
-
-        l2_lst = np.zeros(25)
-        for i in range(25):
-            v_emb_1 = lst1_emb[i]
-            v_emb_2 = lst2_emb[i]
-            l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = np.mean(l2_lst)
-
-        loss = l1 + l2
+        loss = self.vicreg_loss(visual_emb, inertial_emb)
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
@@ -208,18 +199,9 @@ class BarlowModel(pl.LightningModule):
         self.inertial_encoder.eval()
         self.projector.eval()
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
-        visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
+        visual_emb, inertial_emb = self(main_patch_lst, inertial_data, patch_list_1)
         # loss = self.barlow_loss(visual_emb, inertial_emb)
-        l1 = self.vicreg_loss(visual_emb, inertial_emb)
-        
-        l2_lst = np.zeros(25)
-        for i in range(25):
-            v_emb_1 = lst1_emb[i]
-            v_emb_2 = lst2_emb[i]
-            l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = np.mean(l2_lst)
-
-        loss = l1 + l2
+        loss = self.vicreg_loss(visual_emb, inertial_emb)
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 

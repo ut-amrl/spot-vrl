@@ -1,5 +1,4 @@
 import pickle
-from turtle import shape
 import cv2
 import numpy as np
 import random
@@ -12,6 +11,8 @@ import pytorch_lightning as pl
 import yaml
 import time
 from PIL import Image
+import glob
+from tqdm import tqdm
 
 class CustomDataset(Dataset):
     #file_path must be path leading to directory containing imu pickle and other img folders (no / at end)
@@ -22,49 +23,57 @@ class CustomDataset(Dataset):
         cprint('Loading data from {}'.format(imu_path))
         self.imu_data = pickle.load(open(imu_path, 'rb'))
 
+        self.dict = {}
+        count_invalid = 0
+        print("Finding all valid indexes in filepath")
+        # for folder_name in glob.glob(file_path + "/[0-" + str(len(self.imu_data)-1)+"]/[0-24]"):
+        for folder_name in tqdm(glob.glob(file_path + "/*")):
+            valid = True
+            for sub_folder_name in glob.glob(folder_name + "/*"):
+                count = 0
+                for file_name in glob.glob(sub_folder_name + "/*"):
+                    count = count+1
+                if count <10:
+                    # print(folder_name)
+                    valid = False
+            self.dict[folder_name]=valid
+            if not(valid):
+                count_invalid +=1
+        print("Found valid indexes in filepath")
+        print("Number of invalid indexes: " + str(count_invalid))
+
+
     def __len__(self):
         return len(self.imu_data)
 
     def __getitem__(self, idx):
 
-        if idx < 70:
-            idx = random.randint(0,self.__len__()-1)
-
         idx_path = self.file_path + "/" + str(idx)
 
-        main_patch_path = idx_path + "/10"
-
-        t2 = time.time()
-        main_lst = os.listdir(main_patch_path)
-        num_entries = len(main_lst)
-        t3 = time.time()
-        total2 = t3-t2
-        # print("os time: " + str(total2))
-
-
-        if num_entries < 2:
-            # print("No main patch")
+        if not(self.dict[idx_path]):
+            # print("Invalid patch")
             rand_idx= random.randint(0,self.__len__()-1)
             # print("New idx: "+str(rand_idx))
             
             return self.__getitem__(rand_idx)
-        else:
-            
-            t0 = time.time()
-            main_rand_1 = random.randint(0,num_entries-1)
+
+        main_patch_path = idx_path + "/10"
+        if True:   
+            # t0 = time.time()
+            main_rand_1 = random.randint(0,9)
             main_patch_path_1 = main_patch_path +"/"+str(main_rand_1)+ ".png"
             main_patch_1 = cv2.imread(main_patch_path_1)
-            main_patch_1 = cv2.resize(main_patch_1, (128, 128))
+            # main_patch_1 = cv2.resize(main_patch_1, (128, 128))
             main_patch_1 = main_patch_1.astype(np.float32) / 255.0 # normalize
             main_patch_1 = np.moveaxis(main_patch_1, -1, 0)
-            t1 = time.time()
-            total = t1-t0
+            # t1 = time.time()
+            # total = t1-t0
             # print("image time: " +str(total))
 
-            main_rand_2 = random.choice([i for i in range(0,num_entries) if i not in [main_rand_1]])
+            main_rand_2 = random.choice([i for i in range(0,9) if i not in [main_rand_1]])
             main_patch_path_2 = main_patch_path +"/"+str(main_rand_2)+ ".png"
             main_patch_2 = cv2.imread(main_patch_path_2)
-            main_patch_2 = cv2.resize(main_patch_2, (128, 128))
+            # main_patch_2 = cv2.resize(main_patch_2, (128, 128))
             main_patch_2 = main_patch_2.astype(np.float32) / 255.0 # normalize
             main_patch_2 = np.moveaxis(main_patch_2, -1, 0)
             
@@ -72,65 +81,28 @@ class CustomDataset(Dataset):
 
         patch_list_1 = []
         patch_list_2 = []
-        for i in range(25):
+        for i in range(1):
             patch_path = idx_path + "/" + str(i)
 
-            lst = os.listdir(patch_path)
-            num_entries = len(lst)
-
-            if num_entries >= 2:
+            if True:
                 
-                rand_1 = random.randint(0,num_entries-1)
+                rand_1 = random.randint(0,9)
                 patch_path_1 = patch_path +"/"+str(rand_1)+ ".png"
                 patch_1 = cv2.imread(patch_path_1)
-                patch_1 = cv2.resize(patch_1, (128, 128))
+                # patch_1 = cv2.resize(patch_1, (128, 128))
                 patch_1 = patch_1.astype(np.float32) / 255.0 # normalize
                 patch_1 = np.moveaxis(patch_1, -1, 0)
 
                 
-                rand_2 = random.choice([i for i in range(0,num_entries) if i not in [rand_1]])
+                rand_2 = random.choice([i for i in range(0,9) if i not in [rand_1]])
                 patch_path_2 = patch_path +"/"+str(rand_2)+ ".png"
                 patch_2 = cv2.imread(patch_path_2)
-                patch_2 = cv2.resize(patch_2, (128, 128))
+                # patch_2 = cv2.resize(patch_2, (128, 128))
                 patch_2 = patch_2.astype(np.float32) / 255.0 # normalize
                 patch_2 = np.moveaxis(patch_2, -1, 0)
 
                 patch_list_1.append(patch_1)
                 patch_list_2.append(patch_2)
-            else:
-                valid = False
-                while valid == False:
-                    # print("Current idx: "+str(idx))
-                    # print("No patch "+str(i))
-                    fix_rand_idx= random.randint(0,self.__len__()-1)
-                    # print("New idx: "+str(fix_rand_idx))
-                    fix_idx_path = self.file_path + "/" + str(fix_rand_idx)
-                    fix_patch_path = fix_idx_path + "/" + str(i)
-
-                    fix_lst = os.listdir(fix_patch_path)
-                    fix_num_entries = len(fix_lst)
-                    if fix_num_entries >=2:
-                        valid = True
-
-                rand_1 = random.randint(0,fix_num_entries-1)
-                patch_path_1 = fix_patch_path +"/"+str(rand_1)+ ".png"
-                patch_1 = cv2.imread(patch_path_1)
-                patch_1 = cv2.resize(patch_1, (128, 128))
-                patch_1 = patch_1.astype(np.float32) / 255.0 # normalize
-                patch_1 = np.moveaxis(patch_1, -1, 0)
-
-                
-                rand_2 = random.choice([i for i in range(0,fix_num_entries) if i not in [rand_1]])
-                patch_path_2 = fix_patch_path +"/"+str(rand_2)+ ".png"
-                patch_2 = cv2.imread(patch_path_2)
-                patch_2 = cv2.resize(patch_2, (128, 128))
-                patch_2 = patch_2.astype(np.float32) / 255.0 # normalize
-                patch_2 = np.moveaxis(patch_2, -1, 0)
-
-                patch_list_1.append(patch_1)
-                patch_list_2.append(patch_2)
-
-
 
 
         inertial_data = self.imu_data[idx]
@@ -156,15 +128,15 @@ class MyDataLoader(pl.LightningDataModule):
 		self.val_dataset = ConcatDataset([CustomDataset(file) for file in val_data_path])
 
 		# find mean, std statistics of inertial data in the training set
-		print('Finding mean and std statistics of inertial data in the training set...')
-		tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
-		for _,i,_,_,_ in tmp:
-			i = i.numpy()
-			break
-		self.inertial_shape = i.shape[1]
-		print('Inertial shape:', self.inertial_shape)
-		print('Data statistics have been found.')
-		del tmp
+		# print('Finding mean and std statistics of inertial data in the training set...')
+		# tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
+		# for _,i,_,_,_ in tmp:
+		# 	i = i.numpy()
+		# 	break
+		# self.inertial_shape = i.shape[1]
+		# print('Inertial shape:', self.inertial_shape)
+		# print('Data statistics have been found.')
+		# del tmp
 
 		print('Train dataset size:', len(self.train_dataset))
 		print('Val dataset size:', len(self.val_dataset))
@@ -188,7 +160,6 @@ if __name__ == '__main__':
     print(len(patch_list_1))
 
     print(main_patch_lst[0])
-    print(main_patch_lst[0].shape)
 
     # im = Image.fromarray(main_patch_lst[0])
     # img_path = "/robodata/dfarkash/test_data/blk_tst.png"
