@@ -81,7 +81,7 @@ class CustomDataset(Dataset):
 
         patch_list_1 = []
         patch_list_2 = []
-        for i in range(1):
+        for i in range(25):
             patch_path = idx_path + "/" + str(i)
 
             if True:
