@@ -26,9 +26,11 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from typing import List, Union, Tuple
 import os
 import yaml
-#from scripts.optimizer import LARS, CosineWarmupScheduler
+# from tf.keras.optimizers.schedules import CosineDecay
 # import librosa
 # import librosa.display as display
+
+from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cluster_jackal
@@ -48,7 +50,8 @@ class UnFlatten(nn.Module):
 class BarlowModel(pl.LightningModule):
     def __init__(self, lr=3e-4, latent_size=64, inertial_shape=None,
                  scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
-                 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1):
+                 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1
+                 , l1_coeff = 1):
         super(BarlowModel, self).__init__()
 
         self.save_hyperparameters(
@@ -57,7 +60,8 @@ class BarlowModel(pl.LightningModule):
             'inertial_shape',
             'scale_loss',
             'lambd',
-            'weight_decay'
+            'weight_decay',
+            'l1_coeff'
         )
 
         self.scale_loss = scale_loss
@@ -66,6 +70,7 @@ class BarlowModel(pl.LightningModule):
         self.lr = lr
         self.per_device_batch_size = per_device_batch_size
         self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
+        self.l1_coeff = l1_coeff
 
         # self.visual_encoder = nn.Sequential(
         #     nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
@@ -203,20 +208,24 @@ class BarlowModel(pl.LightningModule):
             torch.distributed.all_reduce(c)
 
     def training_step(self, batch, batch_idx):
+        self.visual_encoder.train()
+        self.inertial_encoder.train()
+        self.projector.train()
         #try self.visual_encoder.train(), etc.
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
         visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
         # loss = self.barlow_loss(visual_emb, inertial_emb)
         l1 = self.vicreg_loss(visual_emb, inertial_emb)
 
-        l2_lst = np.zeros(25)
+        l2_lst = torch.zeros(25)
         for i in range(25):
             v_emb_1 = lst1_emb[i]
             v_emb_2 = lst2_emb[i]
             l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = np.mean(l2_lst)
+        l2 = torch.mean(l2_lst)
 
-        loss = l1 + l2
+        loss = self.l1_coeff*l1 + l2
+        # loss=l2
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
@@ -229,21 +238,26 @@ class BarlowModel(pl.LightningModule):
         # loss = self.barlow_loss(visual_emb, inertial_emb)
         l1 = self.vicreg_loss(visual_emb, inertial_emb)
         
-        l2_lst = np.zeros(25)
+        l2_lst = torch.zeros(25)
         for i in range(25):
             v_emb_1 = lst1_emb[i]
             v_emb_2 = lst2_emb[i]
             l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = np.mean(l2_lst)
+        l2 = torch.mean(l2_lst)
 
-        loss = l1 + l2
+        loss = self.l1_coeff*l1 + l2
+        # loss=l2
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         self.log('val_loss_l1', l1, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         self.log('val_loss_l2', l2, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
+        optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
+        scheduler = CosineAnnealingLR(optimizer, T_max = 15000, eta_min = 0.00001)
+
+        # return [optimizer], [scheduler]
+        return optimizer
     
     # def configure_optimizers(self):
     # 	optimizer = LARS(
@@ -271,11 +285,11 @@ class BarlowModel(pl.LightningModule):
     # 	]
 
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
-        if self.current_epoch % 10 == 0:
+        if self.current_epoch % 2 == 0:
 
             main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
             visual_patch = main_patch_lst[0]
-            label = np.asarray(label)
+            label = np.asarray(label) 
             visual_patch = visual_patch.float()
             with torch.no_grad():
                 visual_encoding = self.visual_encoder(visual_patch.cuda())
@@ -293,7 +307,7 @@ class BarlowModel(pl.LightningModule):
                 self.label = np.concatenate((self.label, label[:]))
 
     def on_validation_end(self) -> None:
-        if self.current_epoch % 10 == 0:
+        if self.current_epoch % 2 == 0:
             self.visual_patch = torch.cat(self.visual_patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
             idx = np.arange(self.visual_encoding.shape[0])
@@ -340,6 +354,8 @@ if __name__ == '__main__':
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
                         help='learning rate (default: 3e-4)')
+    parser.add_argument('--l1_coeff', type=float, default=1, metavar='L1C',
+                        help='L1 loss coefficient (1)')
     parser.add_argument('--log_dir', type=str, default='logs/', metavar='N',
                         help='log directory (default: logs)')
     parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
@@ -360,7 +376,7 @@ if __name__ == '__main__':
 
     model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
-                          per_device_batch_size=args.batch_size).to(device)
+                          per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
     model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
