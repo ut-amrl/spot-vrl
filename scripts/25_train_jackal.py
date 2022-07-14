@@ -203,6 +203,7 @@ class BarlowModel(pl.LightningModule):
             torch.distributed.all_reduce(c)
 
     def training_step(self, batch, batch_idx):
+        #try self.visual_encoder.train(), etc.
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
         visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
         # loss = self.barlow_loss(visual_emb, inertial_emb)
@@ -237,6 +238,8 @@ class BarlowModel(pl.LightningModule):
 
         loss = l1 + l2
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+        self.log('val_loss_l1', l1, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+        self.log('val_loss_l2', l2, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
     def configure_optimizers(self):
@@ -304,6 +307,8 @@ class BarlowModel(pl.LightningModule):
 
             metadata_header = ["labels","clusters"]
             out = cluster_jackal.accuracy_naive(self.visual_encoding[idx[:2000],:],self.label[idx[:2000]])
+
+            self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
 
             self.logger.experiment.add_embedding(mat=self.visual_encoding[idx[:2000], :],
                                                  label_img=self.visual_patch[idx[:2000], :, :, :],

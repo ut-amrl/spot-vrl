@@ -142,10 +142,10 @@ class MyDataLoader(pl.LightningDataModule):
 		print('Val dataset size:', len(self.val_dataset))
 
 	def train_dataloader(self):
-		return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=20, drop_last=True if len(self.train_dataset) % self.batch_size != 0 else False)
+		return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=10, drop_last=True if len(self.train_dataset) % self.batch_size != 0 else False)
 
 	def val_dataloader(self):
-		return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=20, drop_last=True if len(self.val_dataset) % self.batch_size != 0 else False)
+		return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=10, drop_last=True if len(self.val_dataset) % self.batch_size != 0 else False)
 
 
 if __name__ == '__main__':
