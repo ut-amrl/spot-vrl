@@ -35,6 +35,7 @@ def cluster(data):
 
     # print(kl.elbow)
     # print(models[kl.elbow-1].cluster_centers_)
+    
     return models[kl.elbow-1].labels_, kl.elbow
 
     #kmeans.labels_

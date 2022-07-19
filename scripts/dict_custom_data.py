@@ -24,24 +24,30 @@ class CustomDataset(Dataset):
         cprint('Loading data from {}'.format(imu_path))
         self.imu_data = pickle.load(open(imu_path, 'rb'))
 
-        self.dict = {}
-        count_invalid = 0
-        print("Finding all valid indexes in filepath")
-        # for folder_name in glob.glob(file_path + "/[0-" + str(len(self.imu_data)-1)+"]/[0-24]"):
-        for folder_name in tqdm(glob.glob(file_path + "/*")):
-            valid = True
-            for sub_folder_name in glob.glob(folder_name + "/*"):
-                count = 0
-                for file_name in glob.glob(sub_folder_name + "/*"):
-                    count = count+1
-                if count <10:
-                    # print(folder_name)
-                    valid = False
-            self.dict[folder_name]=valid
-            if not(valid):
-                count_invalid +=1
-        print("Found valid indexes in filepath")
-        print("Number of invalid indexes: " + str(count_invalid))
+        dict_path = file_path +"/valid_idxs.pkl"
+        if os.path.exists(dict_path):
+            cprint('Loading valid idxs from {}'.format(dict_path))
+            self.dict = pickle.load(open(dict_path, 'rb'))
+        else:
+            self.dict = {}
+            count_invalid = 0
+            print("Finding all valid indexes in filepath")
+            # for folder_name in glob.glob(file_path + "/[0-" + str(len(self.imu_data)-1)+"]/[0-24]"):
+            for folder_name in tqdm(glob.glob(file_path + "/*")):
+                valid = True
+                for sub_folder_name in glob.glob(folder_name + "/*"):
+                    count = 0
+                    for file_name in glob.glob(sub_folder_name + "/*"):
+                        count = count+1
+                    if count <10:
+                        # print(folder_name)
+                        valid = False
+                self.dict[folder_name]=valid
+                if not(valid):
+                    count_invalid +=1
+            print("Found valid indexes in filepath")
+            print("Number of invalid indexes: " + str(count_invalid))
+            pickle.dump(self.dict, open(dict_path, 'wb'))
 
 
     def __len__(self):

@@ -36,6 +36,7 @@ import albumentations as A
 from albumentations.pytorch import ToTensorV2
 import cluster_jackal
 from dict_custom_data import CustomDataset, MyDataLoader
+from PIL import Image
 
 def exclude_bias_and_norm(p):
     return p.ndim == 1
@@ -299,47 +300,116 @@ class BarlowModel(pl.LightningModule):
             visual_patch = main_patch_lst[0]
             label = np.asarray(label) 
             visual_patch = visual_patch.float()
+            inertial_data = inertial_data.float()
             with torch.no_grad():
                 visual_encoding = self.visual_encoder(visual_patch.cuda())
+                inertial_encoding = self.inertial_encoder(inertial_data.cuda())
             visual_encoding = visual_encoding.cpu()
+            inertial_encoding = inertial_encoding.cpu()
             visual_patch = visual_patch.cpu()
                # visual_encoding = F.normalize(visual_encoding, dim=1)
             
             if batch_idx == 0:
                 self.visual_encoding = [visual_encoding[:, :]]
+                self.inertial_encoding = [inertial_encoding[:, :]]
                 self.visual_patch = [visual_patch[:, :, :, :]]
                 self.label = label[:]
             else:
                 self.visual_patch.append(visual_patch[:, :, :, :])
                 self.visual_encoding.append(visual_encoding[:, :])
+                self.inertial_encoding.append(inertial_encoding[:, :])
                 self.label = np.concatenate((self.label, label[:]))
+
+    def sample_clusters(data, visual_patch):
+            clusters , elbow = cluster_jackal.cluster(data)
+            dic = {}
+            for i in range(elbow):
+                dic[i] = []
+            for i in range(elbow):
+                idx = np.where(clusters ==i)
+                for j in range(25):
+                    chosen = np.random.randint(0, len(idx))
+                    visual_patch = visual_patch[idx[chosen], :, :, :]
+                    dic[i].append(visual_patch)
+
+            return dic, elbow
+
+    def img_clusters(dic, elbow):
+        for i in range(elbow):
+            new_im = Image.new('RGB', (3000,3000))
+            for j in range(25):
+                visual_patch = dic[i][j]
+                visual_patch = visual_patch.cpu()
+                visual_patch = visual_patch.numpy()
+                h = int(j/5)
+                w = j%5
+                im = im.fromarray(visual_patch)
+                im.thumbnail((300,300))
+                new_im.paste(im, (h,w))
+            new_im.save("/home/dfarkash/garbage" +"/group"+str(j)+".png")
 
     def on_validation_end(self) -> None:
         # if not self.visual_patch: return
         if self.current_epoch % 2 == 0:
             self.visual_patch = torch.cat(self.visual_patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
+            self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
             idx = np.arange(self.visual_encoding.shape[0])
 
             # randomize numpy array
             np.random.shuffle(idx)
 
-            clusters , elbow = cluster_jackal.cluster(self.visual_encoding[idx[:2000],:])
+            # clusters , elbow = cluster_jackal.cluster(self.visual_encoding[idx[:2000],:])
+            # metadata = list(zip(self.label[idx[:2000]], clusters))
+
+
+            # metadata_header = ["labels","clusters"]
+            # out = cluster_jackal.accuracy_naive(self.visual_encoding[idx[:2000],:],self.label[idx[:2000]])
+
+            # self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
+
+            # self.logger.experiment.add_embedding(mat=self.visual_encoding[idx[:2000], :],
+            #                                      label_img=self.visual_patch[idx[:2000], :, :, :],
+            #                                      global_step=self.current_epoch,
+            #                                      metadata=metadata,
+            #                                      metadata_header = metadata_header
+            #                                     )
+            # del self.visual_patch, self.visual_encoding, self.label
+
+            ve = self.visual_encoding[idx[:2000],:]
+            # print(ve.size())
+            ie = self.inertial_encoding[idx[:2000],:]
+            # print(ie.size())
+            data = torch.cat((ve, ie), dim=1)
+            # print(data.size())
+
+            clusters , elbow = cluster_jackal.cluster(data)
             metadata = list(zip(self.label[idx[:2000]], clusters))
 
 
             metadata_header = ["labels","clusters"]
-            out = cluster_jackal.accuracy_naive(self.visual_encoding[idx[:2000],:],self.label[idx[:2000]])
+            out = cluster_jackal.accuracy_naive(data,self.label[idx[:2000]])
 
             self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
 
-            self.logger.experiment.add_embedding(mat=self.visual_encoding[idx[:2000], :],
+            self.logger.experiment.add_embedding(mat=data,
                                                  label_img=self.visual_patch[idx[:2000], :, :, :],
                                                  global_step=self.current_epoch,
                                                  metadata=metadata,
                                                  metadata_header = metadata_header
                                                 )
+            
+
+            # self.img_clusters(self.sample_clusters(data, self.visual_patch[idx[:2000], :, :, :]))
+
             del self.visual_patch, self.visual_encoding, self.label
+
+
+
+
+
+
+
 
     @property
     def total_training_steps(self) -> int:
