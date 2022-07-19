@@ -116,11 +116,6 @@ class BarlowModel(pl.LightningModule):
         #     nn.Linear(256, 128)
         # )
 
-        self.inertial_encoder = nn.Sequential(
-            nn.Linear(600+6, 256, bias=False), nn.BatchNorm1d(256), nn.PReLU(),
-            nn.Linear(256, 128, bias=False), nn.BatchNorm1d(128), nn.PReLU(),
-            nn.Linear(128, 128)
-        )
 
         self.projector = nn.Sequential(
             nn.Linear(128, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
@@ -139,8 +134,6 @@ class BarlowModel(pl.LightningModule):
         visual_patch = main_patch_lst[0]
         imu_history = inertial_data
 
-        v_encoded = self.visual_encoder(visual_patch)
-        i_encoded = self.inertial_encoder(imu_history)
 
         lst1_encoded = []
         lst2_encoded = []
@@ -155,9 +148,9 @@ class BarlowModel(pl.LightningModule):
         # L2 normalize along encoding dimension
         # v_encoded = F.normalize(v_encoded, dim=1)
         # i_encoded = F.normalize(i_encoded, dim=1)
-    
-        z1 = self.projector(v_encoded)
-        z2 = self.projector(i_encoded)
+
+        z1=1
+        z2=1
 
         lst1_projected =[]
         lst2_projected =[]
@@ -216,13 +209,11 @@ class BarlowModel(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         self.visual_encoder.train()
-        self.inertial_encoder.train()
         self.projector.train()
         #try self.visual_encoder.train(), etc.
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
         visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
         # loss = self.barlow_loss(visual_emb, inertial_emb)
-        l1 = self.vicreg_loss(visual_emb, inertial_emb)
 
         l2_lst = torch.zeros(25)
         for i in range(25):
@@ -231,19 +222,17 @@ class BarlowModel(pl.LightningModule):
             l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
         l2 = torch.mean(l2_lst)
 
-        loss = self.l1_coeff*l1 + (1- self.l1_coeff)*l2
+        loss = l2
         # loss=l2
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
         self.visual_encoder.eval()
-        self.inertial_encoder.eval()
         self.projector.eval()
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
         visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
         # loss = self.barlow_loss(visual_emb, inertial_emb)
-        l1 = self.vicreg_loss(visual_emb, inertial_emb)
         
         l2_lst = torch.zeros(25)
         for i in range(25):
@@ -252,11 +241,9 @@ class BarlowModel(pl.LightningModule):
             l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
         l2 = torch.mean(l2_lst)
 
-        loss = self.l1_coeff*l1 + (1- self.l1_coeff)*l2
+        loss = l2
         # loss=l2
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        self.log('val_loss_l1', l1, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        self.log('val_loss_l2', l2, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
     def configure_optimizers(self):

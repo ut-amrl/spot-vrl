@@ -142,28 +142,12 @@ class BarlowModel(pl.LightningModule):
         v_encoded = self.visual_encoder(visual_patch)
         i_encoded = self.inertial_encoder(imu_history)
 
-        lst1_encoded = []
-        lst2_encoded = []
 
-        # print(len(patch_list_1))
-        # print(patch_list_1)
-        for i in range(25):
-           lst1_encoded.append(self.visual_encoder(patch_list_1[i])) 
-           lst2_encoded.append(self.visual_encoder(patch_list_2[i])) 
-
-  
-        # L2 normalize along encoding dimension
-        # v_encoded = F.normalize(v_encoded, dim=1)
-        # i_encoded = F.normalize(i_encoded, dim=1)
-    
         z1 = self.projector(v_encoded)
         z2 = self.projector(i_encoded)
 
         lst1_projected =[]
         lst2_projected =[]
-        for i in range(25):
-           lst1_projected.append(self.projector(lst1_encoded[i])) 
-           lst2_projected.append(self.projector(lst2_encoded[i])) 
   
         return z1, z2, lst1_projected, lst2_projected
 
@@ -224,14 +208,7 @@ class BarlowModel(pl.LightningModule):
         # loss = self.barlow_loss(visual_emb, inertial_emb)
         l1 = self.vicreg_loss(visual_emb, inertial_emb)
 
-        l2_lst = torch.zeros(25)
-        for i in range(25):
-            v_emb_1 = lst1_emb[i]
-            v_emb_2 = lst2_emb[i]
-            l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = torch.mean(l2_lst)
-
-        loss = self.l1_coeff*l1 + (1- self.l1_coeff)*l2
+        loss = l1
         # loss=l2
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
@@ -245,18 +222,10 @@ class BarlowModel(pl.LightningModule):
         # loss = self.barlow_loss(visual_emb, inertial_emb)
         l1 = self.vicreg_loss(visual_emb, inertial_emb)
         
-        l2_lst = torch.zeros(25)
-        for i in range(25):
-            v_emb_1 = lst1_emb[i]
-            v_emb_2 = lst2_emb[i]
-            l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = torch.mean(l2_lst)
 
-        loss = self.l1_coeff*l1 + (1- self.l1_coeff)*l2
+        loss = l1
         # loss=l2
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        self.log('val_loss_l1', l1, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        self.log('val_loss_l2', l2, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
     def configure_optimizers(self):

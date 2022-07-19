@@ -13,6 +13,7 @@ import time
 from PIL import Image
 import glob
 from tqdm import tqdm
+from scipy.signal import periodogram
 
 class CustomDataset(Dataset):
     #file_path must be path leading to directory containing imu pickle and other img folders (no / at end)
@@ -106,7 +107,17 @@ class CustomDataset(Dataset):
 
 
         inertial_data = self.imu_data[idx]
-        inertial_data = np.expand_dims(inertial_data, axis=0)
+        inertial_data = np.asarray(inertial_data).reshape((200, 6))
+        # convert to periodogram
+        _, acc_x = periodogram(inertial_data[:,0], fs=70)
+        _, acc_y = periodogram(inertial_data[:,1], fs=70)
+        _, acc_z = periodogram(inertial_data[:,2], fs=70)
+        _, gyro_x = periodogram(inertial_data[:,3], fs=70)
+        _, gyro_y = periodogram(inertial_data[:,4], fs=70)
+        _, gyro_z = periodogram(inertial_data[:,5], fs=70)
+        inertial_data = np.hstack((acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z)).flatten()
+
+        # inertial_data = np.expand_dims(inertial_data, axis=0)
   
         return main_patch_lst, inertial_data, patch_list_1, patch_list_2, self.label
 

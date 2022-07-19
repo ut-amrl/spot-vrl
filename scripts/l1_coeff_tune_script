@@ -1,0 +1,6 @@
+#!/bin/bash
+l1_coeffs=(0.1 0.5 1 2 5 12 25)
+for i in 0 1 2 3 4 5 6; 
+do
+    CUDA_VISIBLE_DEVICES=i python scripts/25_train_jackal.py --dataset_config_path jackal_data/test_config.yaml --epochs 70 --l1_coeff  ${l1_coeffs[$i]}  &
+done

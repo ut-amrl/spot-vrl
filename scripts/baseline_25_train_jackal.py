@@ -234,7 +234,7 @@ class BarlowModel(pl.LightningModule):
     # 	]
 
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
-        if self.current_epoch % 10 == 0:
+        if self.current_epoch % 2 == 0:
 
             main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
             visual_patch = main_patch_lst[0]
@@ -256,7 +256,7 @@ class BarlowModel(pl.LightningModule):
                 self.label = np.concatenate((self.label, label[:]))
 
     def on_validation_end(self) -> None:
-        if self.current_epoch % 10 == 0:
+        if self.current_epoch % 2 == 0:
             self.visual_patch = torch.cat(self.visual_patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
             idx = np.arange(self.visual_encoding.shape[0])
