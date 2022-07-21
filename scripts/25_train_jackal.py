@@ -320,33 +320,51 @@ class BarlowModel(pl.LightningModule):
                 self.inertial_encoding.append(inertial_encoding[:, :])
                 self.label = np.concatenate((self.label, label[:]))
 
-    def sample_clusters(data, visual_patch):
-            clusters , elbow = cluster_jackal.cluster(data)
+    def sample_clusters(self,clusters,elbow,vis_patch):
             dic = {}
-            for i in range(elbow):
-                dic[i] = []
+            for a in range(elbow):
+                dic[a] = []
             for i in range(elbow):
                 idx = np.where(clusters ==i)
+                # print(clusters)
+                # print(clusters==i)
+                # print(idx)
                 for j in range(25):
-                    chosen = np.random.randint(0, len(idx))
-                    visual_patch = visual_patch[idx[chosen], :, :, :]
-                    dic[i].append(visual_patch)
+                    chosen = np.random.randint(low=0,high=len(idx[0]))
+                    # print(chosen)
+                    # print(idx[0][chosen])
+                    # print(self.visual_patch.shape)
+                    vp = vis_patch[idx[0][chosen], :, :, :]
+                    # print(vp.shape)
+                    vp = vp.cpu()
+                    vp = vp.numpy()
+                    vp= (vp * 255).astype(np.uint8)
+                    # vp = vp[0,:,:]
+                    vp = np.moveaxis(vp, 0, -1)
+                    # print(vp.shape)
+                    dic[i].append(vp)
 
             return dic, elbow
 
-    def img_clusters(dic, elbow):
+    def img_clusters(self,dic, elbow):
+        # print(len(dic))
+        # print(len(dic[0]))
+        # print(len(dic[1]))
+        # print(len(dic[2]))
         for i in range(elbow):
-            new_im = Image.new('RGB', (3000,3000))
+            # print(dic[0])
+            new_im = Image.new('RGB', (64*5,64*5))
             for j in range(25):
-                visual_patch = dic[i][j]
-                visual_patch = visual_patch.cpu()
-                visual_patch = visual_patch.numpy()
+                vp = dic[i][j]
+                # print(vp.shape)
                 h = int(j/5)
                 w = j%5
-                im = im.fromarray(visual_patch)
-                im.thumbnail((300,300))
-                new_im.paste(im, (h,w))
-            new_im.save("/home/dfarkash/garbage" +"/group"+str(j)+".png")
+                im = Image.fromarray(vp)
+                im = im.convert('RGB')
+                # im.save("/home/dfarkash/garbage" +"/group"+str(j)+".png")
+                im.thumbnail((64,64))
+                new_im.paste(im, (h*64,w*64))
+            new_im.save("/home/dfarkash/garbage" +"/group"+str(i)+".png")
 
     def on_validation_end(self) -> None:
         # if not self.visual_patch: return
@@ -379,11 +397,18 @@ class BarlowModel(pl.LightningModule):
             ve = self.visual_encoding[idx[:2000],:]
             # print(ve.size())
             ie = self.inertial_encoding[idx[:2000],:]
+
+            vis_patch = self.visual_patch[idx[:2000],:,:,:]
             # print(ie.size())
             data = torch.cat((ve, ie), dim=1)
             # print(data.size())
 
             clusters , elbow = cluster_jackal.cluster(data)
+
+            if self.current_epoch % 2 == 0: 
+                a,b = self.sample_clusters(clusters,elbow, vis_patch)
+                self.img_clusters(a,b)
+            
             metadata = list(zip(self.label[idx[:2000]], clusters))
 
 
@@ -397,10 +422,7 @@ class BarlowModel(pl.LightningModule):
                                                  global_step=self.current_epoch,
                                                  metadata=metadata,
                                                  metadata_header = metadata_header
-                                                )
-            
-
-            # self.img_clusters(self.sample_clusters(data, self.visual_patch[idx[:2000], :, :, :]))
+                                               )
 
             del self.visual_patch, self.visual_encoding, self.label
 
@@ -458,10 +480,10 @@ if __name__ == '__main__':
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
                           per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff).to(device)
 
-    early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
+    early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
     model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
                                           filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_',
-                                          monitor='val_loss', verbose=True)
+                                          monitor='train_loss', verbose=True)
 
     print("Training model...")
     trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),
