@@ -41,6 +41,37 @@ def cluster(data):
     #kmeans.labels_
     #kmeans.cluster_centers_
 
+def cluster_model(data):
+    scaler = StandardScaler()
+    data=data.cpu()
+    data=data.numpy()
+    scaled_features = scaler.fit_transform(data)
+
+    kmeans_kwargs = {
+        "init": "random",
+        "n_init": 10,
+        "max_iter": 300,
+        "random_state": 42,
+    }
+
+    sse = []
+    models = []
+    for k in range(1, 20):
+        kmeans = KMeans(n_clusters=k, **kmeans_kwargs)
+        kmeans.fit(scaled_features)
+        sse.append(kmeans.inertia_)
+        models.append(kmeans)
+
+    kl = KneeLocator(
+        range(1, 20), sse, curve="convex", direction="decreasing"
+    )
+
+    # print(kl.elbow)
+    # print(models[kl.elbow-1].cluster_centers_)
+    
+    return models[kl.elbow-1].labels_, kl.elbow, models[kl.elbow-1]
+
+
 
 
 def accuracy(data, labels):

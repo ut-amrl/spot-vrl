@@ -136,7 +136,7 @@ class BarlowModel(pl.LightningModule):
         self.std_coeff = 25.0
         self.cov_coeff = 1.0
 
-    def forward(self, main_patch_lst, inertial_data, patch_list_1, patch_list_2):
+    def forward(self, main_patch_lst, inertial_data, patch_list_1 = [], patch_list_2 = [], s1 = True):
         visual_patch = main_patch_lst[0]
         imu_history = inertial_data
 
@@ -145,26 +145,32 @@ class BarlowModel(pl.LightningModule):
 
         lst1_encoded = []
         lst2_encoded = []
-
-        # print(len(patch_list_1))
-        # print(patch_list_1)
-        for i in range(25):
-           lst1_encoded.append(self.visual_encoder(patch_list_1[i])) 
-           lst2_encoded.append(self.visual_encoder(patch_list_2[i])) 
-
-  
-        # L2 normalize along encoding dimension
-        # v_encoded = F.normalize(v_encoded, dim=1)
-        # i_encoded = F.normalize(i_encoded, dim=1)
-    
-        z1 = self.projector(v_encoded)
-        z2 = self.projector(i_encoded)
-
         lst1_projected =[]
         lst2_projected =[]
-        for i in range(25):
-           lst1_projected.append(self.projector(lst1_encoded[i])) 
-           lst2_projected.append(self.projector(lst2_encoded[i])) 
+
+        if s1:
+
+            # print(len(patch_list_1))
+            # print(patch_list_1)
+            for i in range(25):
+                lst1_encoded.append(self.visual_encoder(patch_list_1[i])) 
+                lst2_encoded.append(self.visual_encoder(patch_list_2[i])) 
+
+    
+            # L2 normalize along encoding dimension
+            # v_encoded = F.normalize(v_encoded, dim=1)
+            # i_encoded = F.normalize(i_encoded, dim=1)
+        
+            z1 = self.projector(v_encoded)
+            z2 = self.projector(i_encoded)
+
+
+            for i in range(25):
+                lst1_projected.append(self.projector(lst1_encoded[i])) 
+                lst2_projected.append(self.projector(lst2_encoded[i]))
+        else:
+            z1 = v_encoded
+            z2 = i_encoded 
   
         return z1, z2, lst1_projected, lst2_projected
 
@@ -403,11 +409,22 @@ class BarlowModel(pl.LightningModule):
             data = torch.cat((ve, ie), dim=1)
             # print(data.size())
 
-            clusters , elbow = cluster_jackal.cluster(data)
+            clusters , elbow, model = cluster_jackal.cluster_model(data)
 
             if self.current_epoch % 2 == 0: 
                 a,b = self.sample_clusters(clusters,elbow, vis_patch)
                 self.img_clusters(a,b)
+
+            # Save the clusters
+            if False:
+                # dic = {}
+                # dic["clusters"] = clusters
+                # dic["elbow"] = elbow
+                # dic["vis_patch"] = vis_patch
+
+                with open("/home/dfarkash/cost_data/model.pkl", "wb") as f:
+                    pickle.dump(model, f)
+
             
             metadata = list(zip(self.label[idx[:2000]], clusters))
 

@@ -73,5 +73,5 @@ if __name__ == '__main__':
 
     imgs=[]
     ranks=[]
-    run_gui(5)
+    run_gui(7)
     print(ranks)
