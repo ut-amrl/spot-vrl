@@ -8,11 +8,84 @@ import random
 import numpy as np
 from itertools import product
 
+
+def cluster_model(data):
+    scaler = StandardScaler()
+    data=data.cpu()
+    data=data.numpy()
+    # scaled_features = scaler.fit_transform(data)
+    scaled_features = data
+
+    kmeans_kwargs = {
+        "init": "random",
+        "n_init": 10,
+        "max_iter": 300,
+        "random_state": 42,
+    }
+
+    sse = []
+    models = []
+    for k in range(1, 20):
+        kmeans = KMeans(n_clusters=k, **kmeans_kwargs)
+        kmeans.fit(scaled_features)
+        sse.append(kmeans.inertia_)
+        models.append(kmeans)
+
+    kl = KneeLocator(
+        range(1, 20), sse, curve="convex", direction="decreasing"
+    )
+
+    # print(kl.elbow)
+    # print(models[kl.elbow-1].cluster_centers_)
+    
+    return models[kl.elbow-1].labels_, kl.elbow, models[kl.elbow-1]
+
+
+def accuracy_naive_model(data, labels):
+
+    # elbow = 3
+    # clusters = data
+
+    clusters, elbow, model = cluster_model(data)
+
+    label_types = ["rock", "mulch", "pebble", "speedway" ,"grass", "concrete", "brick"]
+    best_acc = 0
+    best_dict = {}
+    label_len =  len(labels)
+
+    for i in range(elbow):
+        best_part_acc = 0
+        best_part_label = ""
+        for j in range(len(label_types)):
+            new_labels = np.empty(label_len, dtype=object)
+            for k in range(label_len):
+                if clusters[k]== i:
+                    new_labels[k] = label_types[j]
+                else:
+                    new_labels[k] = -1
+            part_acc = (np.array(new_labels) == np.array(labels)).sum()/label_len
+            if part_acc > best_part_acc:
+                best_part_acc = part_acc
+                best_part_label = label_types[j]
+        best_dict[i] = best_part_label
+    
+    new_labels = np.empty(label_len, dtype=object)
+    for i in range(label_len):
+        new_labels[i] = best_dict[clusters[i]]
+    best_acc = (np.array(new_labels) == np.array(labels)).sum()/label_len
+
+
+    print("accuracy:")
+    print(best_acc)
+    print(best_dict)
+    return model
+
 def cluster(data):
     scaler = StandardScaler()
     data=data.cpu()
     data=data.numpy()
-    scaled_features = scaler.fit_transform(data)
+    # scaled_features = scaler.fit_transform(data)
+    scaled_features = data
 
     kmeans_kwargs = {
         "init": "random",
@@ -41,35 +114,44 @@ def cluster(data):
     #kmeans.labels_
     #kmeans.cluster_centers_
 
-def cluster_model(data):
-    scaler = StandardScaler()
-    data=data.cpu()
-    data=data.numpy()
-    scaled_features = scaler.fit_transform(data)
+def accuracy_naive(data, labels):
 
-    kmeans_kwargs = {
-        "init": "random",
-        "n_init": 10,
-        "max_iter": 300,
-        "random_state": 42,
-    }
+    # elbow = 3
+    # clusters = data
 
-    sse = []
-    models = []
-    for k in range(1, 20):
-        kmeans = KMeans(n_clusters=k, **kmeans_kwargs)
-        kmeans.fit(scaled_features)
-        sse.append(kmeans.inertia_)
-        models.append(kmeans)
+    clusters, elbow, model = cluster_model(data)
 
-    kl = KneeLocator(
-        range(1, 20), sse, curve="convex", direction="decreasing"
-    )
+    label_types = ["rock", "mulch", "pebble", "speedway" ,"grass", "concrete", "brick"]
+    best_acc = 0
+    best_dict = {}
+    label_len =  len(labels)
 
-    # print(kl.elbow)
-    # print(models[kl.elbow-1].cluster_centers_)
+    for i in range(elbow):
+        best_part_acc = 0
+        best_part_label = ""
+        for j in range(len(label_types)):
+            new_labels = np.empty(label_len, dtype=object)
+            for k in range(label_len):
+                if clusters[k]== i:
+                    new_labels[k] = label_types[j]
+                else:
+                    new_labels[k] = -1
+            part_acc = (np.array(new_labels) == np.array(labels)).sum()/label_len
+            if part_acc > best_part_acc:
+                best_part_acc = part_acc
+                best_part_label = label_types[j]
+        best_dict[i] = best_part_label
     
-    return models[kl.elbow-1].labels_, kl.elbow, models[kl.elbow-1]
+    new_labels = np.empty(label_len, dtype=object)
+    for i in range(label_len):
+        new_labels[i] = best_dict[clusters[i]]
+    best_acc = (np.array(new_labels) == np.array(labels)).sum()/label_len
+
+
+    print("accuracy:")
+    print(best_acc)
+    print(best_dict)
+    return best_acc
 
 
 
@@ -163,46 +245,6 @@ def accuracy_exhaustive(data, labels):
     print(best_acc)
     print(best_dict)
     return best_acc
-
-def accuracy_naive(data, labels):
-
-    # elbow = 3
-    # clusters = data
-
-    clusters, elbow = cluster(data)
-
-    label_types = ["rock", "mulch", "pebble", "speedway" ,"grass", "concrete", "brick"]
-    best_acc = 0
-    best_dict = {}
-    label_len =  len(labels)
-
-    for i in range(elbow):
-        best_part_acc = 0
-        best_part_label = ""
-        for j in range(len(label_types)):
-            new_labels = np.empty(label_len, dtype=object)
-            for k in range(label_len):
-                if clusters[k]== i:
-                    new_labels[k] = label_types[j]
-                else:
-                    new_labels[k] = -1
-            part_acc = (np.array(new_labels) == np.array(labels)).sum()/label_len
-            if part_acc > best_part_acc:
-                best_part_acc = part_acc
-                best_part_label = label_types[j]
-        best_dict[i] = best_part_label
-    
-    new_labels = np.empty(label_len, dtype=object)
-    for i in range(label_len):
-        new_labels[i] = best_dict[clusters[i]]
-    best_acc = (np.array(new_labels) == np.array(labels)).sum()/label_len
-
-
-    print("accuracy:")
-    print(best_acc)
-    print(best_dict)
-    return best_acc
-
     
 
 

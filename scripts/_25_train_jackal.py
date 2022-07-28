@@ -32,8 +32,8 @@ import yaml
 # import librosa.display as display
 from lr_scheduler import LinearWarmupCosineAnnealingLR
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+# import albumentations as A
+# from albumentations.pytorch import ToTensorV2
 import cluster_jackal
 from dict_custom_data import CustomDataset, MyDataLoader
 from PIL import Image
@@ -411,19 +411,39 @@ class BarlowModel(pl.LightningModule):
 
             clusters , elbow, model = cluster_jackal.cluster_model(data)
 
+            # Save the cluster image grids
             if self.current_epoch % 2 == 0: 
                 a,b = self.sample_clusters(clusters,elbow, vis_patch)
                 self.img_clusters(a,b)
 
             # Save the clusters
-            if False:
+            if self.current_epoch % 4 == 0 and torch.cuda.current_device() == 0:
                 # dic = {}
                 # dic["clusters"] = clusters
                 # dic["elbow"] = elbow
                 # dic["vis_patch"] = vis_patch
 
+                v = self.visual_encoding[idx,:]
+                # print(ve.size())
+                i = self.inertial_encoding[idx,:]
+
+                # print(ie.size())
+                d = torch.cat((v, i), dim=1)
+                # print(data.size())
+
+                print("  Saved model: ")
+                o= cluster_jackal.accuracy_naive_model(d,self.label[idx])
+
                 with open("/home/dfarkash/cost_data/model.pkl", "wb") as f:
-                    pickle.dump(model, f)
+                    pickle.dump(o, f)
+
+                # save the visual encoder
+                torch.save(self.visual_encoder.state_dict(), "/home/dfarkash/cost_data/visual_encoder.pt")
+                # save the inertial encoder
+                torch.save(self.inertial_encoder.state_dict(), "/home/dfarkash/cost_data/inertial_encoder.pt")
+                
+                
+                
 
             
             metadata = list(zip(self.label[idx[:2000]], clusters))
@@ -498,9 +518,11 @@ if __name__ == '__main__':
                           per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
+    # model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
+    #                                       filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_',
+    #                                       monitor='train_loss', verbose=True)
     model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
-                                          filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_',
-                                          monitor='train_loss', verbose=True)
+                                          filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_', verbose=True)
 
     print("Training model...")
     trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),

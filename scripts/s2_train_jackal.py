@@ -32,12 +32,13 @@ import yaml
 # import librosa.display as display
 from lr_scheduler import LinearWarmupCosineAnnealingLR
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-import albumentations as A
-from albumentations.pytorch import ToTensorV2
+# import albumentations as A
+# from albumentations.pytorch import ToTensorV2
 import cluster_jackal
 from s2_custom_data import s2CustomDataset, s2DataLoader
 from PIL import Image
 from _25_train_jackal import *
+from sklearn.preprocessing import StandardScaler
 
 def exclude_bias_and_norm(p):
     return p.ndim == 1
@@ -51,7 +52,7 @@ class UnFlatten(nn.Module):
         return input.view(input.size(0), size, 2, 2)
 
 class s2Model(pl.LightningModule):
-    def __init__(self, lr=3e-4, latent_size=64, inertial_shape=None,
+    def __init__(self, lr=3e-4, latent_size=256, inertial_shape=None,
                  scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
                  per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1):
         super(s2Model, self).__init__()
@@ -72,11 +73,37 @@ class s2Model(pl.LightningModule):
         self.per_device_batch_size = per_device_batch_size
         self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
 
-        net_path = "/home/dfarkash/spot-vrl/models/22-07-2022-10-41-37_.ckpt"
-        cprint('Loading model from {}'.format(net_path))
-        net = BarlowModel.load_from_checkpoint(net_path)
-        net.eval()
-        self.visual_encoder = net.visual_encoder
+        # net_path = "/home/dfarkash/spot-vrl/models/26-07-2022-11-06-47_.ckpt"
+        # cprint('Loading model from {}'.format(net_path))
+        # net = BarlowModel.load_from_checkpoint(net_path)
+        # net.eval()
+        # self.visual_encoder = net.visual_encoder
+
+        visual_encoder = BarlowModel().visual_encoder
+        visual_encoder.load_state_dict(torch.load("/home/dfarkash/cost_data/visual_encoder.pt"))
+        visual_encoder.eval()
+        self.visual_encoder = visual_encoder
+        
+        for param in self.visual_encoder.parameters():
+            param.requires_grad = False
+
+        inertial_encoder = BarlowModel().inertial_encoder
+        inertial_encoder.load_state_dict(torch.load("/home/dfarkash/cost_data/inertial_encoder.pt"))
+        inertial_encoder.eval()
+        self.inertial_encoder = inertial_encoder
+
+        for param in self.inertial_encoder.parameters():
+            param.requires_grad = False
+
+        preferences_path = "/home/dfarkash/cost_data/preferences.pkl"
+        cprint('Loading user preferences from {}'.format(preferences_path))
+        self.preferences = pickle.load(open(preferences_path, 'rb'))
+
+        self.preferences = [0,5,10,15,20,25,30]
+
+        model_path = "/home/dfarkash/cost_data/model.pkl"
+        cprint('Loading cluster_model from {}'.format(model_path))
+        self.model = pickle.load(open(model_path, 'rb'))
 
         self.cost_net = nn.Sequential(
             nn.Linear(128, latent_size, bias=False), nn.ReLU(inplace=True),
@@ -101,30 +128,64 @@ class s2Model(pl.LightningModule):
         return cost
 
 
-    def off_diagonal(self, x):
-        # return a flattened view of the off-diagonal elements of a square matrix
-        n, m = x.shape
-        assert n == m
-        return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
 
-    def all_reduce(self, c):
-        if torch.distributed.is_initialized():
-            torch.distributed.all_reduce(c)
+    def find_true_cost(self, patch, inertial):
+        self.visual_encoder.eval()
+        self.inertial_encoder.eval()
+        
+        with torch.no_grad():
+            visual_encoding = self.visual_encoder(patch)
+            inertial_encoding = self.inertial_encoder(inertial)
+
+        representation = torch.cat((visual_encoding, inertial_encoding), dim=1)
+
+        scaler = StandardScaler()
+        representation=representation.cpu()
+        representation=representation.detach().numpy()
+        # representation = scaler.fit_transform(representation)
+
+        # print(representation)
+
+        cluster = self.model.predict(representation)
+
+        # print(cluster)
+
+        cluster = cluster.astype('int')
+
+        true_cost = []
+        
+        for i in range(len(cluster)):
+            true_cost.append(self.preferences[cluster[i]])
+
+        true_cost = torch.Tensor(true_cost).cuda()
+
+        return true_cost
 
     def training_step(self, batch, batch_idx):
         self.visual_encoder.eval()
+        self.inertial_encoder.eval()
         self.cost_net.train()
 
-        # print(batch)
+        patch, inertial = batch
 
-        patch, true_cost = batch
+        true_cost = self.find_true_cost(patch, inertial)
+
+        # print(true_cost)
+
         cost = self(patch)
-        # cost = torch.reshape(cost,(256,1))
-        # true_cost = torch.reshape(true_cost,(256,1))
+
+
+        model = False
+        if model:
+            patch, true_cost = batch
+            cost = self(patch)
+            # cost = torch.reshape(cost,(256,1))
+            # true_cost = torch.reshape(true_cost,(256,1))
+
         mse = torch.nn.MSELoss()
         # print("c"+str(cost))
         # print("t"+str(true_cost))
-        loss = mse(cost, true_cost)
+        loss = mse(cost[:,0], true_cost)
         # loss= loss.item()
         # loss=loss.float()
         # print(loss)
@@ -134,14 +195,35 @@ class s2Model(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self.visual_encoder.eval()
+        self.inertial_encoder.eval()
         self.cost_net.eval()
 
-        patch, true_cost = batch
+        patch, inertial = batch
+
+        true_cost = self.find_true_cost(patch, inertial)
+
+        # print(true_cost)
+
         cost = self(patch)
 
+
+        model = False
+        if model:
+            patch, true_cost = batch
+            cost = self(patch)
+            # cost = torch.reshape(cost,(256,1))
+            # true_cost = torch.reshape(true_cost,(256,1))
+            
         mse = torch.nn.MSELoss()
-        loss = mse(cost, true_cost)
+        # print("c"+str(cost))
+        # print("t"+str(true_cost))
+        loss = mse(cost[:,0], true_cost)
+        # loss= loss.item()
         # loss=loss.float()
+        # print(loss)
+
+        # print(cost[:,0])
+        # print(true_cost)
 
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
@@ -158,22 +240,27 @@ class s2Model(pl.LightningModule):
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
         if self.current_epoch % 2 == 0 :
 
-            patch, true_cost = batch
+            patch, inertia = batch
+            true_cost = self.find_true_cost(patch,inertia)
             true_cost = true_cost.cpu()
-            cost = np.asarray(true_cost)
+            true_cost = np.asarray(true_cost)
             patch = patch.float()
             
             with torch.no_grad():
                 visual_encoding = self.visual_encoder(patch.cuda())
+                cost = self.cost_net(visual_encoding)
             visual_encoding = visual_encoding.cpu()
+            cost = cost.cpu()
             
             if batch_idx == 0:
                 self.visual_encoding = [visual_encoding[:, :]]
                 self.patch = [patch[:, :, :, :]]
+                self.true_cost = true_cost[:]
                 self.cost = cost[:]
-            else:
+            elif batch_idx % 1 == 0:
                 self.patch.append(patch[:, :, :, :])
                 self.visual_encoding.append(visual_encoding[:, :])
+                self.true_cost = np.concatenate((self.true_cost, true_cost[:]))
                 self.cost = np.concatenate((self.cost, cost[:]))
 
 
@@ -193,18 +280,21 @@ class s2Model(pl.LightningModule):
            
             cost = self.cost[idx[:2000]]
 
+            true_cost = self.true_cost[idx[:2000]]
+
+            metadata = list(zip(cost, true_cost))
+
+
+            metadata_header = ["costs","true_costs"]
+
             self.logger.experiment.add_embedding(mat=ve,
                                                  label_img=vis_patch,
                                                  global_step=self.current_epoch,
-                                                 metadata=cost,
-                                               )
+                                                 metadata=metadata,
+                                                metadata_header=metadata_header)
+                                               
 
-            del self.patch, self.visual_encoding, self.cost
-
-
-
-
-
+            del self.patch, self.visual_encoding, self.cost, self.true_cost
 
 
 
@@ -225,7 +315,7 @@ class s2Model(pl.LightningModule):
 if __name__ == '__main__':
     # parse command line arguments
     parser = argparse.ArgumentParser(description='Dual Auto Encoder')
-    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=2048, metavar='N',
                         help='input batch size for training (default: 512)')
     parser.add_argument('--epochs', type=int, default=10000, metavar='N',
                         help='number of epochs to train (default: 1000)')
@@ -235,9 +325,9 @@ if __name__ == '__main__':
                         help='log directory (default: logs)')
     parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
                         help='model directory (default: models)')
-    parser.add_argument('--num_gpus', type=int, default=2, metavar='N',
+    parser.add_argument('--num_gpus', type=int, default=3, metavar='N',
                         help='number of GPUs to use (default: 8)')
-    parser.add_argument('--latent_size', type=int, default=512, metavar='N',
+    parser.add_argument('--latent_size', type=int, default=256, metavar='N',
                         help='Size of the common latent space (default: 512)')
     parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
     args = parser.parse_args()

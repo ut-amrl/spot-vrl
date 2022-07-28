@@ -311,6 +311,25 @@ class BarlowModel(pl.LightningModule):
             # randomize numpy array
             np.random.shuffle(idx)
 
+            # Save the clusters
+            if self.current_epoch % 4 == 0 and torch.cuda.current_device() == 0:
+                # dic = {}
+                # dic["clusters"] = clusters
+                # dic["elbow"] = elbow
+                # dic["vis_patch"] = vis_patch
+
+                v = self.visual_encoding[idx,:]
+
+                print("  Saved model: ")
+                o= cluster_jackal.accuracy_naive_model(v,self.label[idx])
+
+                with open("/home/dfarkash/vis_cost_data/model.pkl", "wb") as f:
+                    pickle.dump(o, f)
+
+                # save the visual encoder
+                torch.save(self.visual_encoder.state_dict(), "/home/dfarkash/vis_cost_data/visual_encoder.pt")
+
+
             clusters , elbow = cluster_jackal.cluster(self.visual_encoding[idx[:2000],:])
             metadata = list(zip(self.label[idx[:2000]], clusters))
 
