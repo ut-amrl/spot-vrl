@@ -21,13 +21,15 @@ import cv2
 
 class s2CustomDataset(Dataset):
     #file_path must be path leading to directory containing data pickle files (no / at end)
-    def __init__(self, file_path):
+    def __init__(self, file_path, full = True):
 
         self.file_path = file_path 
+        self.full = full
 
-        imu_path = file_path +"/inertial_data.pkl"
-        cprint('Loading data from {}'.format(imu_path))
-        self.imu_data = pickle.load(open(imu_path, 'rb'))
+        if full:
+            imu_path = file_path +"/inertial_data.pkl"
+            cprint('Loading data from {}'.format(imu_path))
+            self.imu_data = pickle.load(open(imu_path, 'rb'))
 
         dict_path = file_path +"/valid_idxs.pkl"
         if os.path.exists(dict_path):
@@ -56,7 +58,10 @@ class s2CustomDataset(Dataset):
 
 
     def __len__(self):
-        return len(self.imu_data)
+        if self.full:
+            return len(self.imu_data)
+        else:
+            return len(self.dict)
 
     def __getitem__(self, idx):
 
@@ -79,24 +84,28 @@ class s2CustomDataset(Dataset):
         main_patch_1 = main_patch_1.astype(np.float32) / 255.0 # normalize
         main_patch_1 = np.moveaxis(main_patch_1, -1, 0)
 
-        inertial_data = self.imu_data[idx]
-        inertial_data = np.asarray(inertial_data).reshape((200, 6))
-        # convert to periodogram
-        _, acc_x = periodogram(inertial_data[:,0], fs=70)
-        _, acc_y = periodogram(inertial_data[:,1], fs=70)
-        _, acc_z = periodogram(inertial_data[:,2], fs=70)
-        _, gyro_x = periodogram(inertial_data[:,3], fs=70)
-        _, gyro_y = periodogram(inertial_data[:,4], fs=70)
-        _, gyro_z = periodogram(inertial_data[:,5], fs=70)
-        inertial_data = np.hstack((acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z)).flatten()
+        if self.full:
+            inertial_data = self.imu_data[idx]
+            inertial_data = np.asarray(inertial_data).reshape((200, 6))
+            # convert to periodogram
+            _, acc_x = periodogram(inertial_data[:,0], fs=70)
+            _, acc_y = periodogram(inertial_data[:,1], fs=70)
+            _, acc_z = periodogram(inertial_data[:,2], fs=70)
+            _, gyro_x = periodogram(inertial_data[:,3], fs=70)
+            _, gyro_y = periodogram(inertial_data[:,4], fs=70)
+            _, gyro_z = periodogram(inertial_data[:,5], fs=70)
+            inertial_data = np.hstack((acc_x, acc_y, acc_z, gyro_x, gyro_y, gyro_z)).flatten()
+        else:
+            inertial_data = np.zeros((1,128))
   
         return main_patch_1, inertial_data
 
 class s2DataLoader(pl.LightningDataModule):
-    def __init__(self, data_config_path, batch_size=32):
+    def __init__(self, data_config_path, batch_size=32, full = True):
         super(s2DataLoader, self).__init__()
         self.batch_size = batch_size
         self.data_config_path = data_config_path
+        self.full = full
 
 
         self.setup()
@@ -108,8 +117,8 @@ class s2DataLoader(pl.LightningDataModule):
         train_data_path = data_config['train']
         val_data_path = data_config['val']
 
-        self.train_dataset = ConcatDataset([s2CustomDataset(file) for file in train_data_path])
-        self.val_dataset = ConcatDataset([s2CustomDataset(file) for file in val_data_path])
+        self.train_dataset = ConcatDataset([s2CustomDataset(file, self.full) for file in train_data_path])
+        self.val_dataset = ConcatDataset([s2CustomDataset(file, self.full) for file in val_data_path])
 
         print('Train dataset size:', len(self.train_dataset))
         print('Val dataset size:', len(self.val_dataset))
@@ -118,7 +127,7 @@ class s2DataLoader(pl.LightningDataModule):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True, num_workers=10, drop_last=True if len(self.train_dataset) % self.batch_size != 0 else False)
 
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False, num_workers=10, drop_last=True if len(self.val_dataset) % self.batch_size != 0 else False)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=True, num_workers=10, drop_last=True if len(self.val_dataset) % self.batch_size != 0 else False)
 
 
 

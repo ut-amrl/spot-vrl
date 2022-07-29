@@ -53,7 +53,7 @@ class BarlowModel(pl.LightningModule):
     def __init__(self, lr=3e-4, latent_size=64, inertial_shape=None,
                  scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
                  per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1
-                 , l1_coeff = 1):
+                 , l1_coeff = 1, save = False):
         super(BarlowModel, self).__init__()
 
         self.save_hyperparameters(
@@ -73,6 +73,7 @@ class BarlowModel(pl.LightningModule):
         self.per_device_batch_size = per_device_batch_size
         self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
         self.l1_coeff = l1_coeff
+        self.save = save
 
         # self.visual_encoder = nn.Sequential(
         #     nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
@@ -300,7 +301,7 @@ class BarlowModel(pl.LightningModule):
     # 	]
 
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
-        if self.current_epoch % 2 == 0 :
+        if self.current_epoch % 2 == 0 or self.current_epoch == self.trainer.max_epochs-1:
 
             main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
             visual_patch = main_patch_lst[0]
@@ -374,7 +375,7 @@ class BarlowModel(pl.LightningModule):
 
     def on_validation_end(self) -> None:
         # if not self.visual_patch: return
-        if self.current_epoch % 2 == 0:
+        if self.current_epoch % 2 == 0 or self.current_epoch == self.trainer.max_epochs-1:
             self.visual_patch = torch.cat(self.visual_patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
             self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
@@ -417,7 +418,7 @@ class BarlowModel(pl.LightningModule):
                 self.img_clusters(a,b)
 
             # Save the clusters
-            if self.current_epoch % 4 == 0 and torch.cuda.current_device() == 0:
+            if self.current_epoch == self.trainer.max_epochs-1 and self.save and torch.cuda.current_device() == 0:
                 # dic = {}
                 # dic["clusters"] = clusters
                 # dic["elbow"] = elbow
@@ -503,6 +504,8 @@ if __name__ == '__main__':
                         help='number of GPUs to use (default: 8)')
     parser.add_argument('--latent_size', type=int, default=512, metavar='N',
                         help='Size of the common latent space (default: 512)')
+    parser.add_argument('--save', type=bool, default=False, metavar='N',
+                        help='Whether to save the k means model and encoders at the end of the run')
     parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
     args = parser.parse_args()
     
@@ -515,7 +518,7 @@ if __name__ == '__main__':
 
     model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
-                          per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff).to(device)
+                          per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff, save = args.save).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
     # model_checkpoint_cb = ModelCheckpoint(dirpath='models/',

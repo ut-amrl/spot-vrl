@@ -10,8 +10,14 @@
 # python scripts/25_train_jackal.py --dataset_config_path jackal_data/different_train_val.yaml --epochs 70 --l1_coeff 25
 # python scripts/25_train_jackal.py --dataset_config_path jackal_data/different_train_val.yaml --epochs 70 --l1_coeff 100
 
-python scripts/l2_only.py --dataset_config_path jackal_data/different.yaml --epochs 100 
-python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 100 --l1_coeff 0.25
-python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 100 --l1_coeff 0.5
-python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 100 --l1_coeff 0.75
-python scripts/l1_only.py --dataset_config_path jackal_data/different.yaml --epochs 100 
+# python scripts/l2_only.py --dataset_config_path jackal_data/different.yaml --epochs 100 
+# python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 100 --l1_coeff 0.25
+# python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 100 --l1_coeff 0.5
+# python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 100 --l1_coeff 0.75
+# python scripts/l1_only.py --dataset_config_path jackal_data/different.yaml --epochs 100 
+
+
+python scripts/l1_only.py --dataset_config_path jackal_data/different.yaml --epochs 101
+python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 101 --l1_coeff 0.25
+python scripts/l1_only.py --dataset_config_path jackal_data/different.yaml --epochs 151
+python scripts/_25_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 151 --l1_coeff 0.25

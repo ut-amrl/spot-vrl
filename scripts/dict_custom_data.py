@@ -67,7 +67,10 @@ class CustomDataset(Dataset):
         main_patch_path = idx_path + "/10"
         if True:   
             # t0 = time.time()
-            main_rand_1 = random.randint(0,9)
+            # main_rand_1 = random.randint(0,9)
+            
+            # Choosing patch taken from close to its actual location and not randomizing
+            main_rand_1 = 8
             main_patch_path_1 = main_patch_path +"/"+str(main_rand_1)+ ".png"
             main_patch_1 = cv2.imread(main_patch_path_1)
             # main_patch_1 = cv2.resize(main_patch_1, (128, 128))

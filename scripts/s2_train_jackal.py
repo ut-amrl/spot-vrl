@@ -39,6 +39,8 @@ from s2_custom_data import s2CustomDataset, s2DataLoader
 from PIL import Image
 from _25_train_jackal import *
 from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import jenkspy
 
 def exclude_bias_and_norm(p):
     return p.ndim == 1
@@ -54,7 +56,8 @@ class UnFlatten(nn.Module):
 class s2Model(pl.LightningModule):
     def __init__(self, lr=3e-4, latent_size=256, inertial_shape=None,
                  scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
-                 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1):
+                 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1, 
+                 full = True, model_folder = "cost_data"):
         super(s2Model, self).__init__()
 
         self.save_hyperparameters(
@@ -72,6 +75,8 @@ class s2Model(pl.LightningModule):
         self.lr = lr
         self.per_device_batch_size = per_device_batch_size
         self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
+        self.full = full
+        self.model_folder = model_folder
 
         # net_path = "/home/dfarkash/spot-vrl/models/26-07-2022-11-06-47_.ckpt"
         # cprint('Loading model from {}'.format(net_path))
@@ -80,7 +85,7 @@ class s2Model(pl.LightningModule):
         # self.visual_encoder = net.visual_encoder
 
         visual_encoder = BarlowModel().visual_encoder
-        visual_encoder.load_state_dict(torch.load("/home/dfarkash/cost_data/visual_encoder.pt"))
+        visual_encoder.load_state_dict(torch.load("/home/dfarkash/"+self.model_folder+"/visual_encoder.pt"))
         visual_encoder.eval()
         self.visual_encoder = visual_encoder
         
@@ -88,7 +93,7 @@ class s2Model(pl.LightningModule):
             param.requires_grad = False
 
         inertial_encoder = BarlowModel().inertial_encoder
-        inertial_encoder.load_state_dict(torch.load("/home/dfarkash/cost_data/inertial_encoder.pt"))
+        inertial_encoder.load_state_dict(torch.load("/home/dfarkash/"+self.model_folder+"/inertial_encoder.pt"))
         inertial_encoder.eval()
         self.inertial_encoder = inertial_encoder
 
@@ -101,14 +106,14 @@ class s2Model(pl.LightningModule):
 
         self.preferences = [0,5,10,15,20,25,30]
 
-        model_path = "/home/dfarkash/cost_data/model.pkl"
+        model_path = "/home/dfarkash/"+self.model_folder+"/model.pkl"
         cprint('Loading cluster_model from {}'.format(model_path))
         self.model = pickle.load(open(model_path, 'rb'))
 
         self.cost_net = nn.Sequential(
             nn.Linear(128, latent_size, bias=False), nn.ReLU(inplace=True),
             nn.Linear(latent_size, latent_size, bias=False), nn.ReLU(inplace=True),
-            nn.Linear(latent_size, 1, bias=False)
+            nn.Linear(latent_size, 1, bias=False), nn.ReLU(inplace=True)
         )
 
         # normalization layer for the representations z1 and z2
@@ -139,6 +144,9 @@ class s2Model(pl.LightningModule):
 
         representation = torch.cat((visual_encoding, inertial_encoding), dim=1)
 
+        if not self.full:
+            representation = visual_encoding
+
         scaler = StandardScaler()
         representation=representation.cpu()
         representation=representation.detach().numpy()
@@ -161,6 +169,12 @@ class s2Model(pl.LightningModule):
 
         return true_cost
 
+
+
+    def smax(self, s1, s2):
+        # return torch.pow((torch.exp(s1) / (torch.exp(s1) + torch.exp(s2))) - 1/2 , 2)
+        return (torch.exp(s1) / (torch.exp(s1) + torch.exp(s2))) 
+
     def training_step(self, batch, batch_idx):
         self.visual_encoder.eval()
         self.inertial_encoder.eval()
@@ -182,13 +196,29 @@ class s2Model(pl.LightningModule):
             # cost = torch.reshape(cost,(256,1))
             # true_cost = torch.reshape(true_cost,(256,1))
 
-        mse = torch.nn.MSELoss()
-        # print("c"+str(cost))
-        # print("t"+str(true_cost))
-        loss = mse(cost[:,0], true_cost)
-        # loss= loss.item()
-        # loss=loss.float()
-        # print(loss)
+        linear = False
+
+        if linear :
+            mse = torch.nn.MSELoss()
+            # print("c"+str(cost))
+            # print("t"+str(true_cost))
+            loss = mse(cost[:,0], true_cost)
+            # loss= loss.item()
+            # loss=loss.float()
+            # print(loss)
+        else: 
+            loss_lst = torch.zeros(len(true_cost)-1)
+            i = 0
+            while i < len(true_cost)-1:
+                if true_cost[i] < true_cost[i+1]:
+                    loss_lst[i] = self.smax(cost[i,0], cost[i+1,0])
+                elif true_cost[i] > true_cost[i+1]:
+                    loss_lst[i] = self.smax(cost[i+1,0], cost[i,0])
+                else:
+                    loss_lst[i] = -1
+                i=i+1
+
+            loss= torch.mean(loss_lst[loss_lst != -1])
 
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
@@ -214,16 +244,29 @@ class s2Model(pl.LightningModule):
             # cost = torch.reshape(cost,(256,1))
             # true_cost = torch.reshape(true_cost,(256,1))
             
-        mse = torch.nn.MSELoss()
-        # print("c"+str(cost))
-        # print("t"+str(true_cost))
-        loss = mse(cost[:,0], true_cost)
-        # loss= loss.item()
-        # loss=loss.float()
-        # print(loss)
+        linear = False
 
-        # print(cost[:,0])
-        # print(true_cost)
+        if linear :
+            mse = torch.nn.MSELoss()
+            # print("c"+str(cost))
+            # print("t"+str(true_cost))
+            loss = mse(cost[:,0], true_cost)
+            # loss= loss.item()
+            # loss=loss.float()
+            # print(loss)
+        else: 
+            loss_lst = torch.zeros(len(true_cost)-1)
+            i = 0
+            while i < len(true_cost)-1:
+                if true_cost[i] < true_cost[i+1]:
+                    loss_lst[i] = self.smax(cost[i,0], cost[i+1,0])
+                elif true_cost[i] > true_cost[i+1]:
+                    loss_lst[i] = self.smax(cost[i+1,0], cost[i,0])
+                else:
+                    loss_lst[i] = -1
+                i=i+1
+
+            loss= torch.mean(loss_lst[loss_lst != -1])
 
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
@@ -280,12 +323,21 @@ class s2Model(pl.LightningModule):
            
             cost = self.cost[idx[:2000]]
 
+            # print("cost shape: ", cost.shape)
+            # print(cost)
+
+            cost_frame = pd.DataFrame(cost[:,0])
+
+            # print(cost)
+            breaks = jenkspy.jenks_breaks(cost_frame[0] ,nb_class=6) 
+            cost_bin = pd.cut(cost_frame[0], bins=breaks, labels=False)
+
             true_cost = self.true_cost[idx[:2000]]
 
-            metadata = list(zip(cost, true_cost))
+            metadata = list(zip(cost, true_cost,cost_bin))
 
 
-            metadata_header = ["costs","true_costs"]
+            metadata_header = ["costs","true_costs","cost bins"]
 
             self.logger.experiment.add_embedding(mat=ve,
                                                  label_img=vis_patch,
@@ -329,19 +381,26 @@ if __name__ == '__main__':
                         help='number of GPUs to use (default: 8)')
     parser.add_argument('--latent_size', type=int, default=256, metavar='N',
                         help='Size of the common latent space (default: 512)')
-    parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
+    parser.add_argument('--dataset_config_path', type=str, default='jackal_data/different.yaml')
+    parser.add_argument('--model_folder', type=str, default='cost_data', 
+    help = "Folder in home/dfarkash that contains the s1 encoders and k-means model")
+    parser.add_argument('--full', type=bool, default=True, metavar='N',
+                        help='Whether to use the whole model')
     args = parser.parse_args()
+    
     
     # check if the dataset config yaml file exists
     if not os.path.exists(args.dataset_config_path): raise FileNotFoundError(args.dataset_config_path)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dm = s2DataLoader(data_config_path=args.dataset_config_path, batch_size=args.batch_size)
+    dm = s2DataLoader(data_config_path=args.dataset_config_path, batch_size=args.batch_size,
+                        full = args.full)
 
     model = s2Model(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
-                          per_device_batch_size=args.batch_size).to(device)
+                          per_device_batch_size=args.batch_size, full=args.full, 
+                          model_folder = args.model_folder).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
     model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
