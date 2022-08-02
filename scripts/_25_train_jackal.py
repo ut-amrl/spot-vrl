@@ -53,7 +53,7 @@ class BarlowModel(pl.LightningModule):
     def __init__(self, lr=3e-4, latent_size=64, inertial_shape=None,
                  scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
                  per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1
-                 , l1_coeff = 1, save = False):
+                 , l1_coeff = 1, imu_in_rep=True ,save = False):
         super(BarlowModel, self).__init__()
 
         self.save_hyperparameters(
@@ -74,6 +74,7 @@ class BarlowModel(pl.LightningModule):
         self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
         self.l1_coeff = l1_coeff
         self.save = save
+        self.imu_in_rep = imu_in_rep
 
         # self.visual_encoder = nn.Sequential(
         #     nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
@@ -407,7 +408,10 @@ class BarlowModel(pl.LightningModule):
 
             vis_patch = self.visual_patch[idx[:2000],:,:,:]
             # print(ie.size())
-            data = torch.cat((ve, ie), dim=1)
+            if self.imu_in_rep:
+                data = torch.cat((ve, ie), dim=1)
+            else:
+                data = ve
             # print(data.size())
 
             clusters , elbow, model = cluster_jackal.cluster_model(data)
@@ -429,7 +433,10 @@ class BarlowModel(pl.LightningModule):
                 i = self.inertial_encoding[idx,:]
 
                 # print(ie.size())
-                d = torch.cat((v, i), dim=1)
+                if self.imu_in_rep:
+                    d = torch.cat((v, i), dim=1)
+                else:
+                    d = v
                 # print(data.size())
 
                 print("  Saved model: ")
@@ -506,6 +513,8 @@ if __name__ == '__main__':
                         help='Size of the common latent space (default: 512)')
     parser.add_argument('--save', type=bool, default=False, metavar='N',
                         help='Whether to save the k means model and encoders at the end of the run')
+    parser.add_argument('--imu_in_rep', type=bool, default=True, metavar='N',
+                        help='Whether to include the inertial data in the representation')
     parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
     args = parser.parse_args()
     
@@ -518,7 +527,8 @@ if __name__ == '__main__':
 
     model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
-                          per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff, save = args.save).to(device)
+                          per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff, 
+                          imu_in_rep = args.imu_in_rep, save = args.save).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
     # model_checkpoint_cb = ModelCheckpoint(dirpath='models/',

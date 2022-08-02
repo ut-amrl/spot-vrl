@@ -111,9 +111,9 @@ class s2Model(pl.LightningModule):
         self.model = pickle.load(open(model_path, 'rb'))
 
         self.cost_net = nn.Sequential(
-            nn.Linear(128, latent_size, bias=False), nn.ReLU(inplace=True),
-            nn.Linear(latent_size, latent_size, bias=False), nn.ReLU(inplace=True),
-            nn.Linear(latent_size, 1, bias=False), nn.ReLU(inplace=True)
+            nn.Linear(128, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
+            nn.Linear(latent_size, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
+            nn.Linear(latent_size, 1), nn.ReLU(inplace=True)
         )
 
         # normalization layer for the representations z1 and z2
@@ -124,8 +124,8 @@ class s2Model(pl.LightningModule):
         self.cov_coeff = 1.0
 
     def forward(self, patch):
-
-        v_encoded = self.visual_encoder(patch)
+        with torch.no_grad():
+            v_encoded = self.visual_encoder(patch)
 
         cost = self.cost_net(v_encoded)
         
@@ -215,10 +215,15 @@ class s2Model(pl.LightningModule):
                 elif true_cost[i] > true_cost[i+1]:
                     loss_lst[i] = self.smax(cost[i+1,0], cost[i,0])
                 else:
-                    loss_lst[i] = -1
+                    loss_lst[i] = (true_cost[i] - true_cost[i+1])**2
+                    # loss_lst[i] = -1
+                # penalize loss from going above 100.0
+                if cost[i,0] > 100.0:
+                    loss_lst[i] += (cost[i, 0]- 100.0)**2
                 i=i+1
 
-            loss= torch.mean(loss_lst[loss_lst != -1])
+            loss = torch.mean(loss_lst)
+            # loss= torch.mean(loss_lst[loss_lst != -1])
 
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
@@ -263,10 +268,16 @@ class s2Model(pl.LightningModule):
                 elif true_cost[i] > true_cost[i+1]:
                     loss_lst[i] = self.smax(cost[i+1,0], cost[i,0])
                 else:
-                    loss_lst[i] = -1
+                    loss_lst[i] = (true_cost[i] - true_cost[i+1])**2
+                    # loss_lst[i] = -1
+                # penalize loss from going above 100.0
+                if cost[i,0] > 100.0:
+                    loss_lst[i] += (cost[i, 0]- 100.0)**2
+                # loss_lst[i] += torch.max(torch.zeros(1).to(self.device), (cost[i, 0]- 100.0))**2
                 i=i+1
 
-            loss= torch.mean(loss_lst[loss_lst != -1])
+            loss = torch.mean(loss_lst)
+            # loss= torch.mean(loss_lst[loss_lst != -1])
 
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
@@ -281,7 +292,8 @@ class s2Model(pl.LightningModule):
     
 
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
-        if self.current_epoch % 2 == 0 :
+        # if self.current_epoch % 2 == 0 and torch.cuda.current_device() == 0 :
+        if self.current_epoch % 2 == 0:
 
             patch, inertia = batch
             true_cost = self.find_true_cost(patch,inertia)
@@ -307,9 +319,75 @@ class s2Model(pl.LightningModule):
                 self.cost = np.concatenate((self.cost, cost[:]))
 
 
+    def accuracy_naive(self, binned_cost, true_cost):
+
+        best_part_accs = []
+        best_part_lens = []
+
+        for i in range(7):
+            best_part_acc = 0
+            inds = np.where(binned_cost==i)[0]
+            for j in range(7):
+                part_acc = np.sum(true_cost[inds] == self.preferences[j])/len(inds)
+                if part_acc > best_part_acc:
+                    best_part_acc = part_acc
+            
+            best_part_accs.append(best_part_acc)
+            best_part_lens.append(len(inds))
+        
+        best_acc = np.sum(np.array(best_part_accs)*np.array(best_part_lens))/np.sum(best_part_lens)
+
+        print("accuracy:")
+        print(best_acc)
+        print("best_part_accs:")
+        print(best_part_accs)
+        print("best_part_lens:")
+        print(best_part_lens)
+        return best_acc
+
+    def scatter(self, true_cost, cost):
+
+        # tc = torch.Tensor.cpu(true_cost).detach().numpy()
+        # c = torch.Tensor.cpu(cost).detach().numpy()
+        tc = true_cost
+        c = cost
+
+        dict = {}
+        num_bins = 25
+        min_size = 0
+        max_size = 100
+        bin_size = (max_size - min_size)/num_bins
+
+        for i in range(num_bins):
+            dict[i] = []
+        dict["sizes"] = []
+        for j in range(len(tc)):
+            bin = int(c[j]/bin_size)
+            dict[bin].append(tc[j])
+
+        for k in range (num_bins):
+            dict["sizes"].append(len(dict[k]))
+
+        max_size = max(dict["sizes"])
+
+        new_mat = torch.tensor.zeros((len(tc), 3))
+        tot = 0
+        for l in range(num_bins):
+            for m in range(dict["sizes"][l]):
+                new_mat[tot, 0] = l
+                new_mat[tot, 1] = m
+                new_mat[tot, 2] = 0
+                tot=tot+1
+            
+        # add the embedding to tensorboard
+
+        
+        
+
+
     def on_validation_end(self) -> None:
         # if not self.visual_patch: return
-        if self.current_epoch % 2 == 0:
+        if self.current_epoch % 2 == 0 and torch.cuda.current_device() == 0:
             self.patch = torch.cat(self.patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
             idx = np.arange(self.visual_encoding.shape[0])
@@ -317,11 +395,13 @@ class s2Model(pl.LightningModule):
             np.random.shuffle(idx)
 
 
-            ve = self.visual_encoding[idx[:2000],:]
+            ve = self.visual_encoding[idx,:]
 
-            vis_patch = self.patch[idx[:2000],:,:,:]
+            print(ve.shape)
+
+            vis_patch = self.patch[idx,:,:,:]
            
-            cost = self.cost[idx[:2000]]
+            cost = self.cost[idx]
 
             # print("cost shape: ", cost.shape)
             # print(cost)
@@ -329,18 +409,22 @@ class s2Model(pl.LightningModule):
             cost_frame = pd.DataFrame(cost[:,0])
 
             # print(cost)
-            breaks = jenkspy.jenks_breaks(cost_frame[0] ,nb_class=6) 
-            cost_bin = pd.cut(cost_frame[0], bins=breaks, labels=False)
+            breaks = jenkspy.jenks_breaks(cost_frame[0] ,nb_class=7) 
+            cost_bin = pd.cut(cost_frame[0], bins=breaks, labels=False, include_lowest=True)
 
-            true_cost = self.true_cost[idx[:2000]]
+            true_cost = self.true_cost[idx]
 
-            metadata = list(zip(cost, true_cost,cost_bin))
+            acc = self.accuracy_naive(cost_bin, true_cost)
+
+            metadata = list(zip(cost[:2000], true_cost[:2000],cost_bin[:2000]))
 
 
             metadata_header = ["costs","true_costs","cost bins"]
 
-            self.logger.experiment.add_embedding(mat=ve,
-                                                 label_img=vis_patch,
+            self.logger.experiment.add_scalar("Binned accuracy", acc, self.current_epoch)
+
+            self.logger.experiment.add_embedding(mat=ve[:2000],
+                                                 label_img=vis_patch[:2000],
                                                  global_step=self.current_epoch,
                                                  metadata=metadata,
                                                 metadata_header=metadata_header)
@@ -377,7 +461,7 @@ if __name__ == '__main__':
                         help='log directory (default: logs)')
     parser.add_argument('--model_dir', type=str, default='models/', metavar='N',
                         help='model directory (default: models)')
-    parser.add_argument('--num_gpus', type=int, default=3, metavar='N',
+    parser.add_argument('--num_gpus', type=int, default=4, metavar='N',
                         help='number of GPUs to use (default: 8)')
     parser.add_argument('--latent_size', type=int, default=256, metavar='N',
                         help='Size of the common latent space (default: 512)')
@@ -415,6 +499,7 @@ if __name__ == '__main__':
                          strategy='ddp',
                          num_sanity_val_steps=0,
                          logger=True,
+                         sync_batchnorm=True,
                          )
 
     trainer.fit(model, dm)
