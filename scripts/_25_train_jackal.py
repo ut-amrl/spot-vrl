@@ -1,6 +1,11 @@
+"""Contains the first part of the model (creating representation, saving resulting k-means model and encoders)"""
+__author__= "Daniel Farkash, Haresh Karnan"
+__email__= "dmf248@cornell.edu"
+__date__= "August 10, 2022"
+
+
 from genericpath import exists
 import glob
-#from cluster_spot.scripts.train_jackal import MyDataLoader
 import pytorch_lightning as pl
 import torch
 from torch import uint8
@@ -27,13 +32,8 @@ from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
 from typing import List, Union, Tuple
 import os
 import yaml
-# from tf.keras.optimizers.schedules import CosineDecay
-# import librosa
-# import librosa.display as display
 from lr_scheduler import LinearWarmupCosineAnnealingLR
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
-# import albumentations as A
-# from albumentations.pytorch import ToTensorV2
 import cluster_jackal
 from dict_custom_data import CustomDataset, MyDataLoader
 from PIL import Image
@@ -442,13 +442,13 @@ class BarlowModel(pl.LightningModule):
                 print("  Saved model: ")
                 o= cluster_jackal.accuracy_naive_model(d,self.label[idx])
 
-                with open("/home/dfarkash/cost_data/model.pkl", "wb") as f:
+                with open("/home/dfarkash/no_inert_rep_cost_data/model.pkl", "wb") as f:
                     pickle.dump(o, f)
 
                 # save the visual encoder
-                torch.save(self.visual_encoder.state_dict(), "/home/dfarkash/cost_data/visual_encoder.pt")
+                torch.save(self.visual_encoder.state_dict(), "/home/dfarkash/no_inert_rep_cost_data/visual_encoder.pt")
                 # save the inertial encoder
-                torch.save(self.inertial_encoder.state_dict(), "/home/dfarkash/cost_data/inertial_encoder.pt")
+                torch.save(self.inertial_encoder.state_dict(), "/home/dfarkash/no_inert_rep_cost_data/inertial_encoder.pt")
                 
                 
                 
@@ -511,9 +511,9 @@ if __name__ == '__main__':
                         help='number of GPUs to use (default: 8)')
     parser.add_argument('--latent_size', type=int, default=512, metavar='N',
                         help='Size of the common latent space (default: 512)')
-    parser.add_argument('--save', type=bool, default=False, metavar='N',
+    parser.add_argument('--save', type=int, default=0, metavar='N',
                         help='Whether to save the k means model and encoders at the end of the run')
-    parser.add_argument('--imu_in_rep', type=bool, default=True, metavar='N',
+    parser.add_argument('--imu_in_rep', type=int, default=1, metavar='N',
                         help='Whether to include the inertial data in the representation')
     parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
     args = parser.parse_args()
@@ -528,7 +528,7 @@ if __name__ == '__main__':
     model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
                           per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff, 
-                          imu_in_rep = args.imu_in_rep, save = args.save).to(device)
+                          imu_in_rep = bool(args.imu_in_rep), save = bool(args.save)).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
     # model_checkpoint_cb = ModelCheckpoint(dirpath='models/',

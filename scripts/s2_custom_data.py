@@ -26,7 +26,7 @@ class s2CustomDataset(Dataset):
         self.file_path = file_path 
         self.full = full
 
-        if full:
+        if self.full:
             imu_path = file_path +"/inertial_data.pkl"
             cprint('Loading data from {}'.format(imu_path))
             self.imu_data = pickle.load(open(imu_path, 'rb'))
@@ -61,16 +61,19 @@ class s2CustomDataset(Dataset):
         if self.full:
             return len(self.imu_data)
         else:
-            return len(self.dict)
+            return len(self.dict) -3
 
     def __getitem__(self, idx):
 
+        # print("getting")
+        # print(len(self.dict))
 
         idx_path = self.file_path + "/" + str(idx)
 
         if not(self.dict[idx_path]):
             # print("Invalid patch")
-            rand_idx= random.randint(0,self.__len__()-1)
+            
+            rand_idx= random.randint(0,(self.__len__()))
             # print("New idx: "+str(rand_idx))
             
             return self.__getitem__(rand_idx)

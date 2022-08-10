@@ -84,6 +84,8 @@ class s2Model(pl.LightningModule):
         # net.eval()
         # self.visual_encoder = net.visual_encoder
 
+        # print(self.full)
+
         visual_encoder = BarlowModel().visual_encoder
         visual_encoder.load_state_dict(torch.load("/home/dfarkash/"+self.model_folder+"/visual_encoder.pt"))
         visual_encoder.eval()
@@ -92,19 +94,20 @@ class s2Model(pl.LightningModule):
         for param in self.visual_encoder.parameters():
             param.requires_grad = False
 
-        inertial_encoder = BarlowModel().inertial_encoder
-        inertial_encoder.load_state_dict(torch.load("/home/dfarkash/"+self.model_folder+"/inertial_encoder.pt"))
-        inertial_encoder.eval()
-        self.inertial_encoder = inertial_encoder
+        if self.full:
+            inertial_encoder = BarlowModel().inertial_encoder
+            inertial_encoder.load_state_dict(torch.load("/home/dfarkash/"+self.model_folder+"/inertial_encoder.pt"))
+            inertial_encoder.eval()
+            self.inertial_encoder = inertial_encoder
 
-        for param in self.inertial_encoder.parameters():
-            param.requires_grad = False
+            for param in self.inertial_encoder.parameters():
+                param.requires_grad = False
 
         preferences_path = "/home/dfarkash/cost_data/preferences.pkl"
         cprint('Loading user preferences from {}'.format(preferences_path))
         self.preferences = pickle.load(open(preferences_path, 'rb'))
 
-        self.preferences = [0,5,10,15,20,25,30]
+        self.preferences = [0,6,1,2,5,4,3]
 
         model_path = "/home/dfarkash/"+self.model_folder+"/model.pkl"
         cprint('Loading cluster_model from {}'.format(model_path))
@@ -136,15 +139,17 @@ class s2Model(pl.LightningModule):
 
     def find_true_cost(self, patch, inertial):
         self.visual_encoder.eval()
-        self.inertial_encoder.eval()
+        if self.full:
+            self.inertial_encoder.eval()
         
         with torch.no_grad():
             visual_encoding = self.visual_encoder(patch)
-            inertial_encoding = self.inertial_encoder(inertial)
+            if self.full:
+                inertial_encoding = self.inertial_encoder(inertial)
 
-        representation = torch.cat((visual_encoding, inertial_encoding), dim=1)
-
-        if not self.full:
+        if self.full:
+            representation = torch.cat((visual_encoding, inertial_encoding), dim=1)
+        else:
             representation = visual_encoding
 
         scaler = StandardScaler()
@@ -177,7 +182,8 @@ class s2Model(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         self.visual_encoder.eval()
-        self.inertial_encoder.eval()
+        if self.full:
+            self.inertial_encoder.eval()
         self.cost_net.train()
 
         patch, inertial = batch
@@ -230,7 +236,8 @@ class s2Model(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self.visual_encoder.eval()
-        self.inertial_encoder.eval()
+        if self.full:
+            self.inertial_encoder.eval()
         self.cost_net.eval()
 
         patch, inertial = batch
@@ -345,7 +352,7 @@ class s2Model(pl.LightningModule):
         print(best_part_lens)
         return best_acc
 
-    def scatter(self, true_cost, cost):
+    def scatter(self, true_cost, cost, vis_patch):
 
         # tc = torch.Tensor.cpu(true_cost).detach().numpy()
         # c = torch.Tensor.cpu(cost).detach().numpy()
@@ -353,9 +360,9 @@ class s2Model(pl.LightningModule):
         c = cost
 
         dict = {}
-        num_bins = 25
+        num_bins = 100
         min_size = 0
-        max_size = 100
+        max_size = 40
         bin_size = (max_size - min_size)/num_bins
 
         for i in range(num_bins):
@@ -363,22 +370,37 @@ class s2Model(pl.LightningModule):
         dict["sizes"] = []
         for j in range(len(tc)):
             bin = int(c[j]/bin_size)
-            dict[bin].append(tc[j])
+            dict[bin].append((tc[j],vis_patch[j,:,:,:],c[j]))
 
         for k in range (num_bins):
             dict["sizes"].append(len(dict[k]))
 
         max_size = max(dict["sizes"])
 
-        new_mat = torch.tensor.zeros((len(tc), 3))
+        new_mat = torch.zeros((len(tc), 3))
+        new_true_cost = torch.zeros(len(tc))
+        new_cost = torch.zeros(len(tc))
+        new_vis_patch = torch.zeros((len(tc),3,64,64))
         tot = 0
         for l in range(num_bins):
             for m in range(dict["sizes"][l]):
-                new_mat[tot, 0] = l
+                new_mat[tot, 0] = l*5
                 new_mat[tot, 1] = m
                 new_mat[tot, 2] = 0
+                new_true_cost[tot] = torch.from_numpy(np.asarray(dict[l][m][0])).to(new_true_cost)
+                new_cost[tot] = torch.from_numpy(dict[l][m][2]).to(new_cost)
+                new_vis_patch[tot, :,:,:]= (dict[l][m][1]).to(new_vis_patch)
                 tot=tot+1
-            
+
+        metadata = list(zip(new_cost, new_true_cost))
+
+        metadata_header = ["costs","true_costs"]
+
+        self.logger.experiment.add_embedding(new_mat,
+                    label_img=new_vis_patch,
+                    global_step=self.current_epoch,
+                    metadata=metadata,
+                    metadata_header = metadata_header)
         # add the embedding to tensorboard
 
         
@@ -397,7 +419,7 @@ class s2Model(pl.LightningModule):
 
             ve = self.visual_encoding[idx,:]
 
-            print(ve.shape)
+            # print(ve.shape)
 
             vis_patch = self.patch[idx,:,:,:]
            
@@ -416,18 +438,22 @@ class s2Model(pl.LightningModule):
 
             acc = self.accuracy_naive(cost_bin, true_cost)
 
-            metadata = list(zip(cost[:2000], true_cost[:2000],cost_bin[:2000]))
-
-
-            metadata_header = ["costs","true_costs","cost bins"]
-
             self.logger.experiment.add_scalar("Binned accuracy", acc, self.current_epoch)
 
-            self.logger.experiment.add_embedding(mat=ve[:2000],
-                                                 label_img=vis_patch[:2000],
-                                                 global_step=self.current_epoch,
-                                                 metadata=metadata,
-                                                metadata_header=metadata_header)
+            if False:
+                metadata = list(zip(cost[:2000], true_cost[:2000],cost_bin[:2000]))
+
+                metadata_header = ["costs","true_costs","cost bins"]
+
+                mat=ve[:2000]
+                # mat = self.scatter(cost[:500],true_cost[:500])
+                self.logger.experiment.add_embedding(mat,
+                                                    label_img=vis_patch[:2000],
+                                                    global_step=self.current_epoch,
+                                                    metadata=metadata,
+                                                    metadata_header=metadata_header)
+            else:
+                self.scatter(true_cost[:500],cost[:500], vis_patch[:500])
                                                
 
             del self.patch, self.visual_encoding, self.cost, self.true_cost
@@ -466,25 +492,26 @@ if __name__ == '__main__':
     parser.add_argument('--latent_size', type=int, default=256, metavar='N',
                         help='Size of the common latent space (default: 512)')
     parser.add_argument('--dataset_config_path', type=str, default='jackal_data/different.yaml')
-    parser.add_argument('--model_folder', type=str, default='cost_data', 
-    help = "Folder in home/dfarkash that contains the s1 encoders and k-means model")
-    parser.add_argument('--full', type=bool, default=True, metavar='N',
+    parser.add_argument('--model_folder', type=str, default='cost_data', help = "Folder in home/dfarkash that contains the s1 encoders and k-means model")
+    parser.add_argument('--full', type=int, default=1, metavar='N',
                         help='Whether to use the whole model')
     args = parser.parse_args()
     
-    
+    # print("main")
+    # print(args.full)
     # check if the dataset config yaml file exists
     if not os.path.exists(args.dataset_config_path): raise FileNotFoundError(args.dataset_config_path)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dm = s2DataLoader(data_config_path=args.dataset_config_path, batch_size=args.batch_size,
-                        full = args.full)
+                        full = bool(args.full))
 
     model = s2Model(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
-                          per_device_batch_size=args.batch_size, full=args.full, 
+                          per_device_batch_size=args.batch_size, full=bool(args.full), 
                           model_folder = args.model_folder).to(device)
+
 
     early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
     model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
