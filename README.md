@@ -15,7 +15,7 @@ Sample image grids are contained in
 
     image_grids
 
-The vast majority of the code is in scripts:
+The vast majority of the code is in SCRIPTS:
 
 Contains the first part of the model (creating representation, saving resulting k-means model and encoders):
     
@@ -97,7 +97,7 @@ Model 2:
     python scripts/s2_train_jackal.py --dataset_config_path jackal_data/different.yaml --epochs 151 --full 0 --model_folder _98_save --num_gpus 4
     
 
-Checkout /home/dfarkash for special saves:
+Checkout /home/dfarkash for IMPORTANT SAVES:
 
 patch_images contains all of the data used for training
 
@@ -106,4 +106,5 @@ patch_images contains all of the data used for training
 _98_save and _93_save contain full model 1 (_25_train_jackal) saves (k-means, encoders) for use as model_folder for when training model 2 (s2_train_jackal) whike vis_cost_data and no_inert_rep_cost_data contain model 1's trained using only visual data and withour inertial data for making the representation(respectively). cost_data is the default save location for the k-means and inertial encoders
 
 
+If you have any questions, contact me (Daniel Farkash) at dmf248@cornell.edu or over slack.
 
