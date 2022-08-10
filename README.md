@@ -1,7 +1,23 @@
 # spot-vrl
 This is the most recently updated branch of the project.
 
-When creating the environment on robovision, source Haresh's spot-vrl conda environment.
+The code used during PATCH EXTRACTION is found in 
+
+    launch/parse_rosbag.launch
+    
+    src/lidar_rosbag_parser/scripts/rosbag_data_rerecorder.py
+
+Usually, the configurations used when running the models are stored in 
+
+    jackal_data
+    
+Sample image grids are contained in
+
+    image_grids
+    
+    
+
+When creating the ENVIRONMENT on robovision, source Haresh's spot-vrl conda environment. (do not use poetry)
 
   Commands:
 
@@ -9,17 +25,17 @@ When creating the environment on robovision, source Haresh's spot-vrl conda envi
 
     conda activate spot-vrl
     
- You cannot visualize anything on Robovision, so a good way to go about visualizing any of the projections/plots is to use tensorboard through vscode or to run this commnd locally:
+ You cannot visualize anything on Robovision, so a good way to go about VISUAIZING any of the projections/plots is to use tensorboard through vscode or to run this commnd locally:
  
     tensorboard --logdir lightning_logs
   
- If you wish to run patch extraction on robovision, do this:
+ If you wish to run PATCH EXTRACTION on robovision, do this:
  
- ONLY ONCE:
+ Only Once:
  
         catkin build -DPYTHON_EXECUTABLE=/usr/bin/python3 -DPYTHON_INCLUDE_DIR=/usr/include/python3.8m
 
- EVERY TIME you ssh in:
+ Every Time you ssh in:
 
         source /opt/ros/noetic/setup.bash
 
@@ -31,10 +47,13 @@ When creating the environment on robovision, source Haresh's spot-vrl conda envi
 
         PYTHONPATH="/robodata/haresh92/conda/envs/spot-vrl/lib/python3.8/site-packages:$PYTHONPATH"
 
-RUN COMMAND:
+Run Command:
 
         roslaunch launch/parse_rosbag.launch rosbag_path:=/robodata/dfarkash/test_data/sample.bag save_data_path:=/robodata/dfarkash/test_data/ visualize:=false
         
  -> Makesure to change the paths so that they are appropriate
+ 
  -> If you want to see the visualization (visualization:=true) you will have to do this locally
+ 
+
 
