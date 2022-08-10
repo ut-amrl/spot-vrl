@@ -14,7 +14,12 @@ Usually, the configurations used when running the models are stored in
 Sample image grids are contained in
 
     image_grids
+
+The vast majority of the code is in scripts:
+
+    Contains the first part of the model (creating representation, saving resulting k-means model and encoders):
     
+            _25_train_jackal.py
     
 
 When creating the ENVIRONMENT on robovision, source Haresh's spot-vrl conda environment. (do not use poetry)
