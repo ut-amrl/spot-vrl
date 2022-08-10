@@ -17,9 +17,21 @@ Sample image grids are contained in
 
 The vast majority of the code is in scripts:
 
-    Contains the first part of the model (creating representation, saving resulting k-means model and encoders):
+Contains the first part of the model (creating representation, saving resulting k-means model and encoders):
     
-            _25_train_jackal.py
+    _25_train_jackal.py
+
+Contains the dataloader used by the first model:
+
+    dict_custom_data.py
+    
+Contains the second model (using user preferences, saved items from part 1 to learn cost network):
+
+    s2_train_jackal.py
+
+Contains the dataloader used by the second model:
+
+    s2_custom_data.py
     
 
 When creating the ENVIRONMENT on robovision, source Haresh's spot-vrl conda environment. (do not use poetry)
