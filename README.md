@@ -11,7 +11,7 @@ When creating the environment on robovision, source Haresh's spot-vrl conda envi
     
  You cannot visualize anything on Robovision, so a good way to go about visualizing any of the projections/plots is to use tensorboard through vscode or to run this commnd locally:
  
-  tensorboard --logdir lightning_logs
+    tensorboard --logdir lightning_logs
   
  If you wish to run patch extraction on robovision, do this:
  
@@ -34,4 +34,7 @@ When creating the environment on robovision, source Haresh's spot-vrl conda envi
 RUN COMMAND:
 
         roslaunch launch/parse_rosbag.launch rosbag_path:=/robodata/dfarkash/test_data/sample.bag save_data_path:=/robodata/dfarkash/test_data/ visualize:=false
+        
+ -> Makesure to change the paths so that they are appropriate
+ -> If you want to see the visualization (visualization:=true) you will have to do this locally
 
