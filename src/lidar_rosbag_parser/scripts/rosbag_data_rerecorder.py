@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
 A rosnode that listens to camera and odom info
-and saves the processed data into a pickle file.
+and saves the processed data.
 """
+__author__= "Haresh Karnan, Daniel Farkash"
+__email__= "dmf248@cornell.edu"
+__date__= "August 10, 2022"
 
-# import sys
-# sys.path.remove('/opt/ros/melodic/lib/python2.7/dist-packages')
-# from copyreg import pickle
 import pickle
 import numpy as np
 import time
@@ -27,29 +27,12 @@ from scipy.spatial.transform import Rotation as R
 from PIL import Image
 
 PATCH_SIZE = 64
+
+# allowed amount of black pixels in a patch
 PATCH_EPSILON = 0.5 * PATCH_SIZE * PATCH_SIZE
 ACTUATION_LATENCY = 0.25
 
 # camera matrix for the azure kinect
-# C_i = np.array(
-#     [622.0649233612024, 0.0, 633.1717569157071, 0.0, 619.7990184421728, 368.0688607187958, 0.0, 0.0, 1.0]).reshape(
-#     (3, 3))
-
-
-# camera parameters of the jackal
-# C_i = np.array([623.3087 ,   0.     , 636.79787,
-#            0.     , 624.91863, 366.72814,
-#            0.     ,   0.     ,   1.     ]).reshape((3, 3))
-
-
-# C_i = np.asarray([[935.30743609,   0.,         960.        ],
-#                     [  0.,         935.30743609, 540.        ],
-#                     [  0.,           0.,           1.        ]]).reshape((3, 3))
-
-# C_i = np.asarray([[983.322571,   0.,         1021.098450        ],
-#                     [  0.,         983.123108, 775.020630        ],
-#                     [  0.,           0.,           1.        ]]).reshape((3, 3))
-
 C_i = np.asarray([[983.322571,   0.,         1024        ],
                     [  0.,         983.123108, 768        ],
                     [  0.,           0.,           1.        ]]).reshape((3, 3))
@@ -127,8 +110,10 @@ class ListenRecordData:
         self.msg_data['odom'].append(odom_val.copy())
         self.msg_data['imu_jackal_orientation'].append(self.imu_jackal_orientation)
 
+    # saves data in folder system (see patch_images in robovision/dfarkash for example output)
     def save_data(self):
 
+        # create folder with bag date name
         cprint("Created folder:"+str(self.save_data_path), 'yellow')                
         os.mkdir(self.save_data_path)
 
@@ -137,94 +122,114 @@ class ListenRecordData:
         # storage buffer to hold the past recent 20 BEV images on which we perform patch extraction
         self.storage_buffer = {'image':[], 'odom':[]}
         
+        # iterate through images
         for i in tqdm(range(len(self.msg_data['image_msg']))):
+
+            # apply bird's eye view homography in image using orientation data
             bevimage, _ = ListenRecordData.camera_imu_homography(self.msg_data['imu_jackal_orientation'][i], self.msg_data['image_msg'][i])
+            
+            # update storage buffers
             self.storage_buffer['image'].append(bevimage)
             self.storage_buffer['odom'].append(self.msg_data['odom'][i])
             
             if self.visualize_results:
                 bevimage = cv2.resize(bevimage, (bevimage.shape[1]//3, bevimage.shape[0]//3))
             
-            # now find the patches for this image
             curr_odom = self.msg_data['odom'][i]
-                        
-            num_added = 0
             
+            # create subfolders with index numbers
             folder_path = os.path.join(self.save_data_path,str(i))
             os.mkdir(folder_path)
 
-
+            # initialize patches/counts and 25 grid subfolders for each index
+            num_added = 0
             counts = {}
             avail_patches = {}
+
             for h in range(25):
+
                 sub_folder_path = os.path.join(folder_path,str(h))
                 os.mkdir(sub_folder_path)
                 counts[h] = 0
                 avail_patches[h]=[]
 
-            
-
-            # search for the patches in the storage buffer
+            # iterate through the recent saved patches in the storage buffer
             for j in range(0, len(self.storage_buffer['odom'])):
                
-                # if num_added < 250:
                 prev_image = self.storage_buffer['image'][j]
                 prev_odom = self.storage_buffer['odom'][j]
                 
-                # extract the patch
+                # extract the patches from the buffered images
                 patches, vis_img = ListenRecordData.get_patch_from_odom_delta(curr_odom, 
                                                                                 prev_odom,
                                                                                 prev_image, 
                                                                 visualize=self.visualize_results)
-                    
+                # iterate through the 25 patches
                 for k in range(len(patches)):
-                    # if counts[k] < 10:
-                    patch = patches[k]                                     
+                    
+                    patch = patches[k] 
+
+                    # only add patches if they are les than 50% black pixels (out of fov)                                    
                     zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
                     if np.sum(zero_count) < PATCH_EPSILON:
                         counts[k]+=1
                         num_added=num_added+1
                         avail_patches[k].append(patch)
 
+                # show extracted patch grid visualization
                 if self.visualize_results:
                     vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
                     cv2.imshow('current img <-> previous img', np.hstack((bevimage, vis_img)))
                     cv2.waitKey(5)
 
-
+            # for each of the 25 patches in the grid at each index/time step, find the 10 images
+            # that have the greatest separation between each other from the patches that were 
+            # extracted from the buffered past perspectives
             for l in range(25):
+
+                # add all images if there are less than 10 available (ne need to find greatest separation)
                 if counts[l] <11 :
                     for m in range(counts[l]):
+
+                        # save image in appropriate folder
                         im = Image.fromarray(avail_patches[l][m])
                         img_name = "/" + str(m) +".png"
                         img_path = folder_path + "/" + str(l) + img_name
                         im.save(img_path)
 
                 else:
-                    # print("yes")
+                    
+                    # find appropriate maximum spacing
                     step = int(counts[l]/10)
-                    # print(counts[l])
+                    
                     for m in range(10):
                         place = m*step
+
+                        # save image in appropriate folder
                         im = Image.fromarray(avail_patches[l][place])
                         img_name = "/" + str(m) +".png"
                         img_path = folder_path + "/" + str(l) + img_name
                         im.save(img_path)
                 
+            # free oldest buffered image when buffer is larger than 40
             while len(self.storage_buffer['image']) > 40:
                 self.storage_buffer['image'].pop(0)
                 self.storage_buffer['odom'].pop(0)
                 
             if num_added>0:
                 print('Num patches : ', num_added)
-                # patches have been found. add it to data dict
+                # patches have been found - added to data dict
                 imu_jackal.append(self.msg_data['imu_jackal_history'][i])
 
+        # save inertial data in appropriate file
         cprint('Saving data of size {}'.format(len(imu_jackal)), 'yellow')
         pickle.dump(imu_jackal, open(self.save_data_path + "/inertial_data.pkl", 'wb'))
+
         cprint('Saved data successfully ', 'yellow', attrs=['blink'])
 
 
+    # older version of save_data that saves data as pickle file 
+    # no longer used because of memory conceards when loading pickle files all at beginning of runtime
     def save_data_pkl(self):
         # dict to hold all the processed data
         data = {
@@ -247,13 +252,12 @@ class ListenRecordData:
             # now find the patches for this image
             curr_odom = self.msg_data['odom'][i]
             
-            #patch_list = []
             num_added = 0
             patch_dict = {}
             
             # search for the patches in the storage buffer
             for j in range(0, len(self.storage_buffer['odom'])):
-                # print('j : ', j)
+                
                 prev_image = self.storage_buffer['image'][j]
                 prev_odom = self.storage_buffer['odom'][j]
                 
@@ -267,22 +271,17 @@ class ListenRecordData:
                     zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
                     if np.sum(zero_count) < PATCH_EPSILON:
                         num_added=num_added+1
-                        #print(data['patches'])
-                        #print(data['patches'].keys())
+                        
                         if k in patch_dict.keys():
-                            #print((data['patches'])[k])
+                            
                             patch_dict[k].append(patch)
                         else:
                             patch_dict[k] = [patch]
-                            #print((data['patches'])[k])
-                        #patch_list.append(patch)
-                        
+                            
                 if self.visualize_results:
                     vis_img = cv2.resize(vis_img, (vis_img.shape[1]//3, vis_img.shape[0]//3))
                     cv2.imshow('current img <-> previous img', np.hstack((bevimage, vis_img)))
                     cv2.waitKey(5)
-                    
-                #if len(patch_list) >= 10: break
                 
             while len(self.storage_buffer['image']) > 20:
                 self.storage_buffer['image'].pop(0)
@@ -301,26 +300,33 @@ class ListenRecordData:
         pickle.dump(data, open(self.save_data_path + '_data.pkl', 'wb'))
         cprint('Saved data successfully ', 'yellow', attrs=['blink'])
 
+    # returns list of 25 patches in grid taken from image
     @staticmethod
     def get_patch_from_odom_delta(curr_pos, prev_pos, prev_image, visualize=False):
+
         curr_pos_np = np.array([curr_pos[0], curr_pos[1], 1])
+
+        # numpy array of transformation from previous position
         prev_pos_transform = np.zeros((3, 3))
-        prev_pos_transform[:2, :2] = R.from_euler('XYZ', [0, 0, prev_pos[2]]).as_matrix()[:2,:2] # figure this out
+        prev_pos_transform[:2, :2] = R.from_euler('XYZ', [0, 0, prev_pos[2]]).as_matrix()[:2,:2]
         prev_pos_transform[:, 2] = np.array([prev_pos[0], prev_pos[1], 1]).reshape((3))
 
         inv_pos_transform = np.linalg.inv(prev_pos_transform)
-        curr_z_rotation = R.from_euler('XYZ', [0, 0, curr_pos[2]]).as_matrix()
 
+        curr_z_rotation = R.from_euler('XYZ', [0, 0, curr_pos[2]]).as_matrix()
 
         CENTER = np.array((1024-20, (768-55)*2))
 
+        # extract 5 by 5 image grid
         patch_corners_image_frame_lst = []
         patch_lst = []
-        # Must be odd:
         num_side_patches=5
         num_forward_patches = 5
+
         for i in range(num_side_patches):
             for j in range(num_forward_patches):
+
+                # find corners of each patch
                 h_shift = -1*(i - int(num_side_patches/2))
                 patch_corners = [
                     curr_pos_np + curr_z_rotation @ np.array([0.3 +0.6*j, 0.3 +0.6*h_shift, 0]),
@@ -329,6 +335,7 @@ class ListenRecordData:
                     curr_pos_np + curr_z_rotation @ np.array([-0.3 +0.6*j, 0.3 +0.6*h_shift, 0])
                 ]
 
+                # find corners relative to previous frame
                 patch_corners_prev_frame = [
                     inv_pos_transform @ patch_corners[0],
                     inv_pos_transform @ patch_corners[1],
@@ -336,6 +343,7 @@ class ListenRecordData:
                     inv_pos_transform @ patch_corners[3],
                 ]
 
+                # scale/re-type patch corners
                 scaled_patch_corners = [
                     (patch_corners_prev_frame[0] * 132.003788).astype(np.int),
                     (patch_corners_prev_frame[1] * 132.003788).astype(np.int),
@@ -343,7 +351,7 @@ class ListenRecordData:
                     (patch_corners_prev_frame[3] * 132.003788).astype(np.int),
                 ]
 
-
+                # create individual image frame for patch
                 patch_corners_image_frame = [
                     CENTER + np.array((-scaled_patch_corners[0][1], -scaled_patch_corners[0][0])),
                     CENTER + np.array((-scaled_patch_corners[1][1], -scaled_patch_corners[1][0])),
@@ -353,13 +361,14 @@ class ListenRecordData:
 
                 patch_corners_image_frame_lst.append(patch_corners_image_frame)
 
+                # create 64  by 64 image
                 persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
-
                 patch = cv2.warpPerspective(
                     prev_image,
                     persp,
                     (64, 64)
                 )
+
                 patch_lst.append(patch)
 
         
@@ -367,7 +376,8 @@ class ListenRecordData:
         if visualize:
             vis_img = prev_image.copy()
 
-            # draw the patch rectangle
+            # draw the patch rectangle by making lines between all patch corners on top of 
+            # copyof previous image
             for patch_corners_image_frame in patch_corners_image_frame_lst:
                 cv2.line(
                     vis_img,
@@ -397,36 +407,19 @@ class ListenRecordData:
                     (0, 255, 0),
                     2
                 )
-        
-        # patch_lst = []
-        # for patch_corners_image_frame in patch_corners_image_frame_lst:
-
-        #     persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
-
-        #     patch = cv2.warpPerspective(
-        #         prev_image,
-        #         persp,
-        #         (64, 64)
-        #     )
-
-            # zero_count = np.logical_and(np.logical_and(patch[:, :, 0] == 0, patch[:, :, 1] == 0), patch[:, :, 2] == 0)
-
-            # if np.sum(zero_count) > PATCH_EPSILON:
-            #     patch_lst.append(None)
-            # else:
-            # patch_lst.append(patch)
 
         return patch_lst, vis_img
     
+    # Calculate bird's eye view homography of input image based on orientation data
+    # implementation based on https://docs.opencv.org/4.x/d9/dab/tutorial_homography.html
     @staticmethod
     def camera_imu_homography(orientation_quat, image):
 
         R_imu_world = R.from_quat(orientation_quat)
         R_imu_world = R_imu_world.as_euler('XYZ', degrees=True)
 
-        
         R_cam_imu = R.from_euler("xyz", [-90, 90, 0], degrees=True)
-        # R_pitch = R.from_euler("XYZ", [26.5+R_imu_world[0], 0, R_imu_world[1]], degrees=True)
+        
         R_pitch = R.from_euler("XYZ", [26.5, 0, 0], degrees=True)
         
         R1 = R_pitch * R_cam_imu
@@ -453,6 +446,7 @@ class ListenRecordData:
 
         return output, img.copy()
 
+    # Used in homography calculation
     @staticmethod
     def homography_camera_displacement(R1, R2, t1, t2, n1):
         R12 = R2 @ R1.T

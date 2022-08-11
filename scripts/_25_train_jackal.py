@@ -49,12 +49,12 @@ class UnFlatten(nn.Module):
     def forward(self, input, size=256):
         return input.view(input.size(0), size, 2, 2)
 
-class BarlowModel(pl.LightningModule):
+class RepModel(pl.LightningModule):
     def __init__(self, lr=3e-4, latent_size=64, inertial_shape=None,
                  scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
                  per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1
                  , l1_coeff = 1, imu_in_rep=True ,save = False):
-        super(BarlowModel, self).__init__()
+        super(RepModel, self).__init__()
 
         self.save_hyperparameters(
             'lr',
@@ -76,22 +76,7 @@ class BarlowModel(pl.LightningModule):
         self.save = save
         self.imu_in_rep = imu_in_rep
 
-        # self.visual_encoder = nn.Sequential(
-        #     nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
-        #     nn.BatchNorm2d(16), nn.ReLU(inplace=True),
-        #     nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), # 31 x 31
-        #     nn.BatchNorm2d(32), nn.ReLU(inplace=True),
-        #     nn.Conv2d(32, 64, kernel_size=5, stride=2, bias=False), # 14 x 14
-        #     nn.BatchNorm2d(64), nn.ReLU(inplace=True),
-        #     nn.Conv2d(64, 128, kernel_size=5, stride=2, bias=False),  # 5 x 5
-        #     nn.BatchNorm2d(128), nn.ReLU(inplace=True),
-        #     nn.Conv2d(128, 256, kernel_size=3, stride=2),  # 2 x 2
-        #     nn.BatchNorm2d(256), nn.ReLU(inplace=True),
-        #     nn.AvgPool2d(kernel_size=2, stride=2),
-        #     Flatten(), # 256 output
-        #     nn.Linear(256, 128)
-        # )
-
+        # visual encoder architecture
         self.visual_encoder = nn.Sequential(
             nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 31 x 31
             nn.BatchNorm2d(16), nn.ReLU(inplace=True),
@@ -106,25 +91,14 @@ class BarlowModel(pl.LightningModule):
             nn.Linear(128, 128)
         )
 
-        # self.inertial_encoder = nn.Sequential(
-        #     nn.Conv1d(1, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(8), nn.PReLU(),
-        #     nn.AvgPool1d(kernel_size=3, stride=2),
-        #     nn.Conv1d(8, 16, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(16), nn.PReLU(),
-        #     nn.AvgPool1d(kernel_size=3, stride=2),
-        #     nn.Conv1d(16, 32, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(32), nn.PReLU(),
-        #     nn.AvgPool1d(kernel_size=3, stride=2),
-        #     nn.Conv1d(32, 64, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(64), nn.PReLU(),
-        #     nn.AvgPool1d(kernel_size=2, stride=2),
-        #     nn.Flatten(),
-        #     nn.Linear(256, 128)
-        # )
-
+        # inertial encoder architecture
         self.inertial_encoder = nn.Sequential(
             nn.Linear(600+6, 256, bias=False), nn.BatchNorm1d(256), nn.PReLU(),
             nn.Linear(256, 128, bias=False), nn.BatchNorm1d(128), nn.PReLU(),
             nn.Linear(128, 128)
         )
 
+        # projector archiecture
         self.projector = nn.Sequential(
             nn.Linear(128, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
             nn.Linear(latent_size, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
@@ -134,68 +108,38 @@ class BarlowModel(pl.LightningModule):
         # normalization layer for the representations z1 and z2
         self.bn = nn.BatchNorm1d(latent_size, affine=False, track_running_stats=False)
   
+        # coefficients for vicreg loss
         self.sim_coeff = 25.0
         self.std_coeff = 25.0
         self.cov_coeff = 1.0
 
-    def forward(self, main_patch_lst, inertial_data, patch_list_1 = [], patch_list_2 = [], s1 = True):
+    def forward(self, main_patch_lst, inertial_data, patch_list_1, patch_list_2 ):
         visual_patch = main_patch_lst[0]
         imu_history = inertial_data
 
+        # Encode and project main patch and corresponding inertial data (used for Lss 1)
         v_encoded = self.visual_encoder(visual_patch)
         i_encoded = self.inertial_encoder(imu_history)
+        z1 = self.projector(v_encoded)
+        z2 = self.projector(i_encoded)
 
         lst1_encoded = []
         lst2_encoded = []
         lst1_projected =[]
         lst2_projected =[]
 
-        if s1:
+        # Encode and project all grid patches are used for Lss 2
+        for i in range(25):
+            lst1_encoded.append(self.visual_encoder(patch_list_1[i])) 
+            lst2_encoded.append(self.visual_encoder(patch_list_2[i])) 
 
-            # print(len(patch_list_1))
-            # print(patch_list_1)
-            for i in range(25):
-                lst1_encoded.append(self.visual_encoder(patch_list_1[i])) 
-                lst2_encoded.append(self.visual_encoder(patch_list_2[i])) 
-
-    
-            # L2 normalize along encoding dimension
-            # v_encoded = F.normalize(v_encoded, dim=1)
-            # i_encoded = F.normalize(i_encoded, dim=1)
-        
-            z1 = self.projector(v_encoded)
-            z2 = self.projector(i_encoded)
-
-
-            for i in range(25):
-                lst1_projected.append(self.projector(lst1_encoded[i])) 
-                lst2_projected.append(self.projector(lst2_encoded[i]))
-        else:
-            z1 = v_encoded
-            z2 = i_encoded 
+        for i in range(25):
+            lst1_projected.append(self.projector(lst1_encoded[i])) 
+            lst2_projected.append(self.projector(lst2_encoded[i]))
   
         return z1, z2, lst1_projected, lst2_projected
 
-    def barlow_loss(self, z1, z2):
-        # z1 = (z1 - torch.mean(z1, dim=0))/(torch.std(z1, dim=0) + 1e-4)
-        # z2 = (z2 - torch.mean(z2, dim=0))/(torch.std(z2, dim=0) + 1e-4)
-  
-        z1 = self.bn(z1)
-        z2 = self.bn(z2)
-
-        # empirical cross-correlation matrix
-        c = z1.T @ z2
-    
-        # sum the cross-correlation matrix between all gpus
-        c.div_(self.per_device_batch_size * self.trainer.num_processes)
-        self.all_reduce(c)
-    
-        on_diag = torch.diagonal(c).add_(-1).pow_(2).sum().mul(self.scale_loss)
-        off_diag = self.off_diagonal(c).pow_(2).sum().mul(self.scale_loss)
-  
-        loss = on_diag + self.lambd * off_diag 
-        return loss
-
+    # Compute Variance Invariance Covariance Regularization loss
     def vicreg_loss(self, z1, z2):
         repr_loss = F.mse_loss(z1, z2)
 
@@ -224,99 +168,103 @@ class BarlowModel(pl.LightningModule):
             torch.distributed.all_reduce(c)
 
     def training_step(self, batch, batch_idx):
+
+        # ensure that models are trainable
         self.visual_encoder.train()
         self.inertial_encoder.train()
         self.projector.train()
-        #try self.visual_encoder.train(), etc.
-        main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
-        visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
-        # loss = self.barlow_loss(visual_emb, inertial_emb)
-        l1 = self.vicreg_loss(visual_emb, inertial_emb)
 
-        l2_lst = torch.zeros(25)
+        main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
+
+        # forward pass
+        visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
+
+        # compute Lss 1
+        lss1 = self.vicreg_loss(visual_emb, inertial_emb)
+
+        # compute Lss 2
+        lss2_lst = torch.zeros(25)
+
         for i in range(25):
             v_emb_1 = lst1_emb[i]
             v_emb_2 = lst2_emb[i]
-            l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = torch.mean(l2_lst)
+            lss2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
 
-        loss = self.l1_coeff*l1 + (1- self.l1_coeff)*l2
-        # loss=l2
+        lss2 = torch.mean(lss2_lst)
+
+        # calculate combined loss
+        loss = self.l1_coeff*lss1 + (1- self.l1_coeff)*lss2
+        
+        # save record of loss for monitoring
         self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+        
         return loss
 
     def validation_step(self, batch, batch_idx):
+
+        # ensure that models do not trai on validation
         self.visual_encoder.eval()
         self.inertial_encoder.eval()
         self.projector.eval()
+
         main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
+
+        # forward pass
         visual_emb, inertial_emb, lst1_emb, lst2_emb = self(main_patch_lst, inertial_data, patch_list_1, patch_list_2)
-        # loss = self.barlow_loss(visual_emb, inertial_emb)
-        l1 = self.vicreg_loss(visual_emb, inertial_emb)
-        
-        l2_lst = torch.zeros(25)
+
+        # compute Lss 1
+        lss1 = self.vicreg_loss(visual_emb, inertial_emb)
+
+        # compute Lss 2
+        lss2_lst = torch.zeros(25)
+
         for i in range(25):
             v_emb_1 = lst1_emb[i]
             v_emb_2 = lst2_emb[i]
-            l2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
-        l2 = torch.mean(l2_lst)
+            lss2_lst[i] = self.vicreg_loss(v_emb_1, v_emb_2)
 
-        loss = self.l1_coeff*l1 + (1- self.l1_coeff)*l2
-        # loss=l2
+        lss2 = torch.mean(lss2_lst)
+
+        # calculate combined loss
+        loss = self.l1_coeff*lss1 + (1- self.l1_coeff)*lss2
+
+        # save record of Lss 1, and Lss 2, and combined losses for monitoring
         self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        self.log('val_loss_l1', l1, prog_bar=True, logger=True, on_epoch=True, on_step=True)
-        self.log('val_loss_l2', l2, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+        self.log('val_loss_l1', lss1, prog_bar=True, logger=True, on_epoch=True, on_step=True)
+        self.log('val_loss_l2', lss2, prog_bar=True, logger=True, on_epoch=True, on_step=True)
         return loss
 
     def configure_optimizers(self):
+
+        # Use AdamW optimizer and no learning rate scheduling 
+        # Used linear warmup cosine annealing in the past, but it is not necessary
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
-        # scheduler = CosineAnnealingLR(optimizer, T_max = 15000, eta_min = 0.00001)
-        # scheduler = LinearWarmupCosineAnnealingLR(optimizer, warmup_epochs=15, max_epochs=60, warmup_start_lr = 3e-4, eta_min = 1e-5)
 
-        # return [optimizer], [scheduler]
         return optimizer
-    
-    # def configure_optimizers(self):
-    # 	optimizer = LARS(
-    # 		self.parameters(),
-    # 		lr=0,  # Initialize with a LR of 0
-    # 		weight_decay=self.weight_decay,
-    # 		weight_decay_filter=exclude_bias_and_norm,
-    # 		lars_adaptation_filter=exclude_bias_and_norm
-    # 	)
-
-    # 	total_training_steps = self.total_training_steps
-    # 	num_warmup_steps = self.compute_warmup(total_training_steps, self.num_warmup_steps_or_ratio)
-    # 	lr_scheduler = CosineWarmupScheduler(
-    # 		optimizer=optimizer,
-    # 		batch_size=self.per_device_batch_size,
-    # 		warmup_steps=num_warmup_steps,
-    # 		max_steps=total_training_steps,
-    # 		lr=self.lr
-    # 	)
-    # 	return [optimizer], [
-    # 		{
-    # 			'scheduler': lr_scheduler,  # The LR scheduler instance (required)
-    # 			'interval': 'step',  # The unit of the scheduler's step size
-    # 		}
-    # 	]
 
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
+
+        # save the batch data only every other epoch or during the last epoch
         if self.current_epoch % 2 == 0 or self.current_epoch == self.trainer.max_epochs-1:
 
             main_patch_lst, inertial_data, patch_list_1, patch_list_2, label = batch
+
+            # formatting
             visual_patch = main_patch_lst[0]
             label = np.asarray(label) 
             visual_patch = visual_patch.float()
             inertial_data = inertial_data.float()
+
+            # get encodings
             with torch.no_grad():
                 visual_encoding = self.visual_encoder(visual_patch.cuda())
                 inertial_encoding = self.inertial_encoder(inertial_data.cuda())
+
             visual_encoding = visual_encoding.cpu()
             inertial_encoding = inertial_encoding.cpu()
             visual_patch = visual_patch.cpu()
-               # visual_encoding = F.normalize(visual_encoding, dim=1)
             
+            # create lists for fist batch and append to them for following batches
             if batch_idx == 0:
                 self.visual_encoding = [visual_encoding[:, :]]
                 self.inertial_encoding = [inertial_encoding[:, :]]
@@ -328,120 +276,112 @@ class BarlowModel(pl.LightningModule):
                 self.inertial_encoding.append(inertial_encoding[:, :])
                 self.label = np.concatenate((self.label, label[:]))
 
+    # Find random groups of 25 images from each cluster
     def sample_clusters(self,clusters,elbow,vis_patch):
+
+            # initialize
             dic = {}
             for a in range(elbow):
                 dic[a] = []
+
+            # For each cluster, find indexes of images in that cluster and extract 25 of them
             for i in range(elbow):
-                idx = np.where(clusters ==i)
-                # print(clusters)
-                # print(clusters==i)
-                # print(idx)
+
+                idx = np.where(clusters == i)
+
                 for j in range(25):
+
+                    # select correct patch
                     chosen = np.random.randint(low=0,high=len(idx[0]))
-                    # print(chosen)
-                    # print(idx[0][chosen])
-                    # print(self.visual_patch.shape)
                     vp = vis_patch[idx[0][chosen], :, :, :]
-                    # print(vp.shape)
+
+                    # formatting for displayable image
                     vp = vp.cpu()
                     vp = vp.numpy()
                     vp= (vp * 255).astype(np.uint8)
-                    # vp = vp[0,:,:]
                     vp = np.moveaxis(vp, 0, -1)
-                    # print(vp.shape)
+
                     dic[i].append(vp)
 
             return dic, elbow
 
+    # create and save 25 image grids for each cluster from dictionary image info
+    # TODO: change file that images are saved to
     def img_clusters(self,dic, elbow):
-        # print(len(dic))
-        # print(len(dic[0]))
-        # print(len(dic[1]))
-        # print(len(dic[2]))
+
         for i in range(elbow):
-            # print(dic[0])
+
+            # initialize grid
             new_im = Image.new('RGB', (64*5,64*5))
+
             for j in range(25):
+
                 vp = dic[i][j]
-                # print(vp.shape)
+    
+                # patch number to grid location
                 h = int(j/5)
                 w = j%5
+
+                # format and paste individual patches to grid
                 im = Image.fromarray(vp)
                 im = im.convert('RGB')
-                # im.save("/home/dfarkash/garbage" +"/group"+str(j)+".png")
                 im.thumbnail((64,64))
                 new_im.paste(im, (h*64,w*64))
+
+            # save grid image
             new_im.save("/home/dfarkash/garbage" +"/group"+str(i)+".png")
 
     def on_validation_end(self) -> None:
-        # if not self.visual_patch: return
+        
+        # log visualization data only every other epoch or during the last epoch
         if self.current_epoch % 2 == 0 or self.current_epoch == self.trainer.max_epochs-1:
+
+            # catenate patch/encoding lists
             self.visual_patch = torch.cat(self.visual_patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
             self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
-            idx = np.arange(self.visual_encoding.shape[0])
 
-            # randomize numpy array
+            # randomize index selections
+            idx = np.arange(self.visual_encoding.shape[0])
             np.random.shuffle(idx)
 
-            # clusters , elbow = cluster_jackal.cluster(self.visual_encoding[idx[:2000],:])
-            # metadata = list(zip(self.label[idx[:2000]], clusters))
-
-
-            # metadata_header = ["labels","clusters"]
-            # out = cluster_jackal.accuracy_naive(self.visual_encoding[idx[:2000],:],self.label[idx[:2000]])
-
-            # self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
-
-            # self.logger.experiment.add_embedding(mat=self.visual_encoding[idx[:2000], :],
-            #                                      label_img=self.visual_patch[idx[:2000], :, :, :],
-            #                                      global_step=self.current_epoch,
-            #                                      metadata=metadata,
-            #                                      metadata_header = metadata_header
-            #                                     )
-            # del self.visual_patch, self.visual_encoding, self.label
-
+            # limit number of patches used to not fill memory
             ve = self.visual_encoding[idx[:2000],:]
-            # print(ve.size())
             ie = self.inertial_encoding[idx[:2000],:]
-
             vis_patch = self.visual_patch[idx[:2000],:,:,:]
-            # print(ie.size())
+
+            # deal with whether or not the inertial data should be included in the representation
             if self.imu_in_rep:
                 data = torch.cat((ve, ie), dim=1)
             else:
                 data = ve
-            # print(data.size())
 
-            clusters , elbow, model = cluster_jackal.cluster_model(data)
+            # get results of k-means model clustering
+            clusters, elbow, model = cluster_jackal.cluster_model(data)
 
-            # Save the cluster image grids
-            if self.current_epoch % 2 == 0: 
+            # Save the cluster image grids on the final epoch only
+            if self.current_epoch == self.trainer.max_epochs-1: 
                 a,b = self.sample_clusters(clusters,elbow, vis_patch)
                 self.img_clusters(a,b)
 
-            # Save the clusters
+            # Save the k-means, visual encoder, and inertial encoder models on the last epoch for only one of the gpus used
+            # only if user specified that they should be saved (uses all data instead of only 2000)
+            # TODO: change folder to which the models are saved
             if self.current_epoch == self.trainer.max_epochs-1 and self.save and torch.cuda.current_device() == 0:
-                # dic = {}
-                # dic["clusters"] = clusters
-                # dic["elbow"] = elbow
-                # dic["vis_patch"] = vis_patch
 
                 v = self.visual_encoding[idx,:]
-                # print(ve.size())
                 i = self.inertial_encoding[idx,:]
 
-                # print(ie.size())
                 if self.imu_in_rep:
                     d = torch.cat((v, i), dim=1)
                 else:
                     d = v
-                # print(data.size())
 
                 print("  Saved model: ")
+                # calculate and print accuracy
                 o= cluster_jackal.accuracy_naive_model(d,self.label[idx])
-
+                
+                # save k-means model
                 with open("/home/dfarkash/no_inert_rep_cost_data/model.pkl", "wb") as f:
                     pickle.dump(o, f)
 
@@ -450,16 +390,14 @@ class BarlowModel(pl.LightningModule):
                 # save the inertial encoder
                 torch.save(self.inertial_encoder.state_dict(), "/home/dfarkash/no_inert_rep_cost_data/inertial_encoder.pt")
                 
-                
-                
-
-            
+            # create labels/grouping for visualization
             metadata = list(zip(self.label[idx[:2000]], clusters))
-
-
             metadata_header = ["labels","clusters"]
+
+            # calculate and print accuracy
             out = cluster_jackal.accuracy_naive(data,self.label[idx[:2000]])
 
+            # log k-means accurcay and projection for tensorboard visualization
             self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
 
             self.logger.experiment.add_embedding(mat=data,
@@ -470,12 +408,6 @@ class BarlowModel(pl.LightningModule):
                                                )
 
             del self.visual_patch, self.visual_encoding, self.label
-
-
-
-
-
-
 
 
     @property
@@ -523,17 +455,17 @@ if __name__ == '__main__':
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # create dataloader and model using arguments
     dm = MyDataLoader(data_config_path=args.dataset_config_path, batch_size=args.batch_size)
 
-    model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
+    model = RepModel(lr=args.lr, latent_size=args.latent_size,
                         inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
                           per_device_batch_size=args.batch_size, l1_coeff = args.l1_coeff, 
                           imu_in_rep = bool(args.imu_in_rep), save = bool(args.save)).to(device)
 
     early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
-    # model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
-    #                                       filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_',
-    #                                       monitor='train_loss', verbose=True)
+    
+    # create model checkpoint only at end of training
     model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
                                           filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_', verbose=True)
 
@@ -547,14 +479,5 @@ if __name__ == '__main__':
                          logger=True,
                          )
 
-    # trainer = pl.Trainer(
-    #                      devices=1,
-    #                      max_epochs=args.epochs,
-    #                      callbacks=[model_checkpoint_cb],
-    #                      log_every_n_steps=10,
-    #                      strategy='ddp',
-    #                      num_sanity_val_steps=0,
-    #                      logger=True,
-    #                      )
-
+    # fit the model
     trainer.fit(model, dm)
