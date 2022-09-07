@@ -9,22 +9,39 @@ from sklearn.datasets import make_blobs
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 import random
 import numpy as np
 from itertools import product
+from sklearn.manifold import TSNE
+import pandas as pd
+import seaborn as sns
 
 # finds a k-means clustering chosen at the knee
 def cluster_model(data):
 
+    # print("yes___________THIS_______CHANGED")
+
+    # scaler = StandardScaler()
     data=data.cpu()
     data=data.numpy()
+    # data = scaler.fit_transform(data)
     
     # Data used to be scaled, now it is not
+
+    # # Use principal component analysis to reduce dimensionality
+    # pca = PCA(n_components=5)
+    # data = pca.fit_transform(data)
+
+
+    # n_components = 3
+    # tsne = TSNE(n_components)#, learning_rate=200,init='random')
+    # data = tsne.fit_transform(data)
 
     # kmeans parameters
     kmeans_kwargs = {
         "init": "random",
-        "n_init": 10,
+        "n_init": 20,
         "max_iter": 300,
         "random_state": 42,
     }
@@ -44,6 +61,8 @@ def cluster_model(data):
     kl = KneeLocator(
         range(1, 20), sse, curve="convex", direction="decreasing"
     )
+
+    # print(sse)
     
     return models[kl.elbow-1].labels_, kl.elbow, models[kl.elbow-1]
 
@@ -109,7 +128,7 @@ def accuracy_naive_model(data, labels):
 
 # same as cluster_model above, but does not return model (used for l1_only, l2_only models)
 def cluster(data):
-    scaler = StandardScaler()
+    # scaler = StandardScaler()
     data=data.cpu()
     data=data.numpy()
     # scaled_features = scaler.fit_transform(data)
@@ -136,7 +155,7 @@ def cluster(data):
     
     return models[kl.elbow-1].labels_, kl.elbow
 
-# does the same as accuracy_naive_model above, but does not return model (used for l1_only, l2_only models)
+# does the same as accuracy_naive_model above, but returns accuracy instead of model
 def accuracy_naive(data, labels):
 
     clusters, elbow, model = cluster_model(data)

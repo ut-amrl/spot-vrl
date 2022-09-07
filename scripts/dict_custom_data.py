@@ -35,7 +35,7 @@ class CustomDataset(Dataset):
 
         # The data itself includes some invalid indexes from which not all 25 patches can be extracted, so 
         # we load a dictionary that contains all of the valid indexes so that we know which ones to use
-        dict_path = file_path +"/valid_idxs.pkl"
+        dict_path = file_path +"/valid_idxs2.pkl"
 
         if os.path.exists(dict_path):
 
@@ -77,7 +77,9 @@ class CustomDataset(Dataset):
     # retrieve an individual piece of data
     def __getitem__(self, idx):
 
+
         idx_path = self.file_path + "/" + str(idx)
+
 
         # ensure that index is valid
         if not(self.dict[idx_path]):
