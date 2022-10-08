@@ -24,7 +24,7 @@ from spot_vrl.visual_learning.datasets import (
 from spot_vrl.imu_learning.losses import MarginRankingLoss
 from spot_vrl.visual_learning.network import (
     CostNet,
-    FullPairCostNet,
+    FullCostNet,
     EmbeddingNet,
     TripletNet,
 )
@@ -63,7 +63,7 @@ class EmbeddingGenerator:
 
     @torch.no_grad()  # type: ignore
     def generate_plot(
-        self, model: FullPairCostNet, dataset: Dict[str, torch.Tensor]
+        self, model: FullCostNet, dataset: Dict[str, torch.Tensor]
     ) -> plt.Figure:
         fig, ax = plt.subplots(sharey=True, constrained_layout=True)
 
@@ -83,8 +83,8 @@ class EmbeddingGenerator:
                 GPU memory if we pass in the entire dataset tensor at once.
                 """
                 end = min(start + self.batch_size, len(tensors))
-                embeddings.append(model.triplet_net.get_embedding(tensors[start:end]))
-            costs.append(model.cost_net(torch.cat(embeddings)).squeeze().cpu().numpy())
+                embeddings.append(model._triplet_net.get_embedding(tensors[start:end]))
+            costs.append(model._cost_net(torch.cat(embeddings)).squeeze().cpu().numpy())
             labels.append(label)
 
         positions = np.arange(0, len(labels))
@@ -95,7 +95,7 @@ class EmbeddingGenerator:
 
         return fig
 
-    def write(self, model: FullPairCostNet, epoch: int) -> None:
+    def write(self, model: FullCostNet, epoch: int) -> None:
         model.eval()
         with torch.no_grad():  # type: ignore
             self.tb_writer.add_figure(
@@ -115,7 +115,7 @@ class EmbeddingGenerator:
 
 def train_epoch(
     train_loader: DataLoader[Tuple[Tensor, Tensor, float]],
-    model: torch.nn.Module,
+    model: FullCostNet,
     loss_fn: MarginRankingLoss,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -134,7 +134,7 @@ def train_epoch(
         optimizer.zero_grad()
         cost1: Tensor
         cost2: Tensor
-        cost1, cost2 = model(t1, t2)
+        cost1, cost2 = model(t1), model(t2)
 
         loss = loss_fn(cost1.squeeze(dim=1), cost2.squeeze(dim=1), label)
         losses.append(loss.item())
@@ -146,7 +146,7 @@ def train_epoch(
 
 def test_epoch(
     val_loader: DataLoader[Tuple[Tensor, Tensor, float]],
-    model: FullPairCostNet,
+    model: FullCostNet,
     loss_fn: MarginRankingLoss,
     device: torch.device,
 ) -> float:
@@ -164,7 +164,7 @@ def test_epoch(
 
             cost1: Tensor
             cost2: Tensor
-            cost1, cost2 = model(t1, t2)
+            cost1, cost2 = model(t1), model(t2)
 
             loss = loss_fn(cost1.squeeze(dim=1), cost2.squeeze(dim=1), label)
             losses.append(loss.item())
@@ -236,7 +236,7 @@ def main() -> None:
     triplet_net.requires_grad_(False)
     cost_net = CostNet(embedding_dim)
 
-    model = FullPairCostNet(triplet_net, cost_net)
+    model = FullCostNet(triplet_net, cost_net)
     model = model.to(device)
 
     loss_fn = MarginRankingLoss(margin)
