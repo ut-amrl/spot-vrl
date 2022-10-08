@@ -11,50 +11,45 @@ from loguru import logger
 from spot_vrl.data.image_data import ImageData, SpotImage, CameraImage
 from spot_vrl.homography import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
-from spot_vrl.visual_learning.network import (
-    CostNet,
-    EmbeddingNet,
-    FullPairCostNet,
-    TripletNet,
-)
 
 # TODO: fix bad coding practices
 from spot_vrl.scripts.fuse_images import estimate_fps
 
 
-def load_cost_model(path: Path, embedding_dim: int) -> FullPairCostNet:
-    embedding_net = EmbeddingNet(embedding_dim)
-    triplet_net = TripletNet(embedding_net)
-    cost_net = CostNet(embedding_dim)
-
-    cost_model = FullPairCostNet(triplet_net, cost_net)
-    cost_model.load_state_dict(
-        torch.load(path, map_location=torch.device("cpu")),  # type: ignore
-        strict=True,
+def load_cost_model(path: Path) -> torch.jit.ScriptModule:
+    cost_model: torch.jit.ScriptModule = torch.jit.load(
+        path, map_location=torch.device("cpu")
     )
-    cost_model.requires_grad_(False)
     cost_model.eval()
     return cost_model
 
 
 @torch.no_grad()  # type: ignore
-def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
-    imgdata = ImageData.factory(filename, lazy=True)
+def make_cost_vid(filename: Path, cost_model: torch.jit.ScriptModule) -> None:
+    imgdata = ImageData.factory(filename, lazy=True)[::3]
 
-    fps = estimate_fps(imgdata)
+    # fps = estimate_fps(imgdata)
+    fps = 15
     video_writer = VideoWriter(Path("images") / f"{filename.stem}-cost.mp4", fps=fps)
 
     images: List[CameraImage]
-    for _, images in tqdm.tqdm(
-        imgdata, desc="Processing Cost Video", total=len(imgdata), dynamic_ncols=True
+    # for _, images in tqdm.tqdm(
+    #     imgdata, desc="Processing Cost Video", total=len(imgdata), dynamic_ncols=True
+    # ):
+    for images in tqdm.tqdm(
+        imgdata[1],
+        desc="Processing Cost Video",
+        total=len(imgdata[1]),
+        dynamic_ncols=True,
     ):
         # images = [image for image in images if "front" in image.frame_name]
         td = perspective_transform.TopDown(images)
-        view = td.get_view(resolution=150, horizon_dist=4.0)
+        view = td.get_view(resolution=150, horizon_dist=5.0)
         cost_view = np.zeros(view.shape, dtype=np.uint8)
 
         PATCH_SIZE = 60
-        MAX_COST = 2.5
+        MIN_COST = 0
+        MAX_COST = 2
         for row in range(0, view.shape[0], PATCH_SIZE):
             patch_y = np.s_[row : min(view.shape[0], row + PATCH_SIZE)]
 
@@ -77,7 +72,7 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
             if len(patch_imgs) == 0:
                 continue
 
-            costs = cost_model.get_cost(torch.cat(patch_imgs))
+            costs = cost_model(torch.cat(patch_imgs))
 
             for i in range(len(patch_slices)):
                 patch_x = patch_slices[i]
@@ -89,7 +84,7 @@ def make_cost_vid(filename: Path, cost_model: FullPairCostNet) -> None:
                 # gradient:
                 #   bright red = high cost
                 #   dark = low cost
-                red = cost / MAX_COST
+                red = (cost - MIN_COST) / (MAX_COST - MIN_COST)
                 red = np.clip(red, 0.0, 1.0)
                 cost_view[patch_y, patch_x, 2] = int(red * 255)
 
@@ -118,7 +113,6 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument(
         "--cost-model",
         type=Path,
@@ -133,11 +127,10 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    embedding_dim: int = args.embedding_dim
     cost_model_path: Path = args.cost_model
     datafile_path: Path = args.datafile
 
-    cost_model = load_cost_model(cost_model_path, embedding_dim)
+    cost_model = load_cost_model(cost_model_path)
     make_cost_vid(datafile_path, cost_model)
 
 

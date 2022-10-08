@@ -267,7 +267,7 @@ def main() -> None:
     pbar = tqdm.tqdm(range(epochs), desc="Training")
     for epoch in pbar:
         train_loss = train_epoch(train_loader, model, loss_fn, optimizer, device)
-        torch.save(model.state_dict(), save_dir / f"trained_epoch_{epoch}.pth")
+        torch.jit.script(model).save(save_dir / f"fullcostnet_{epoch:02d}.pt")
         val_loss = test_epoch(test_loader, model, loss_fn, device)
 
         tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore
