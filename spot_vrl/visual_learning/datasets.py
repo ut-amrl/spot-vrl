@@ -21,7 +21,7 @@ from spot_vrl.utils.video_writer import VideoWriter
 
 
 Patch = torch.Tensor
-"""Single channel uint8 image."""
+"""uint8 image patch"""
 
 Triplet = Tuple[Patch, Patch, Patch]
 
@@ -29,11 +29,13 @@ Triplet = Tuple[Patch, Patch, Patch]
 class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
     """Image dataset for single trajectories.
 
+    Each dataset item is a tuple of (anchor, similar) image patches.
+
     In general, the learning pipeline should generate datasets ahead of time and
     serialize them to disk using the `save()` method.
     """
 
-    output_dir: ClassVar[Path] = Path("visual-datasets")
+    output_dir: ClassVar[Path] = Path("visual-datasets/cache")
 
     def __init__(
         self,
