@@ -50,7 +50,7 @@ class EmbeddingNet(nn.Module):
         output: torch.Tensor = self.convnet(x)
         output = output.mean(dim=(2, 3))
         output = self.fc(output)
-        return F.normalize(output, p=2, dim=1)
+        return F.normalize(output, p=2.0, dim=1)
 
 
 class TripletNet(nn.Module):
