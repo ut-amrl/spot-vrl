@@ -88,7 +88,7 @@ class CostNet(nn.Module):
         # Enforce non-negative costs. The exponential function is used instead
         # of ReLU since ReLU will produce a 0 gradient if the network output is
         # all non-positive.
-        return torch.exp(out)
+        return torch.exp(out) / 16
 
 
 class FullPairCostNet(nn.Module):
