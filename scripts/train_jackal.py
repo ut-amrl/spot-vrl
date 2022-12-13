@@ -30,6 +30,7 @@ from scripts.optimizer import LARS, CosineWarmupScheduler
 # import librosa.display as display
 import albumentations as A
 from albumentations.pytorch import ToTensorV2
+import torchvision.transforms as transforms
 
 def exclude_bias_and_norm(p):
 	return p.ndim == 1
@@ -43,7 +44,7 @@ class UnFlatten(nn.Module):
 		return input.view(input.size(0), size, 2, 2)
 
 class CustomDataset(Dataset):
-	def __init__(self, pickle_file_path):
+	def __init__(self, pickle_file_path, train=False):
 		self.pickle_file_path = pickle_file_path
 		cprint('Loading data from {}'.format(pickle_file_path))
 		self.data = pickle.load(open(self.pickle_file_path, 'rb'))
@@ -53,7 +54,21 @@ class CustomDataset(Dataset):
 		# 	A.Normalize(mean=[0.5599, 0.5599, 0.5599], std=[0.1558, 0.1558, 0.1558]),
 		# 	ToTensorV2(),
 		# ])
-
+  
+		if train:
+			self.transforms = A.Compose([
+				A.Rotate(always_apply=False, p=1.0, limit=(-180, 180), interpolation=3, border_mode=0, value=(0, 0, 0), mask_value=None),
+				A.Blur(always_apply=False, p=1.0, blur_limit=(3, 7)),
+				A.MotionBlur(always_apply=False, p=1.0, blur_limit=(3, 10)),
+				A.RandomContrast(always_apply=False, p=1.0, limit=(-0.2, 0.2)),
+				A.Normalize(mean=[0., 0., 0.], std=[1., 1., 1.]),
+				ToTensorV2(),
+			])
+		else:
+			self.transforms = A.Compose([
+				A.Normalize(mean=[0., 0., 0.], std=[1., 1., 1.]),
+				ToTensorV2(),
+			])
 
 	def __len__(self):
 		return len(self.data['patches'])
@@ -62,15 +77,15 @@ class CustomDataset(Dataset):
 		# randomly pick a patch from the list
 		patch_1 = copy.deepcopy(random.sample(self.data['patches'][idx], 1)[0])
 		patch_1 = cv2.resize(patch_1, (128, 128))
-		patch_1 = patch_1.astype(np.float32) / 255.0 # normalize
-		# patch_1 = self.transforms(image=patch_1)['image']
-		patch_1 = np.moveaxis(patch_1, -1, 0)
+		# patch_1 = patch_1.astype(np.float32) / 255.0 # normalize
+		patch_1 = self.transforms(image=patch_1)['image']
+		# patch_1 = np.moveaxis(patch_1, -1, 0)
   
 		patch_2 = copy.deepcopy(random.sample(self.data['patches'][idx], 1)[0])
 		patch_2 = cv2.resize(patch_2, (128, 128))
-		patch_2 = patch_2.astype(np.float32) / 255.0 # normalize
-		# patch_2 = self.transforms(image=patch_2)['image']
-		patch_2 = np.moveaxis(patch_2, -1, 0)
+		# patch_2 = patch_2.astype(np.float32) / 255.0 # normalize
+		patch_2 = self.transforms(image=patch_2)['image']
+		# patch_2 = np.moveaxis(patch_2, -1, 0)
 
 		inertial_data = self.data['imu_jackal'][idx]
 		inertial_data = np.expand_dims(inertial_data, axis=0)
@@ -81,7 +96,6 @@ class CustomDataset(Dataset):
 		# plt.plot(ft)
 		# plt.savefig('hola.png')
 		# os.exit(0)
-  
   
 		return patch_1, patch_2, inertial_data, self.label
 
@@ -99,8 +113,8 @@ class MyDataLoader(pl.LightningDataModule):
 		train_data_path = data_config['train']
 		val_data_path = data_config['val']
 
-		self.train_dataset = ConcatDataset([CustomDataset(file) for file in train_data_path])
-		self.val_dataset = ConcatDataset([CustomDataset(file) for file in val_data_path])
+		self.train_dataset = ConcatDataset([CustomDataset(file, train=True) for file in train_data_path])
+		self.val_dataset = ConcatDataset([CustomDataset(file, train=False) for file in val_data_path])
   
 		# find mean, std statistics of inertial data in the training set
 		# print('Finding mean and std statistics of images in training...')
@@ -116,6 +130,42 @@ class MyDataLoader(pl.LightningDataModule):
 		# print('Std: ', self.std)
 		# del tmp, patch_list
   
+		inertial_statistics_file_path = '.'.join(self.data_config_path.split('.')[:-1]) + '_istat.yaml'
+		if not os.path.exists(inertial_statistics_file_path):
+			print(inertial_statistics_file_path, ' path does not exist. Computing statistics now..')
+			tmp = DataLoader(self.train_dataset, batch_size=1, shuffle=False)
+			inertial_list = []
+			for _, _, i, _ in tqdm(tmp):
+				inertial_list.append(i)
+			inertial_list = torch.cat(inertial_list, dim=0).reshape((-1, 1200)).numpy()
+			# mean_inertial, std_inertial = torch.mean(inertial_list, dim=0), torch.std(inertial_list, dim=0)
+			# self.inertial_stat = {'mean': mean_inertial.tolist(), 'std': std_inertial.tolist()}
+   
+			max_inertial, min_inertial = inertial_list.max(axis=0), inertial_list.min(axis=0)
+			self.inertial_stat = {'max': max_inertial.tolist(), 'min': min_inertial.tolist()}
+   
+			print('Inertial data statistics have been found.')
+
+			with open(inertial_statistics_file_path, 'w') as file:
+				yaml.dump(self.inertial_stat, file)
+		else:
+			print(inertial_statistics_file_path, ' path exists. Loading statistics now..')
+			with open(inertial_statistics_file_path, 'r') as file:
+				tmp = yaml.full_load(file)
+				# mean_inertial = np.array(tmp['mean'], dtype=np.float32)
+				# std_inertial = np.array(tmp['std'], dtype=np.float32)
+				# self.inertial_stat = {'mean': mean_inertial.tolist(), 'std': std_inertial.tolist()}
+				
+				max_inertial = np.array(tmp['max'], dtype=np.float32)
+				min_inertial = np.array(tmp['min'], dtype=np.float32)
+				self.inertial_stat = {'max': max_inertial, 'min': min_inertial}
+    
+    
+			print('Inertial data statistics have been loaded.')
+
+		# print('Mean: ', self.mean_inertial)
+		# print('Std: ', self.std_inertial)
+
 		print('Train dataset size:', len(self.train_dataset))
 		print('Val dataset size:', len(self.val_dataset))
 
@@ -128,7 +178,8 @@ class MyDataLoader(pl.LightningDataModule):
 class BarlowModel(pl.LightningModule):
 	def __init__(self, lr=3e-4, latent_size=64, inertial_shape=None,
 				 scale_loss:float=1.0/32, lambd:float=3.9e-6, weight_decay=1e-6,
-				 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1):
+				 per_device_batch_size=32, num_warmup_steps_or_ratio: Union[int, float] = 0.1, 
+     			 inertial_stats=None, only_vision=False):
 		super(BarlowModel, self).__init__()
 
 		self.save_hyperparameters(
@@ -141,11 +192,16 @@ class BarlowModel(pl.LightningModule):
 		)
 
 		self.scale_loss = scale_loss
+		self.only_vision = only_vision
 		self.lambd = lambd
 		self.weight_decay = weight_decay
 		self.lr = lr
 		self.per_device_batch_size = per_device_batch_size
 		self.num_warmup_steps_or_ratio = num_warmup_steps_or_ratio
+		# self.mean_inertial, self.std_inertial = torch.tensor(inertial_stats['mean'], requires_grad=False), \
+      	# 										torch.tensor(inertial_stats['std'], requires_grad=False)
+		self.max_inertial, self.min_inertial = torch.tensor(inertial_stats['max'], requires_grad=False), \
+											   torch.tensor(inertial_stats['min'], requires_grad=False)
 
 		self.visual_encoder = nn.Sequential(
 			nn.Conv2d(3, 16, kernel_size=3, stride=2, bias=False), # 63 x 63
@@ -160,26 +216,27 @@ class BarlowModel(pl.LightningModule):
 			nn.BatchNorm2d(256), nn.ReLU(inplace=True),
 			nn.AvgPool2d(kernel_size=2, stride=2),
 			Flatten(), # 256 output
-			nn.Linear(256, 128)
+			nn.Linear(256, 64)
 		)
 
-		self.inertial_encoder = nn.Sequential(
-			nn.Conv1d(1, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(8), nn.PReLU(),
-			nn.AvgPool1d(kernel_size=3, stride=2),
-			nn.Conv1d(8, 16, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(16), nn.PReLU(),
-			nn.AvgPool1d(kernel_size=3, stride=2),
-			nn.Conv1d(16, 32, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(32), nn.PReLU(),
-			nn.AvgPool1d(kernel_size=3, stride=2),
-			nn.Conv1d(32, 64, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(64), nn.PReLU(),
-			nn.AvgPool1d(kernel_size=2, stride=2),
-			nn.Flatten(),
-			nn.Linear(256, 128)
-		)
+		if not only_vision:
+			self.inertial_encoder = nn.Sequential(
+				nn.Conv1d(1, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(8), nn.PReLU(),
+				nn.AvgPool1d(kernel_size=3, stride=2),
+				nn.Conv1d(8, 16, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(16), nn.PReLU(),
+				nn.AvgPool1d(kernel_size=3, stride=2),
+				nn.Conv1d(16, 32, kernel_size=5, stride=2, bias=False), nn.BatchNorm1d(32), nn.PReLU(),
+				nn.AvgPool1d(kernel_size=3, stride=2),
+				nn.Conv1d(32, 64, kernel_size=3, stride=2, bias=False), nn.BatchNorm1d(64), nn.PReLU(),
+				nn.AvgPool1d(kernel_size=2, stride=2),
+				nn.Flatten(),
+				nn.Linear(256, 64)
+			)
 
 		self.projector = nn.Sequential(
-			nn.Linear(128, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
-			nn.Linear(latent_size, latent_size, bias=False), nn.BatchNorm1d(latent_size), nn.ReLU(inplace=True),
-			nn.Linear(latent_size, latent_size, bias=False)
+			nn.Linear(64, 128, bias=False), nn.ReLU(inplace=True),
+			nn.Linear(128, 128, bias=False), nn.ReLU(inplace=True),
+			nn.Linear(128, latent_size, bias=False)
 		)
 
 		# normalization layer for the representations z1 and z2
@@ -190,15 +247,31 @@ class BarlowModel(pl.LightningModule):
 		self.cov_coeff = 1.0
 
 	def forward(self, visual_patch, imu_history):
-		v_encoded = self.visual_encoder(visual_patch)
-		i_encoded = self.inertial_encoder(imu_history)
+		
+		if not self.only_vision: # min-max normalize the inertial data
+			with torch.no_grad():
+				# inertial_mean = self.mean_inertial.to(imu_history.device)
+				# inertial_std = self.std_inertial.to(imu_history.device)
+				# imu_history = (imu_history - inertial_mean) / inertial_std
+				self.min_inertial = self.min_inertial.to(imu_history.device)
+				self.max_inertial = self.max_inertial.to(imu_history.device)
+				imu_history = (imu_history - self.min_inertial) / (self.max_inertial - self.min_inertial)
+   
+		# print('imu history shape : ', imu_history.shape)
+		# imu_history = self.normalize_inertial(imu_history)
+
+		z1 = self.visual_encoder(visual_patch)
+		if not self.only_vision:
+			z2 = self.inertial_encoder(imu_history)
+		else:
+			z2 = self.visual_encoder(imu_history)
   
 		# L2 normalize along encoding dimension
 		# v_encoded = F.normalize(v_encoded, dim=1)
 		# i_encoded = F.normalize(i_encoded, dim=1)
 	
-		z1 = self.projector(v_encoded)
-		z2 = self.projector(i_encoded)
+		z1 = self.projector(z1)
+		z2 = self.projector(z2)
   
 		return z1, z2
 
@@ -251,26 +324,43 @@ class BarlowModel(pl.LightningModule):
 
 	def training_step(self, batch, batch_idx):
 		visual, visual2, inertial, _ = batch
-		visual_emb, inertial_emb = self(visual, inertial)
+		if self.only_vision: emb1, emb2 = self.forward(visual, visual2)
+		else: emb1, emb2 = self.forward(visual, inertial)
+  
 		# loss = self.barlow_loss(visual_emb, inertial_emb)
-		loss = self.vicreg_loss(visual_emb, inertial_emb)
+		loss = self.vicreg_loss(emb1, emb2)
 		self.log('train_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
 		return loss
 
 	def validation_step(self, batch, batch_idx):
-		self.visual_encoder.eval()
-		self.inertial_encoder.eval()
-		self.projector.eval()
 		visual, visual2, inertial, _ = batch
-		visual_emb, inertial_emb = self(visual, inertial)
+		if self.only_vision: emb1, emb2 = self.forward(visual, visual2)
+		else: emb1, emb2 = self.forward(visual, inertial)
+  
 		# loss = self.barlow_loss(visual_emb, inertial_emb)
-		loss = self.vicreg_loss(visual_emb, inertial_emb)
+		loss = self.vicreg_loss(emb1, emb2)
 		self.log('val_loss', loss, prog_bar=True, logger=True, on_epoch=True, on_step=True)
 		return loss
 
 	def configure_optimizers(self):
 		return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
-	
+  
+		# optimizer = LARS(self.parameters(), lr=0, weight_decay=self.weight_decay, weight_decay_filter=exclude_bias_and_norm, lars_adaptation_filter=exclude_bias_and_norm)
+		# num_warmup_steps = self.compute_warmup(1000, self.num_warmup_steps_or_ratio)
+		# lr_scheduler = CosineWarmupScheduler(
+		# 	optimizer=optimizer,
+		# 	batch_size=self.per_device_batch_size,
+		# 	warmup_steps=num_warmup_steps,
+		# 	max_steps=1000,
+		# 	lr=self.lr
+		# )
+		# return [optimizer], [
+		# 	{
+		# 		'scheduler': lr_scheduler,  # The LR scheduler instance (required)
+		# 		'interval': 'step',  # The unit of the scheduler's step size
+		# 	}
+		# ]
+  
 	# def configure_optimizers(self):
 	# 	optimizer = LARS(
 	# 		self.parameters(),
@@ -360,8 +450,9 @@ if __name__ == '__main__':
 						help='model directory (default: models)')
 	parser.add_argument('--num_gpus', type=int, default=8, metavar='N',
 						help='number of GPUs to use (default: 1)')
-	parser.add_argument('--latent_size', type=int, default=512, metavar='N',
+	parser.add_argument('--latent_size', type=int, default=128, metavar='N',
 						help='Size of the common latent space (default: 512)')
+	parser.add_argument('--only_vision', action='store_true', default=False)
 	parser.add_argument('--dataset_config_path', type=str, default='jackal_data/dataset_config_haresh_local.yaml')
 	args = parser.parse_args()
 	
@@ -372,7 +463,8 @@ if __name__ == '__main__':
 	dm = MyDataLoader(data_config_path=args.dataset_config_path, batch_size=args.batch_size)
 	model = BarlowModel(lr=args.lr, latent_size=args.latent_size,
 						inertial_shape=1200, scale_loss=1.0, lambd=1./args.latent_size, 
-      					per_device_batch_size=args.batch_size).to(device)
+						per_device_batch_size=args.batch_size, inertial_stats = dm.inertial_stat,
+						only_vision=args.only_vision).to(device)
 
 	early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
 	model_checkpoint_cb = ModelCheckpoint(dirpath='models/',
@@ -380,13 +472,15 @@ if __name__ == '__main__':
 										  monitor='val_loss', verbose=True)
 
 	print("Training model...")
-	trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),
+	trainer = pl.Trainer(devices=args.num_gpus,
+						 accelerator="gpu",
 						 max_epochs=args.epochs,
 						 callbacks=[model_checkpoint_cb],
 						 log_every_n_steps=10,
-						 distributed_backend='ddp',
+						 strategy='ddp',
 						 num_sanity_val_steps=0,
 						 logger=True,
+					     sync_batchnorm=True,
 						 )
 
 	trainer.fit(model, dm)
