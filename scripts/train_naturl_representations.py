@@ -17,6 +17,7 @@ from datetime import datetime
 import argparse
 import yaml
 import os
+from sklearn import metrics
 
 from scipy.signal import periodogram
 from scripts.models import ProprioceptionModel, VisualEncoderModel
@@ -24,6 +25,7 @@ from scripts.utils import process_feet_data
 
 import albumentations as A
 from torchvision import transforms
+from PIL import Image
 
 import tensorboard as tb
 
@@ -59,8 +61,8 @@ class TerrainDataset(Dataset):
             # use albumentation for data augmentation
             self.transforms = A.Compose([
                 A.Flip(always_apply=False, p=0.5),
-                A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.2, 0.3), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
-                A.RandomBrightness(always_apply=False, p=0.5, limit=(-0.2, 0.2)),
+                # A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.2, 0.3), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
+                # A.RandomBrightness(always_apply=False, p=0.5, limit=(-0.2, 0.2)),
             ])
         else:
             self.transforms = None
@@ -114,7 +116,7 @@ class TerrainDataset(Dataset):
         # transpose
         patch1, patch2 = np.transpose(patch1, (2, 0, 1)), np.transpose(patch2, (2, 0, 1))
         
-        return np.asarray(patch1), np.asarray(patch2), imu, leg, feet, self.label
+        return np.asarray(patch1), np.asarray(patch2), imu, leg, feet, self.label, idx
 
 # create pytorch lightning data module
 class NATURLDataModule(pl.LightningDataModule):
@@ -185,7 +187,7 @@ class NATURLDataModule(pl.LightningDataModule):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, drop_last= True if len(self.train_dataset) % self.batch_size != 0 else False)
     
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, drop_last= True if len(self.val_dataset) % self.batch_size != 0 else False)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, drop_last= False)
 
 
 class NATURLRepresentationsModel(pl.LightningModule):
@@ -218,6 +220,8 @@ class NATURLRepresentationsModel(pl.LightningModule):
         self.sim_coeff = 25.0
         self.std_coeff = 25.0
         self.cov_coeff = 1.0
+        
+        self.max_acc = None
         
     
     def forward(self, patch1, patch2, inertial_data, leg, feet):
@@ -261,7 +265,7 @@ class NATURLRepresentationsModel(pl.LightningModule):
             torch.distributed.all_reduce(c)
             
     def training_step(self, batch, batch_idx):
-        patch1, patch2, inertial, leg, feet, label = batch
+        patch1, patch2, inertial, leg, feet, label, _ = batch
         
         # combine inertial and leg data
         # inertial = torch.cat((inertial, leg, feet), dim=-1)
@@ -282,7 +286,7 @@ class NATURLRepresentationsModel(pl.LightningModule):
         return loss
     
     def validation_step(self, batch, batch_idx):
-        patch1, patch2, inertial, leg, feet, label = batch
+        patch1, patch2, inertial, leg, feet, label, _ = batch
         
         # combine inertial and leg data
         # inertial = torch.cat((inertial, leg, feet), dim=-1)
@@ -303,14 +307,14 @@ class NATURLRepresentationsModel(pl.LightningModule):
         return loss
     
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
+        return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
         # return torch.optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
         # return torch.optim.RMSprop(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
     
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
         # save the batch data only every other epoch or during the last epoch
         if self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs-1:
-            patch1, patch2, inertial, leg, feet, label = batch
+            patch1, patch2, inertial, leg, feet, label, sampleidx = batch
             # combine inertial and leg data
             # inertial = torch.cat((inertial, leg, feet), dim=-1)
         
@@ -319,23 +323,84 @@ class NATURLRepresentationsModel(pl.LightningModule):
             zv1, zi = zv1.cpu(), zi.cpu()
             patch1 = patch1.cpu()
             label = np.asarray(label)
+            sampleidx = sampleidx.cpu()
             
             if batch_idx == 0:
                 self.visual_encoding = [zv1]
                 self.inertial_encoding = [zi]
                 self.label = label
                 self.visual_patch = [patch1]
+                self.sampleidx = [sampleidx]
             else:
                 self.visual_encoding.append(zv1)
                 self.inertial_encoding.append(zi)
                 self.label = np.concatenate((self.label, label))
                 self.visual_patch.append(patch1)
+                self.sampleidx.append(sampleidx)
+                
+    # Find random groups of 25 images from each cluster
+    def sample_clusters(self, clusters, elbow, vis_patch):
+
+            # initialize
+            dic = {}
+            for a in range(elbow):
+                dic[a] = []
+
+            # For each cluster, find indexes of images in that cluster and extract 25 of them
+            for i in range(elbow):
+
+                idx = np.where(clusters == i)
+
+                for _ in range(25):
+
+                    # select correct patch
+                    chosen = np.random.randint(low=0,high=len(idx[0]))
+                    vp = vis_patch[idx[0][chosen], :, :, :]
+
+                    # formatting for displayable image
+                    vp = vp.cpu()
+                    vp = vp.numpy()
+                    vp= (vp * 255).astype(np.uint8)
+                    vp = np.moveaxis(vp, 0, -1)
+
+                    dic[i].append(vp)
+
+            return dic
+        
+    # create and save 25 image grids for each cluster from dictionary image info
+    # TODO: change file that images are saved to
+    def img_clusters(self, dic, elbow, path_root="./models/"):
+
+        for i in range(elbow):
+
+            # initialize grid
+            new_im = Image.new('RGB', (64*5,64*5))
+
+            for j in range(25):
+
+                vp = dic[i][j]
+    
+                # patch number to grid location
+                h = int(j/5)
+                w = j%5
+
+                # format and paste individual patches to grid
+                im = Image.fromarray(vp)
+                im = im.convert('RGB')
+                im.thumbnail((64,64))
+                new_im.paste(im, (h*64,w*64))
+
+            # save grid image
+            new_im.save(path_root +"group"+str(i)+".png")
     
     def on_validation_end(self):
         if (self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs-1) and torch.cuda.current_device() == 0:
             self.visual_patch = torch.cat(self.visual_patch, dim=0)
             self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
             self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
+            self.sampleidx = torch.cat(self.sampleidx, dim=0)
+            
+            cprint('Visual Encoding Shape: {}'.format(self.visual_encoding.shape), 'white', attrs=['bold'])
             
             # randomize index selections
             idx = np.arange(self.visual_encoding.shape[0])
@@ -349,23 +414,70 @@ class NATURLRepresentationsModel(pl.LightningModule):
             
             data = torch.cat((ve, vi), dim=-1)
             
-            # get results of k-means clustering
-            # clusters, elbow, model = cluster_jackal.cluster_model(data)
-            
             # calculate and print accuracy
             cprint('finding accuracy...', 'yellow')
             out = cluster_jackal.accuracy_naive(data, ll, label_types=list(terrain_label.keys()))
+            fms, ari, ss, kmeanslabels, kmeanselbow, kmeansmodel = cluster_jackal.compute_fms_ari(data, ll)
+            
+            if not self.max_acc or out > self.max_acc:
+                self.max_acc = out
+                self.kmeanslabels, self.kmeanselbow, self.kmeansmodel = kmeanslabels, kmeanselbow, kmeansmodel
+                self.vispatchsaved = torch.clone(vis_patch)
+                self.sampleidxsaved = torch.clone(self.sampleidx)
+                cprint('best model saved', 'green')
                 
             # log k-means accurcay and projection for tensorboard visualization
             self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
+            self.logger.experiment.add_scalar("Fowlkes-Mallows score", fms, self.current_epoch)
+            self.logger.experiment.add_scalar("Adjusted Rand Index", ari, self.current_epoch)
+            self.logger.experiment.add_scalar("Silhouette score", ss, self.current_epoch)
+            
+            # Save the cluster image grids on the final epoch only
+            if self.current_epoch == self.trainer.max_epochs-1:
+                path_root = "./models/acc_" + str(round(self.max_acc, 5)) + "_" + str(datetime.now().strftime("%d-%m-%Y-%H-%M-%S")) + "_" + "/"
+                self.save_models(path_root)
+                    
             
             if self.current_epoch % 10 == 0:
-                self.logger.experiment.add_embedding(mat=data, label_img=vis_patch, global_step=self.current_epoch, metadata=ll, tag='visual_encoding')
+                self.logger.experiment.add_embedding(mat=data[idx[:2500]], label_img=vis_patch[idx[:2500]], global_step=self.current_epoch, metadata=ll[idx[:2500]], tag='visual_encoding')
             del self.visual_patch, self.visual_encoding, self.inertial_encoding, self.label
     
+    def save_models(self, path_root='./models/'):
+        cprint('saving models...', 'yellow', attrs=['bold'])
+        if not os.path.exists(path_root): 
+            cprint('creating directory: ' + path_root, 'yellow')
+            os.makedirs(path_root)
+        else:
+            cprint('directory already exists: ' + path_root, 'red')
+        
+        dic = self.sample_clusters(self.kmeanslabels, self.kmeanselbow, self.vispatchsaved)
+        self.img_clusters(dic, self.kmeanselbow, path_root=path_root)
+        
+        # ll = np.asarray([terrain_label[l] for l in ll])
+        # dic = self.sample_clusters(ll, 8, vis_patch)
+        # self.img_clusters(dic, 8)
+        
+        # save the kmeans model
+        with open(os.path.join(path_root, 'kmeansmodel.pkl'), 'wb') as f:
+            pickle.dump(self.kmeansmodel, f)
+            cprint('kmeans model saved', 'green')
+            
+        # save the kmeans labels, true labels, and sample indices
+        torch.save(self.kmeanslabels, os.path.join(path_root, 'kmeanslabels.pt'))
+        torch.save(self.sampleidxsaved, os.path.join(path_root, 'sampleidx.pt'))
+            
+        # save the visual encoder
+        torch.save(self.visual_encoder.state_dict(), os.path.join(path_root, 'visual_encoder.pt'))
+        cprint('visual encoder saved', 'green')
+        # save the proprioceptive encoder
+        torch.save(self.proprioceptive_encoder.state_dict(), os.path.join(path_root, 'proprioceptive_encoder.pt'))
+        cprint('proprioceptive encoder saved', 'green')
+        cprint('All models successfully saved', 'green', attrs=['bold'])
+        
+        
 if __name__ == '__main__':
     
-    parser = argparse.ArgumentParser(description='Dual Auto Encoder')
+    parser = argparse.ArgumentParser(description='Train representations using the NATURL framework')
     parser.add_argument('--batch_size', '-b', type=int, default=256, metavar='N',
                         help='input batch size for training (default: 512)')
     parser.add_argument('--epochs', type=int, default=120, metavar='N',
@@ -390,9 +502,9 @@ if __name__ == '__main__':
     
     early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
     # create model checkpoint only at end of training
-    model_checkpoint_cb = ModelCheckpoint(dirpath='models/', filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_', verbose=True)
+    model_checkpoint_cb = ModelCheckpoint(dirpath='models/', filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_', verbose=True, monitor='val_loss')
     
-    print("Training model...")
+    print("Training the representation learning model...")
     trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),
                          max_epochs=args.epochs,
                         #  callbacks=[model_checkpoint_cb],
@@ -405,12 +517,6 @@ if __name__ == '__main__':
 
     # fit the model
     trainer.fit(model, dm)
-    
-    # save the models as .pt files
-    # save visual encoder
-    torch.save(model.visual_encoder.state_dict(), 'models/visual_encoder.pt')
-    # save proprioceptive encoder
-    torch.save(model.proprioceptive_encoder.state_dict(), 'models/inertial_encoder.pt')
     
     
     

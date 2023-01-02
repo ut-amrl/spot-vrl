@@ -16,6 +16,7 @@ from itertools import product
 from sklearn.manifold import TSNE
 import pandas as pd
 import seaborn as sns
+from sklearn import metrics
 
 # finds a k-means clustering chosen at the knee
 def cluster_model(data):
@@ -153,6 +154,17 @@ def cluster(data):
     )
     
     return models[kl.elbow-1].labels_, kl.elbow
+
+def compute_fms_ari(data, labels):
+    clusters, elbow, model = cluster_model(data)
+    # compute the fowlkes_mallows_score
+    fms = metrics.fowlkes_mallows_score(labels, clusters)
+    # compute the rand_score
+    ari = metrics.adjusted_rand_score(labels, clusters)
+    # compute the silhouette_score
+    ss = metrics.silhouette_score(data, clusters, metric='euclidean')
+    return fms, ari, ss, clusters, elbow, model
+    
 
 # does the same as accuracy_naive_model above, but returns accuracy instead of model
 def accuracy_naive(data, labels, label_types=["rock", "mulch", "pebble", "speedway" ,"grass", "concrete", "brick"]):
