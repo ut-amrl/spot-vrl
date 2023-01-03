@@ -51,7 +51,6 @@ def cluster_model(data):
     sse = []
     models = []
     for k in range(1, 20):
-
         # create and fit k-means model
         kmeans = KMeans(n_clusters=k, **kmeans_kwargs)
         kmeans.fit(data)

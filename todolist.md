@@ -18,7 +18,9 @@
     - We are saving the wrapped model in scripts/train_naturl_cost.py
     - scripts/plot_naturl_cost.py contains scripts that can be used to plot the cost function network, using the wrapped model
 
-- [ ] QOL Improvement- Make the NATURL representation learning script (cost/train_naturl_representations.py) train parallely on multiple GPUs.
+- [X] QOL Improvement- Make the NATURL representation learning script (cost/train_naturl_representations.py) train parallely on multiple GPUs.
+    - Now can train both representations and cost function network parallely on multiple GPUs.
+    
 - [ ] Design the experiments. Come up with a list of training terrains and the scenarios we will need to train and test the NATURL algorithm on the spot. 
 - [ ] Train the encoder and cost function network for the appropriate terrains and sync with Elvin for the actual experiments on the spot.
 - [ ] Start writing the pre-writing form for this paper. Start writing the Abstract and Introduction, Related Work and Experimental Setup sections.

@@ -25,6 +25,7 @@ from scripts.utils import process_feet_data
 
 import albumentations as A
 from torchvision import transforms
+from tqdm import tqdm
 from PIL import Image
 
 import tensorboard as tb
@@ -393,14 +394,52 @@ class NATURLRepresentationsModel(pl.LightningModule):
             # save grid image
             new_im.save(path_root +"group"+str(i)+".png")
     
+    def validate(self):
+        print('Running validation...')
+        dataset = self.trainer.datamodule.val_dataset
+        self.visual_encoding, self.inertial_encoding, self.label, self.visual_patch, self.sampleidx = [], [], [], [], []
+        # create dataloader for validation
+        dataset = DataLoader(dataset, batch_size=512, shuffle=False, num_workers=4)
+        
+        for patch1, patch2, inertial, leg, feet, label, sampleidx in tqdm(dataset):
+            # convert to torch tensors
+            # patch1, patch2, inertial, leg, feet = torch.from_numpy(patch1), torch.from_numpy(patch2), torch.from_numpy(inertial), torch.from_numpy(leg), torch.from_numpy(feet)
+            # move to device
+            patch1, patch2, inertial, leg, feet = patch1.to(self.device), patch2.to(self.device), inertial.to(self.device), leg.to(self.device), feet.to(self.device)
+            
+            with torch.no_grad():
+                # _, _, _, zv1, zv2, zi = self.forward(patch1.unsqueeze(0), patch2.unsqueeze(0), inertial.unsqueeze(0), leg.unsqueeze(0), feet.unsqueeze(0))
+                _, _, _, zv1, zv2, zi = self.forward(patch1, patch2, inertial, leg, feet)
+                zv1, zi = zv1.cpu(), zi.cpu()
+                patch1 = patch1.cpu()
+                
+            self.visual_patch.append(patch1)
+            self.visual_encoding.append(zv1)
+            self.inertial_encoding.append(zi)
+            self.label.append(np.asarray(label))
+            self.sampleidx.append(sampleidx)
+        
+        self.visual_patch = torch.cat(self.visual_patch, dim=0)
+        self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
+        self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
+        self.sampleidx = torch.cat(self.sampleidx, dim=0)
+        self.label = np.concatenate(self.label)
+        
+        print('Visual Encoding Shape: {}'.format(self.visual_encoding.shape))
+        print('Inertial Encoding Shape: {}'.format(self.inertial_encoding.shape))
+        print('Visual Patch Shape: {}'.format(self.visual_patch.shape))
+        print('Sample Index Shape: {}'.format(self.sampleidx.shape))
+    
     def on_validation_end(self):
         if (self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs-1) and torch.cuda.current_device() == 0:
-            self.visual_patch = torch.cat(self.visual_patch, dim=0)
-            self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
-            self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
-            self.sampleidx = torch.cat(self.sampleidx, dim=0)
+            self.validate()
             
-            cprint('Visual Encoding Shape: {}'.format(self.visual_encoding.shape), 'white', attrs=['bold'])
+            # self.visual_patch = torch.cat(self.visual_patch, dim=0)
+            # self.visual_encoding = torch.cat(self.visual_encoding, dim=0)
+            # self.inertial_encoding = torch.cat(self.inertial_encoding, dim=0)
+            # self.sampleidx = torch.cat(self.sampleidx, dim=0)
+            
+            # cprint('Visual Encoding Shape: {}'.format(self.visual_encoding.shape), 'white', attrs=['bold'])
             
             # randomize index selections
             idx = np.arange(self.visual_encoding.shape[0])
