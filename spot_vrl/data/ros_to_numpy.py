@@ -3,7 +3,7 @@ This module provides helper functions to convert ROS messages to numpy
 structures.
 """
 
-from typing import Any, Dict, Tuple, Type
+from typing import Any, Dict, List, Tuple, Type, Union
 
 import numpy as np
 import numpy.typing as npt
@@ -72,8 +72,10 @@ def body_tform_frames(
     return body_tform_frames
 
 
-def est_kinect_rot(imu: sensor_msgs.msg.Imu) -> npt.NDArray[np.float64]:
-    """Estimates the rotation of an Azure Kinect DK using an IMU reading taken
+def est_kinect_rot(
+    imu: Union[sensor_msgs.msg.Imu, List[sensor_msgs.msg.Imu]]
+) -> npt.NDArray[np.float64]:
+    """Estimates the rotation of an Azure Kinect DK using IMU readings taken
     at rest.
 
     Uses Rodrigues' rotation formula to calculate the rotation from the reported
@@ -84,8 +86,23 @@ def est_kinect_rot(imu: sensor_msgs.msg.Imu) -> npt.NDArray[np.float64]:
     (Thus, when a Kinect is flat and at rest, acceleration due to gravity is
     reported as approximately [0, 0, -9.8])
     """
-    accel = imu.linear_acceleration
-    v_g = np.array([accel.x, accel.y, accel.z], dtype=np.float64)
+    readings: List[sensor_msgs.msg.Imu]
+    if type(imu) is list:
+        readings = imu
+    else:
+        readings = [imu]
+
+    accels = []
+    for reading in readings:
+        accels.append(
+            [
+                reading.linear_acceleration.x,
+                reading.linear_acceleration.y,
+                reading.linear_acceleration.z,
+            ]
+        )
+    v_g = np.median(np.array(accels, dtype=np.float64), axis=0)
+
     unit_up = np.array([0, 0, -1], dtype=np.float64)
 
     v_g /= np.linalg.norm(v_g)

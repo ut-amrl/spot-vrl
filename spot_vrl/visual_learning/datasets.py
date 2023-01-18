@@ -5,7 +5,7 @@ import random
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Sequence, Set, Tuple, Union, Optional
+from typing import Any, ClassVar, Dict, List, Set, Tuple, Union, Optional
 
 import cv2
 import numpy as np
@@ -21,7 +21,7 @@ from spot_vrl.utils.video_writer import VideoWriter
 
 
 Patch = torch.Tensor
-"""Single channel uint8 image."""
+"""uint8 image patch"""
 
 Triplet = Tuple[Patch, Patch, Patch]
 
@@ -29,11 +29,13 @@ Triplet = Tuple[Patch, Patch, Patch]
 class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
     """Image dataset for single trajectories.
 
+    Each dataset item is a tuple of (anchor, similar) image patches.
+
     In general, the learning pipeline should generate datasets ahead of time and
     serialize them to disk using the `save()` method.
     """
 
-    output_dir: ClassVar[Path] = Path("visual-datasets")
+    output_dir: ClassVar[Path] = Path("visual-datasets/cache")
 
     def __init__(
         self,
@@ -216,12 +218,15 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
 
         # Use the clearest possible view of the patch as an anchor
         a_id = max(patch_ids)
+
+        # Use a random view of this patch as a positive
         s_id = np.random.choice(patch_ids, size=1)[0]
 
         # Debug option: use only the clearest and fuzziest patches
         # s_id = min(patch_ids)
 
         # Completely random sampling
+        # singleton = len(patch_ids) == 1
         # a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
 
         return self.patches[viewpoint][a_id], self.patches[viewpoint][s_id]
@@ -294,22 +299,13 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
             [len(ds) for ds in self._categories.values()], dtype=np.int_
         ).tolist()
 
-    def _get_random_datum(self, from_cats: Sequence[str] = ()) -> Tuple[Patch, Patch]:
-        """Returns a random (anchor, positive) pair from one of the specified
-        categories.
-
-        Each category in the sequence has equal probability of being chosen.
+    def _get_random_datum(self, category: str) -> Tuple[Patch, Patch]:
+        """Returns a random (anchor, positive) pair from the specified category.
 
         Args:
-            from_cats (tuple[str] | list[str]): A sequence of strings containing
-                the categories to sample from. If the sequence is empty, all of
-                the internal categories are used instead.
+            category (str): The category to sample from.
         """
-        if not from_cats:
-            from_cats = tuple(self._categories.keys())
-
-        cat: str = self._rng.choice(from_cats)
-        dataset = self._categories[cat]
+        dataset = self._categories[category]
         datum: Tuple[Patch, Patch] = dataset[self._rng.integers(len(dataset))]
         return datum
 
@@ -318,24 +314,14 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
         return self._cumulative_sizes[-1]
 
     def __getitem__(self, index: int) -> Triplet:
-        index = index % self._cumulative_sizes[-1]
+        # completely random selection of two different terrains
+        terrain1, terrain2 = random.sample(self._categories.keys(), 2)
 
-        cat_idx: int = np.searchsorted(
-            self._cumulative_sizes, index, side="right"
-        ).astype(int)
+        anchor, _ = self._get_random_datum(terrain1)
+        _, pos = self._get_random_datum(terrain1)
 
-        if cat_idx > 0:
-            index -= self._cumulative_sizes[cat_idx - 1]
-
-        # Python spec enforces (iteration order == insertion order)
-        cat_names = tuple(self._categories.keys())
-
-        # anchor, pos = self._categories[cat_names[cat_idx]][index]
-        anchor, _ = self._categories[cat_names[cat_idx]][index]
-        _, pos = self._get_random_datum((cat_names[cat_idx],))
-        neg, _ = self._get_random_datum(
-            (*cat_names[:cat_idx], *cat_names[cat_idx + 1 :])
-        )
+        # neg, _ = self._get_random_datum(terrain2)
+        _, neg = self._get_random_datum(terrain2)
 
         return anchor, pos, neg
 
@@ -349,9 +335,18 @@ class TripletTrainingDataset(BaseTripletDataset):
         super().__init__()
 
     def __len__(self) -> int:
-        k = len(self._categories)
-        k = k * (k - 1) // 2
-        return super().__len__() * k
+        # k = len(self._categories)
+        # k = k * (k - 1) // 2
+        # return super().__len__() * k
+
+        # inflate the dataset size based on num categories
+        # TODO(eyang): why? is optimization not stable when this
+        # is too low
+        size = len(self._categories) * super().__len__()
+
+        # deflate the dataset size if it's really large
+        # so that training isn't extremely slow
+        return min(size, 100_000)
 
 
 class TripletHoldoutDataset(BaseTripletDataset):
@@ -417,7 +412,7 @@ class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]])
 
     def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, float]:
         (first_cat, second_cat), label = random.choice(tuple(self.orderings.items()))
-        first_t = self.triplet_dataset._get_random_datum((first_cat,))[0]
-        second_t = self.triplet_dataset._get_random_datum((second_cat,))[0]
+        first_t = self.triplet_dataset._get_random_datum(first_cat)[0]
+        second_t = self.triplet_dataset._get_random_datum(second_cat)[0]
 
         return first_t, second_t, label

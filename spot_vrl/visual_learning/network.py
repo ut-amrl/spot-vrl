@@ -1,5 +1,3 @@
-from typing import Tuple
-
 import torch
 import torch.nn.functional as F
 from torch import nn
@@ -50,7 +48,7 @@ class EmbeddingNet(nn.Module):
         output: torch.Tensor = self.convnet(x)
         output = output.mean(dim=(2, 3))
         output = self.fc(output)
-        return F.normalize(output, p=2, dim=1)
+        return F.normalize(output, p=2.0, dim=1)
 
 
 class TripletNet(nn.Module):
@@ -88,23 +86,17 @@ class CostNet(nn.Module):
         # Enforce non-negative costs. The exponential function is used instead
         # of ReLU since ReLU will produce a 0 gradient if the network output is
         # all non-positive.
-        return torch.exp(out)
+        return torch.exp(out) / 16
 
 
-class FullPairCostNet(nn.Module):
+class FullCostNet(nn.Module):
     def __init__(self, triplet_net: TripletNet, cost_net: CostNet) -> None:
         super().__init__()
 
-        self.triplet_net = triplet_net
-        self.cost_net = cost_net
+        # TODO(eyang): it makes more sense for this to be an EmbeddingNet directly
+        self._triplet_net = triplet_net
+        self._cost_net = cost_net
 
-    def get_cost(self, patch: torch.Tensor) -> torch.Tensor:
-        embed = self.triplet_net.get_embedding(patch)
-        return self.cost_net(embed)  # type: ignore
-
-    def forward(
-        self, x: torch.Tensor, y: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        emb_x = self.triplet_net.get_embedding(x)
-        emb_y = self.triplet_net.get_embedding(y)
-        return (self.cost_net(emb_x), self.cost_net(emb_y))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        embedding = self._triplet_net.get_embedding(x)
+        return self._cost_net(embedding)  # type: ignore

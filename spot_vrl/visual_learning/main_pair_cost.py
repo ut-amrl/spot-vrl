@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -23,7 +24,7 @@ from spot_vrl.visual_learning.datasets import (
 from spot_vrl.imu_learning.losses import MarginRankingLoss
 from spot_vrl.visual_learning.network import (
     CostNet,
-    FullPairCostNet,
+    FullCostNet,
     EmbeddingNet,
     TripletNet,
 )
@@ -62,7 +63,7 @@ class EmbeddingGenerator:
 
     @torch.no_grad()  # type: ignore
     def generate_plot(
-        self, model: FullPairCostNet, dataset: Dict[str, torch.Tensor]
+        self, model: FullCostNet, dataset: Dict[str, torch.Tensor]
     ) -> plt.Figure:
         fig, ax = plt.subplots(sharey=True, constrained_layout=True)
 
@@ -82,8 +83,8 @@ class EmbeddingGenerator:
                 GPU memory if we pass in the entire dataset tensor at once.
                 """
                 end = min(start + self.batch_size, len(tensors))
-                embeddings.append(model.triplet_net.get_embedding(tensors[start:end]))
-            costs.append(model.cost_net(torch.cat(embeddings)).squeeze().cpu().numpy())
+                embeddings.append(model._triplet_net.get_embedding(tensors[start:end]))
+            costs.append(model._cost_net(torch.cat(embeddings)).squeeze().cpu().numpy())
             labels.append(label)
 
         positions = np.arange(0, len(labels))
@@ -94,7 +95,7 @@ class EmbeddingGenerator:
 
         return fig
 
-    def write(self, model: FullPairCostNet, epoch: int) -> None:
+    def write(self, model: FullCostNet, epoch: int) -> None:
         model.eval()
         with torch.no_grad():  # type: ignore
             self.tb_writer.add_figure(
@@ -114,7 +115,7 @@ class EmbeddingGenerator:
 
 def train_epoch(
     train_loader: DataLoader[Tuple[Tensor, Tensor, float]],
-    model: torch.nn.Module,
+    model: FullCostNet,
     loss_fn: MarginRankingLoss,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -133,7 +134,7 @@ def train_epoch(
         optimizer.zero_grad()
         cost1: Tensor
         cost2: Tensor
-        cost1, cost2 = model(t1, t2)
+        cost1, cost2 = model(t1), model(t2)
 
         loss = loss_fn(cost1.squeeze(dim=1), cost2.squeeze(dim=1), label)
         losses.append(loss.item())
@@ -145,7 +146,7 @@ def train_epoch(
 
 def test_epoch(
     val_loader: DataLoader[Tuple[Tensor, Tensor, float]],
-    model: FullPairCostNet,
+    model: FullCostNet,
     loss_fn: MarginRankingLoss,
     device: torch.device,
 ) -> float:
@@ -163,7 +164,7 @@ def test_epoch(
 
             cost1: Tensor
             cost2: Tensor
-            cost1, cost2 = model(t1, t2)
+            cost1, cost2 = model(t1), model(t2)
 
             loss = loss_fn(cost1.squeeze(dim=1), cost2.squeeze(dim=1), label)
             losses.append(loss.item())
@@ -182,12 +183,7 @@ def main() -> None:
         required=True,
         help="Path to saved TripletNet model.",
     )
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        required=True,
-        choices=("0.5-speedway-holdout", "0.5-kinect-poc"),
-    )
+    parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -198,7 +194,7 @@ def main() -> None:
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
     triplet_net_path: Path = args.triplet_model
-    dataset_dir: Path = Path("visual-datasets") / args.dataset
+    dataset_dir: Path = args.dataset_dir
     epochs: int = args.epochs
     margin: float = args.margin
     lr: float = args.lr
@@ -206,9 +202,23 @@ def main() -> None:
     comment: str = args.comment
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    train_dataset_spec: Path = dataset_dir / "train.json"
+    holdout_dataset_spec: Path = dataset_dir / "holdout.json"
+
+    if not train_dataset_spec.exists():
+        logger.critical(
+            f"Dataset specification {dataset_dir}/train.json does not exist."
+        )
+        sys.exit(1)
+    elif not holdout_dataset_spec.exists():
+        logger.critical(
+            f"Dataset specification {dataset_dir}/holdout.json does not exist."
+        )
+        sys.exit(1)
+
     # Set up data loaders
     logger.info("Loading training data")
-    cost_dataset = PairCostTrainingDataset(dataset_dir / "train.json")
+    cost_dataset = PairCostTrainingDataset(train_dataset_spec)
     train_size = int(len(cost_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
         cost_dataset, (train_size, len(cost_dataset) - train_size)
@@ -226,7 +236,7 @@ def main() -> None:
     triplet_net.requires_grad_(False)
     cost_net = CostNet(embedding_dim)
 
-    model = FullPairCostNet(triplet_net, cost_net)
+    model = FullCostNet(triplet_net, cost_net)
     model = model.to(device)
 
     loss_fn = MarginRankingLoss(margin)
@@ -249,7 +259,7 @@ def main() -> None:
         device,
         batch_size,
         cost_dataset.triplet_dataset,
-        TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
+        TripletHoldoutDataset().init_from_json(holdout_dataset_spec),
         tb_writer,
     )
 
@@ -257,7 +267,7 @@ def main() -> None:
     pbar = tqdm.tqdm(range(epochs), desc="Training")
     for epoch in pbar:
         train_loss = train_epoch(train_loader, model, loss_fn, optimizer, device)
-        torch.save(model.state_dict(), save_dir / f"trained_epoch_{epoch}.pth")
+        torch.jit.script(model).save(save_dir / f"fullcostnet_{epoch:02d}.pt")
         val_loss = test_epoch(test_loader, model, loss_fn, device)
 
         tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore

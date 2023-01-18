@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -26,17 +27,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
-    parser.add_argument(
-        "--dataset",
-        type=str,
-        required=True,
-        choices=(
-            "0.5-no-speedway",
-            "0.5-with-speedway",
-            "0.5-speedway-holdout",
-            "0.5-kinect-poc",
-        ),
-    )
+    parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=5e-4)
@@ -47,19 +38,34 @@ def main() -> None:
 
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
-    dataset_dir: Path = Path("visual-datasets") / args.dataset
+    dataset_dir: Path = args.dataset_dir
     epochs: int = args.epochs
     margin: int = args.margin
     lr: float = args.lr
     batch_size: int = args.bs
     comment: str = args.comment
-
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    train_dataset_spec: Path = dataset_dir / "train.json"
+    holdout_dataset_spec: Path = dataset_dir / "holdout.json"
+
+    if not train_dataset_spec.exists():
+        logger.critical(
+            f"Dataset specification {dataset_dir}/train.json does not exist."
+        )
+        sys.exit(1)
+    elif not holdout_dataset_spec.exists():
+        logger.critical(
+            f"Dataset specification {dataset_dir}/holdout.json does not exist."
+        )
+        sys.exit(1)
+
     # Set up data loaders
-    triplet_dataset = TripletTrainingDataset().init_from_json(
-        dataset_dir / "train.json"
-    )
+    logger.info("Loading training data")
+
+    triplet_dataset = TripletTrainingDataset().init_from_json(train_dataset_spec)
+    logger.debug(f"Training dataset size: {len(triplet_dataset)}")
+
     train_size = int(len(triplet_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
         triplet_dataset, (train_size, len(triplet_dataset) - train_size)
@@ -93,13 +99,15 @@ def main() -> None:
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 
+    logger.info("Loading Evaluation Data")
     embedder = EmbeddingGenerator(
         device,
         batch_size,
         triplet_dataset,
-        TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
+        TripletHoldoutDataset().init_from_json(holdout_dataset_spec),
         tb_writer,
     )
+    logger.info("Finished Loading Evaluation Data")
 
     fit(
         train_loader,

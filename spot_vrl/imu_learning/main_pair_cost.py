@@ -1,11 +1,13 @@
 import argparse
 import os
+import sys
 import time
 from pathlib import Path
 
 import torch
 import torch.optim as optim
 import torch.utils.data.dataset
+from loguru import logger
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -34,9 +36,7 @@ def main() -> None:
         required=True,
         help="Path to saved TripletNet model.",
     )
-    parser.add_argument(
-        "--dataset", type=str, required=True, choices=("0.5-speedway-holdout",)
-    )
+    parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -48,7 +48,7 @@ def main() -> None:
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
     triplet_net_path: Path = args.triplet_model
-    dataset_dir: Path = Path("imu_datasets") / args.dataset
+    dataset_dir: Path = args.dataset_dir
     epochs: int = args.epochs
     margin: float = args.margin
     lr: float = args.lr
@@ -56,8 +56,22 @@ def main() -> None:
     comment: str = args.comment
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    train_dataset_spec: Path = dataset_dir / "train.json"
+    holdout_dataset_spec: Path = dataset_dir / "holdout.json"
+
+    if not train_dataset_spec.exists():
+        logger.critical(
+            f"Dataset specification {dataset_dir}/train.json does not exist."
+        )
+        sys.exit(1)
+    elif not holdout_dataset_spec.exists():
+        logger.critical(
+            f"Dataset specification {dataset_dir}/holdout.json does not exist."
+        )
+        sys.exit(1)
+
     # Set up data loaders
-    cost_dataset = PairCostTrainingDataset(dataset_dir / "train.json")
+    cost_dataset = PairCostTrainingDataset(train_dataset_spec)
     train_size = int(len(cost_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
         cost_dataset, (train_size, len(cost_dataset) - train_size)
@@ -96,7 +110,7 @@ def main() -> None:
     embedder = EmbeddingGenerator(
         device,
         cost_dataset.triplet_dataset,
-        TripletHoldoutDataset().init_from_json(dataset_dir / "holdout.json"),
+        TripletHoldoutDataset().init_from_json(holdout_dataset_spec),
         tb_writer,
     )
 

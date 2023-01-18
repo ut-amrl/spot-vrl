@@ -305,8 +305,29 @@ class ImuData:
         )
         topic_count: Dict[str, int] = defaultdict(int)
 
+        def tf_connection_filter(
+            topic: str,
+            datatype: str,
+            md5sum: str,
+            msg_def: str,
+            header: Dict[str, bytes],
+        ) -> bool:
+            """The /tf tree parser expects /tf messages from the /spot/spot_ros
+            node. This filters out other /tf messages.
+            """
+            if topic != "/tf":
+                return True
+
+            if header["callerid"] == b"/spot/spot_ros":
+                return True
+
+            return False
+
         bag = rosbag.Bag(str(self._path))
-        for topic, msg, _ in bag.read_messages():
+        for topic, msg, _ in bag.read_messages(
+            list(ros_to_numpy.TimeSyncedMessages.topic_types.keys()),
+            connection_filter=tf_connection_filter,
+        ):
             key = topic_count[topic]
             synced_msgs[key].set(topic, msg)
             topic_count[topic] += 1
