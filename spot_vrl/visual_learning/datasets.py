@@ -335,9 +335,18 @@ class TripletTrainingDataset(BaseTripletDataset):
         super().__init__()
 
     def __len__(self) -> int:
-        k = len(self._categories)
-        k = k * (k - 1) // 2
-        return super().__len__() * k
+        # k = len(self._categories)
+        # k = k * (k - 1) // 2
+        # return super().__len__() * k
+
+        # inflate the dataset size based on num categories
+        # TODO(eyang): why? is optimization not stable when this
+        # is too low
+        size = len(self._categories) * super().__len__()
+
+        # deflate the dataset size if it's really large
+        # so that training isn't extremely slow
+        return min(size, 100_000)
 
 
 class TripletHoldoutDataset(BaseTripletDataset):
