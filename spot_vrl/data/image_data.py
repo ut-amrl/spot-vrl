@@ -17,7 +17,7 @@ from scipy.spatial.transform.rotation import Rotation
 if sys.platform == "linux":
     import rospy
     import rosbag
-    from sensor_msgs.msg import CompressedImage, Imu
+    from sensor_msgs.msg import CompressedImage
 
 from spot_vrl.data import proto_to_numpy, ros_to_numpy
 from spot_vrl.homography import camera_transform
@@ -641,9 +641,15 @@ class KinectImageData(ImageData):
 
         body_rot_kinect: npt.NDArray[np.float64]
         if bag.get_message_count("/kinect_imu") > 0:
-            first_imu: Imu
-            _, first_imu, _ = next(bag.read_messages("/kinect_imu"))
-            body_rot_kinect = ros_to_numpy.est_kinect_rot(first_imu)
+            imu_readings = []
+            for _, msg, _ in bag.read_messages("/kinect_imu"):
+                imu_readings.append(msg)
+                if len(imu_readings) == 100:
+                    break
+
+            body_rot_kinect = ros_to_numpy.est_kinect_rot(imu_readings)
+            r = Rotation.from_matrix(body_rot_kinect).as_euler("XYZ", degrees=True)
+            logger.debug(f"kinect rotation estimate:\n{filename}: {r}")
         else:
             logger.warning(
                 "Bagfile does not contain /kinect_imu msgs. Using default fallback of 20º pitch."
