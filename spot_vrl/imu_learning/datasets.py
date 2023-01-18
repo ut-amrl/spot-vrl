@@ -1,7 +1,9 @@
 import json
+import os
+import pickle
 import random
 from pathlib import Path
-from typing import ClassVar, Dict, List, Sequence, Set, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Sequence, Set, Tuple, Union
 
 import numpy as np
 import scipy.stats as stats
@@ -29,6 +31,8 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
     window_size: ClassVar[float] = 3.0
     """seconds"""
 
+    output_dir: ClassVar[Path] = Path("imu_datasets/cache")
+
     @classmethod
     def set_global_window_size(cls, new_size: int) -> None:
         """Sets the window size to be used by future instances of this class.
@@ -42,6 +46,10 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
     def __init__(
         self, path: Union[str, Path], start: float = 0, end: float = np.inf
     ) -> None:
+        self.path = Path(path)
+        self.start = start
+        self.end = end
+
         imu = ImuData(path)
 
         window_size = self.window_size
@@ -81,6 +89,46 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
                 np.float32
             )
             self.windows.append(torch.from_numpy(window))
+
+    @staticmethod
+    def get_serialized_filename(
+        path: Union[str, Path], start: float, end: float
+    ) -> str:
+        path = Path(path)
+        return f"{path.stem}-{start:.0f}-to-{end:.0f}.pkl"
+
+    @classmethod
+    def load(
+        cls, path: Union[str, Path], start: float, end: float
+    ) -> "SingleTerrainDataset":
+        """Load a preprocessed dataset from a pickle file.
+
+        Args:
+            path (str | Path): Path to the original data file or the
+                preprocessed dataset pickle file.
+            start (float): First unix timestamp to start reading from.
+            end (float): Last unix timestamp to end reading.
+
+        Raises:
+            FileNotFoundError
+        """
+        path = cls.output_dir / cls.get_serialized_filename(path, start, end)
+
+        with open(path, "rb") as f:
+            obj: SingleTerrainDataset = pickle.load(f)
+            if not isinstance(obj, cls):
+                logger.warning("Deserialized object does not match type.")
+        return obj
+
+    def save(self) -> None:
+        """Serialize this dataset to disk."""
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        save_path = self.output_dir / self.get_serialized_filename(
+            self.path, self.start, self.end
+        )
+        with open(save_path, "wb") as f:
+            pickle.dump(self, f, protocol=5)
 
     def __len__(self) -> int:
         return len(self.windows)
@@ -137,6 +185,8 @@ class BaseTripletDataset(Dataset[Triplet]):
         }
         """
         with open(spec) as f:
+            category: str
+            datafiles: List[Dict[str, Any]]
             for category, datafiles in json.load(f)["categories"].items():
                 datasets: List[SingleTerrainDataset] = []
                 for dataset_spec in datafiles:
@@ -144,7 +194,13 @@ class BaseTripletDataset(Dataset[Triplet]):
                     start: float = dataset_spec["start"]
                     end: float = dataset_spec["end"]
 
-                    datasets.append(SingleTerrainDataset(path, start, end))
+                    try:
+                        dataset = SingleTerrainDataset.load(path, start, end)
+                    except FileNotFoundError:
+                        dataset = SingleTerrainDataset(path, start, end)
+                        dataset.save()
+
+                    datasets.append(dataset)
                 self._add_category(category, datasets)
         return self
 
