@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 
 import tqdm
 import torch
+from loguru import logger
 from spot_vrl.visual_learning.datasets import (
     BaseTripletDataset,
     Triplet,
@@ -98,6 +99,7 @@ def fit(
     """
     pbar = tqdm.tqdm(range(n_epochs), desc="Training")
     for epoch in pbar:
+        logger.debug(f"Starting Training epoch {epoch}")
         train_loss = train_epoch(
             train_loader,
             model,
@@ -105,12 +107,15 @@ def fit(
             optimizer,
             device,
         )
+        logger.debug(f"Finished Training epoch {epoch}")
         torch.save(
             model.state_dict(),
             os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
         )
 
+        logger.debug(f"Starting Validation epoch {epoch}")
         val_loss = test_epoch(val_loader, model, loss_fn, device)
+        logger.debug(f"Finished Validation epoch {epoch}")
 
         tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore
         tb_writer.add_scalar("valid/loss", val_loss, epoch)  # type: ignore
