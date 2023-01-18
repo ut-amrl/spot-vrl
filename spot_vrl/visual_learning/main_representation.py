@@ -61,7 +61,11 @@ def main() -> None:
         sys.exit(1)
 
     # Set up data loaders
+    logger.info("Loading training data")
+
     triplet_dataset = TripletTrainingDataset().init_from_json(train_dataset_spec)
+    logger.debug(f"Training dataset size: {len(triplet_dataset)}")
+
     train_size = int(len(triplet_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
         triplet_dataset, (train_size, len(triplet_dataset) - train_size)
@@ -95,6 +99,7 @@ def main() -> None:
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 
+    logger.info("Loading Evaluation Data")
     embedder = EmbeddingGenerator(
         device,
         batch_size,
@@ -102,6 +107,7 @@ def main() -> None:
         TripletHoldoutDataset().init_from_json(holdout_dataset_spec),
         tb_writer,
     )
+    logger.info("Finished Loading Evaluation Data")
 
     fit(
         train_loader,
