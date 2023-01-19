@@ -15,7 +15,8 @@ from loguru import logger
 from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
-from spot_vrl.data import ImuData, ImageData
+from spot_vrl.data import ImuData
+from spot_vrl.data._deprecated.image_data import ImageData
 from spot_vrl.homography._deprecated.perspective_transform import TopDown
 from spot_vrl.utils.video_writer import VideoWriter
 

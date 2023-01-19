@@ -19,8 +19,8 @@ import tqdm
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
-from spot_vrl.data import ImuData, SpotImage
-from spot_vrl.data.image_data import CameraImage
+from spot_vrl.data import ImuData
+from spot_vrl.data._deprecated.image_data import CameraImage, SpotImage
 from spot_vrl.homography._deprecated.perspective_transform import TopDown
 from spot_vrl.scripts.gp import ImageWithText  # maybe a bad dependency
 from spot_vrl.utils.video_writer import VideoWriter

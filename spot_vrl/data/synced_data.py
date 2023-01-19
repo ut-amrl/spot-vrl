@@ -6,8 +6,8 @@ import numpy as np
 import numpy.typing as npt
 import tqdm
 
-from spot_vrl.data import ImuData, ImageData
-from spot_vrl.data.image_data import CameraImage
+from spot_vrl.data.sensor_data import ImuData
+from spot_vrl.data._deprecated.image_data import CameraImage, ImageData
 from spot_vrl.homography._deprecated.perspective_transform import TopDown
 
 

@@ -8,7 +8,7 @@ import torch
 import tqdm
 from loguru import logger
 
-from spot_vrl.data.image_data import ImageData, SpotImage, CameraImage
+from spot_vrl.data._deprecated.image_data import ImageData, SpotImage, CameraImage
 from spot_vrl.homography._deprecated import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
 

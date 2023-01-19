@@ -23,7 +23,7 @@ from bosdyn.api.robot_id_pb2 import RobotIdResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 
 from spot_vrl.data import ImuData
-from spot_vrl.data.image_data import SpotImage, CameraImage
+from spot_vrl.data._deprecated.image_data import SpotImage, CameraImage
 from spot_vrl.homography._deprecated import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
 

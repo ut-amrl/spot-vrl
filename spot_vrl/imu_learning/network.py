@@ -26,7 +26,7 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
     def __init__(self, input_shape: Tuple[int, ...], embedding_dim: int):
         super().__init__()
 
-        input_dim = np.prod(input_shape)
+        input_dim = np.prod(input_shape).astype(int)
         self.sizes = [input_dim, 64, 32, embedding_dim]
         # self.sizes = [input_dim, 1024, 256, embedding_dim]
         # self.sizes = [input_dim, 1024, 1024, 256, embedding_dim]

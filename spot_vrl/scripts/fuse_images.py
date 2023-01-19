@@ -18,7 +18,7 @@ import numpy as np
 import numpy.typing as npt
 import tqdm
 from spot_vrl.data import ImuData
-from spot_vrl.data.image_data import ImageData, CameraImage
+from spot_vrl.data._deprecated.image_data import ImageData, CameraImage
 from spot_vrl.homography._deprecated import camera_transform, perspective_transform
 from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
 from spot_vrl.utils.parallel import tqdm_position, fork_join
