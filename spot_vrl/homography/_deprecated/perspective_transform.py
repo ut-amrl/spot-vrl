@@ -7,7 +7,7 @@ import numpy.typing as npt
 import cv2
 
 from spot_vrl.data.image_data import CameraImage
-from spot_vrl.homography import camera_transform
+from spot_vrl.homography._deprecated import camera_transform
 
 
 class TopDown:

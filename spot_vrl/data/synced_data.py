@@ -8,7 +8,7 @@ import tqdm
 
 from spot_vrl.data import ImuData, ImageData
 from spot_vrl.data.image_data import CameraImage
-from spot_vrl.homography.perspective_transform import TopDown
+from spot_vrl.homography._deprecated.perspective_transform import TopDown
 
 
 @dataclass

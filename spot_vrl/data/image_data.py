@@ -21,7 +21,7 @@ if sys.platform == "linux":
 
 from spot_vrl.data import ros_to_numpy
 from spot_vrl.data._deprecated import proto_to_numpy
-from spot_vrl.homography import camera_transform
+from spot_vrl.homography._deprecated import camera_transform
 
 
 class CameraImage(abc.ABC):
