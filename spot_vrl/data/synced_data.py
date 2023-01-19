@@ -7,14 +7,13 @@ import numpy.typing as npt
 import tqdm
 
 from spot_vrl.data.sensor_data import ImuData
-from spot_vrl.data._deprecated.image_data import CameraImage, ImageData
-from spot_vrl.homography._deprecated.perspective_transform import TopDown
+from spot_vrl.data.image_data import BEVImageSequence, Image
 
 
 @dataclass
 class Datum:
     image: npt.NDArray[np.uint8]
-    """Single-channel top-down image."""
+    """BEV image."""
 
     odom: npt.NDArray[np.float32]
     """
@@ -47,11 +46,11 @@ class SynchronizedData:
         """
 
         imu_container = ImuData(filename)
-        image_container = ImageData.factory(filename, lazy=True)
+        image_container = BEVImageSequence(filename)
 
         image_timestamp: np.float64
-        image_list: List[CameraImage]
-        for image_timestamp, image_list in tqdm.tqdm(
+        image: Image
+        for image_timestamp, image in tqdm.tqdm(
             image_container, desc="Loading SyncedData", total=len(image_container)
         ):
             # Skip this image if there does not exist a large enough IMU window
@@ -60,12 +59,6 @@ class SynchronizedData:
 
             if image_timestamp > imu_container.timestamp_sec[-1]:
                 break
-
-            # Compute the top-down view of only the front two cameras.
-            front_images: List[CameraImage] = [
-                img for img in image_list if "front" in img.frame_name
-            ]
-            top_down_view = TopDown(front_images).get_view(resolution=150)
 
             # Query the IMU data window immediately before this image was taken.
             _, imu_history = imu_container.query_time_range(
@@ -80,4 +73,4 @@ class SynchronizedData:
             )
             this_odom_pose = odom_poses[0]
 
-            self.data.append(Datum(top_down_view, this_odom_pose, imu_history))
+            self.data.append(Datum(image.decoded_image(), this_odom_pose, imu_history))
