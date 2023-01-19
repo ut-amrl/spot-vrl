@@ -12,7 +12,7 @@ from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
-from scipy.spatial.transform.rotation import Rotation
+from scipy.spatial.transform import Rotation
 
 if sys.platform == "linux":
     import rospy
