@@ -3,12 +3,23 @@ This module provides helper functions to convert bosdyn.api protobuf objects to
 numpy structures.
 """
 
+import warnings
+
 import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
 from bosdyn.api import geometry_pb2, image_pb2
 from google.protobuf.timestamp_pb2 import Timestamp
+
+
+warnings.warn(
+    "The data pipeline for Spot has been fully migrated to ROS."
+    " Conversion functions for Boston Dynamics Data Format (.bddf) files"
+    " are no longer maintained.",
+    category=DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def se3pose_to_affine(pose: geometry_pb2.SE3Pose) -> npt.NDArray[np.float64]:

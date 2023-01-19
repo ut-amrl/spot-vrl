@@ -12,7 +12,7 @@ from bosdyn.api.geometry_pb2 import FrameTreeSnapshot
 from bosdyn.api.robot_state_pb2 import FootState, RobotStateResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
-from spot_vrl.data import proto_to_numpy
+from spot_vrl.data._deprecated import proto_to_numpy
 
 if sys.platform == "linux":
     import geometry_msgs.msg

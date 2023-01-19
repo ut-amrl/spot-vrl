@@ -19,7 +19,8 @@ if sys.platform == "linux":
     import rosbag
     from sensor_msgs.msg import CompressedImage
 
-from spot_vrl.data import proto_to_numpy, ros_to_numpy
+from spot_vrl.data import ros_to_numpy
+from spot_vrl.data._deprecated import proto_to_numpy
 from spot_vrl.homography import camera_transform
 
 
