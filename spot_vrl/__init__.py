@@ -1,8 +1,8 @@
-import os
 import multiprocessing
+import os
+import warnings
 
 import cv2
-
 
 __version__ = "0.1.0"
 
@@ -25,3 +25,10 @@ def _set_omp_num_threads(count: int) -> None:
 # On machines with very high core counts, overhead from library multithreading
 # (NumPy, OpenCV) can slow programs down.
 _set_omp_num_threads(min(8, _get_omp_num_threads()))
+
+warnings.simplefilter("once", DeprecationWarning)
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r".*rosbag.*",
+)
