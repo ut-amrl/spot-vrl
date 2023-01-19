@@ -1,16 +1,34 @@
 from collections import defaultdict
+import sys
 from functools import lru_cache, cached_property
 from pathlib import Path
 from typing import ClassVar, Dict, List, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
+from bosdyn.api import geometry_pb2
+from bosdyn.api.bddf_pb2 import SeriesBlockIndex
+from bosdyn.api.geometry_pb2 import FrameTreeSnapshot
+from bosdyn.api.robot_state_pb2 import FootState, RobotStateResponse
+from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
+from spot_vrl.data._deprecated import proto_to_numpy
 
-import geometry_msgs.msg
-import spot_msgs.msg
-import rosbag
-from spot_vrl.data import ros_to_numpy
+if sys.platform == "linux":
+    import geometry_msgs.msg
+    import spot_msgs.msg
+    import rosbag
+    from spot_vrl.data import ros_to_numpy
+
+import warnings
+
+warnings.warn(
+    "The data pipeline has been fully migrated to ROS."
+    " The Boston Dynamics Data Format (.bddf) compatibility interfaces"
+    " in this module are no longer maintained.",
+    category=DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class SensorMetrics:
@@ -45,9 +63,12 @@ class SensorMetrics:
         "rear_right_knee": 11,
     }
 
-    def __init__(self, msgs: ros_to_numpy.TimeSyncedMessages) -> None:
+    def __init__(self) -> None:
         self.ts: np.float64 = np.float64(0)
         """Robot system timestamp of the data in seconds."""
+
+        self.tf_tree: FrameTreeSnapshot = FrameTreeSnapshot()
+        """The transform tree from this state."""
 
         self.body_tform_frames: Dict[str, npt.NDArray[np.float64]] = {}
         """The parsed transform tree from this state. Stores the transformation
@@ -83,10 +104,94 @@ class SensorMetrics:
         self.foot_depth_std: np.float32 = np.float32(0)
         """Mean of foot depth uncertainties in the ground plane estimate."""
 
-        ########
+    @classmethod
+    def from_bosdyn(cls, response: RobotStateResponse) -> "SensorMetrics":
+        metrics = cls()
 
-        self.ts = msgs.odom.header.stamp.to_sec()
-        self.body_tform_frames = ros_to_numpy.body_tform_frames(msgs.tf)
+        robot_state = response.robot_state
+        kinematic_state = robot_state.kinematic_state
+
+        metrics.ts = (
+            kinematic_state.acquisition_timestamp.seconds
+            + kinematic_state.acquisition_timestamp.nanos * 1e-9
+        )
+
+        metrics.tf_tree = kinematic_state.transforms_snapshot
+        for frame in metrics.tf_tree.child_to_parent_edge_map.keys():
+            metrics.body_tform_frames[frame] = proto_to_numpy.body_tform_frame(
+                metrics.tf_tree, frame
+            )
+
+        metrics.power = np.float32(0)
+        for battery in robot_state.battery_states:
+            if battery.current.value >= 0:
+                logger.warning(
+                    f"Expected negative current reading, got {battery.current.value}"
+                )
+            metrics.power += -battery.current.value * battery.voltage.value
+
+        if len(kinematic_state.joint_states) != 12:
+            logger.warning(
+                f"Expected 12 joint states, got {len(kinematic_state.joint_states)}"
+            )
+        for joint in kinematic_state.joint_states:
+            joint_idx = metrics.joint_order[joint.name]
+            metrics.joint_pos[joint_idx] = joint.position.value
+            metrics.joint_vel[joint_idx] = joint.velocity.value
+            metrics.joint_load[joint_idx] = joint.load.value
+
+        odom_vel = kinematic_state.velocity_of_body_in_odom
+        metrics.linear_vel[:] = (
+            odom_vel.linear.x,
+            odom_vel.linear.y,
+            odom_vel.linear.z,
+        )
+        metrics.angular_vel[:] = (
+            odom_vel.angular.x,
+            odom_vel.angular.y,
+            odom_vel.angular.z,
+        )
+
+        # Rotate the odometry velocities into the robot frame
+        body_tform_odom = proto_to_numpy.body_tform_frame(metrics.tf_tree, "odom")
+        metrics.linear_vel = body_tform_odom[:3, :3] @ metrics.linear_vel
+        metrics.angular_vel = body_tform_odom[:3, :3] @ metrics.angular_vel
+
+        feet_in_contact = 0
+        for foot in robot_state.foot_state:
+            if foot.contact != FootState.CONTACT_MADE:
+                continue
+            feet_in_contact += 1
+            terrain = foot.terrain
+            if terrain.frame_name != "odom":
+                logger.warning(
+                    f"Expected 'odom' as foot reference frame, got {terrain.frame_name}"
+                )
+
+            def _vec3_norm(v: geometry_pb2.Vec3) -> np.float32:
+                return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
+
+            metrics.foot_slip_dist += _vec3_norm(terrain.foot_slip_distance_rt_frame)
+            metrics.foot_slip_vel += _vec3_norm(terrain.foot_slip_velocity_rt_frame)
+            metrics.foot_depth_mean += terrain.visual_surface_ground_penetration_mean
+            metrics.foot_depth_std += terrain.visual_surface_ground_penetration_std
+
+        if feet_in_contact != 0:
+            metrics.foot_slip_dist /= feet_in_contact
+            metrics.foot_slip_vel /= feet_in_contact
+            metrics.foot_depth_mean /= feet_in_contact
+            metrics.foot_depth_std /= feet_in_contact
+        else:
+            logger.warning("Spot is flying (no feet made contact with the ground)")
+
+        return metrics
+
+    @classmethod
+    def from_ros(cls, msgs: ros_to_numpy.TimeSyncedMessages) -> "SensorMetrics":
+        metrics = cls()
+
+        metrics.ts = msgs.odom.header.stamp.to_sec()
+        metrics.body_tform_frames = ros_to_numpy.body_tform_frames(msgs.tf)
 
         battery: spot_msgs.msg.BatteryState
         for battery in msgs.battery_states.battery_states:
@@ -94,7 +199,7 @@ class SensorMetrics:
                 logger.warning(
                     f"Expected negative current reading, got {battery.current}"
                 )
-            self.power += -battery.current * battery.voltage
+            metrics.power += -battery.current * battery.voltage
 
         if len(msgs.joint_states.name) != 12:
             logger.warning(
@@ -102,26 +207,26 @@ class SensorMetrics:
             )
         joint_name: str
         for i, joint_name in enumerate(msgs.joint_states.name):
-            joint_idx = self.ros_joint_order[joint_name]
-            self.joint_pos[joint_idx] = msgs.joint_states.position[i]
-            self.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
-            self.joint_load[joint_idx] = msgs.joint_states.effort[i]
+            joint_idx = metrics.ros_joint_order[joint_name]
+            metrics.joint_pos[joint_idx] = msgs.joint_states.position[i]
+            metrics.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
+            metrics.joint_load[joint_idx] = msgs.joint_states.effort[i]
 
         odom_vel = msgs.twist.twist.twist
-        self.linear_vel[:] = (
+        metrics.linear_vel[:] = (
             odom_vel.linear.x,
             odom_vel.linear.y,
             odom_vel.linear.z,
         )
-        self.angular_vel[:] = (
+        metrics.angular_vel[:] = (
             odom_vel.angular.x,
             odom_vel.angular.y,
             odom_vel.angular.z,
         )
 
-        body_tform_odom = self.body_tform_frames["odom"]
-        self.linear_vel = body_tform_odom[:3, :3] @ self.linear_vel
-        self.angular_vel = body_tform_odom[:3, :3] @ self.angular_vel
+        body_tform_odom = metrics.body_tform_frames["odom"]
+        metrics.linear_vel = body_tform_odom[:3, :3] @ metrics.linear_vel
+        metrics.angular_vel = body_tform_odom[:3, :3] @ metrics.angular_vel
 
         feet_in_contact = 0
         foot_state: spot_msgs.msg.FootState
@@ -137,24 +242,28 @@ class SensorMetrics:
             def _vec3_norm(v: geometry_msgs.msg.Point) -> np.float32:
                 return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
 
-            self.foot_slip_dist += _vec3_norm(foot_state.foot_slip_distance_rt_frame)
-            self.foot_slip_vel += _vec3_norm(foot_state.foot_slip_velocity_rt_frame)
-            self.foot_depth_mean += foot_state.visual_surface_ground_penetration_mean
-            self.foot_depth_std += foot_state.visual_surface_ground_penetration_std
+            metrics.foot_slip_dist += _vec3_norm(foot_state.foot_slip_distance_rt_frame)
+            metrics.foot_slip_vel += _vec3_norm(foot_state.foot_slip_velocity_rt_frame)
+            metrics.foot_depth_mean += foot_state.visual_surface_ground_penetration_mean
+            metrics.foot_depth_std += foot_state.visual_surface_ground_penetration_std
 
         if feet_in_contact != 0:
-            self.foot_slip_dist /= feet_in_contact
-            self.foot_slip_vel /= feet_in_contact
-            self.foot_depth_mean /= feet_in_contact
-            self.foot_depth_std /= feet_in_contact
+            metrics.foot_slip_dist /= feet_in_contact
+            metrics.foot_slip_vel /= feet_in_contact
+            metrics.foot_depth_mean /= feet_in_contact
+            metrics.foot_depth_std /= feet_in_contact
         else:
             logger.warning("Spot is flying (no feet made contact with the ground)")
+
+        return metrics
 
 
 class ImuData:
     """Storage container for non-visual Spot sensor data of interest.
 
-    This class stores a time-ordered sequence sensor data.
+    This class stores a time-ordered sequence of deconstructed RobotState
+    messages from a BDDF file. Only a subset of RobotState is stored; these
+    fields can be found in the constructor for the Datum inner class.
 
     The full sequence of each field can be accessed as numpy arrays using the
     property fields of the ImuData class. Each item in the sequence is
@@ -169,7 +278,9 @@ class ImuData:
         self._data: List[SensorMetrics] = []
         self._path: Path = Path(filename)
 
-        if self._path.suffix == ".bag":
+        if self._path.suffix == ".bddf":
+            self._init_from_bddf()
+        elif self._path.suffix == ".bag":
             self._init_from_rosbag()
         else:
             logger.error(f"Unrecognized file format {self._path}")
@@ -179,6 +290,23 @@ class ImuData:
             self._data[i].ts < self._data[i + 1].ts for i in range(len(self._data) - 1)
         ):
             logger.warning("Data sequence is not sorted by ascending ts.")
+
+    def _init_from_bddf(self) -> None:
+        data_reader = DataReader(None, str(self._path))
+        proto_reader = ProtobufReader(data_reader)
+
+        series_index: int = proto_reader.series_index("bosdyn.api.RobotStateResponse")
+        series_block_index: SeriesBlockIndex = data_reader.series_block_index(
+            series_index
+        )
+        num_msgs = len(series_block_index.block_entries)
+
+        for msg_idx in range(num_msgs):
+            _, _, response = proto_reader.get_message(
+                series_index, RobotStateResponse, msg_idx
+            )
+
+            self._data.append(SensorMetrics.from_bosdyn(response))
 
     def _init_from_rosbag(self) -> None:
         # times don't match so the best we can do is use indices as keys
@@ -216,7 +344,7 @@ class ImuData:
 
         for v in synced_msgs.values():
             if v.valid():
-                self._data.append(SensorMetrics(v))
+                self._data.append(SensorMetrics.from_ros(v))
 
     def __len__(self) -> int:
         return len(self._data)
@@ -317,6 +445,12 @@ class ImuData:
             reference_frame (str): The name of the reference frame.
             frame_of_interest (str): The name of the frame of interest.
 
+            RobotStateResponses do not contain the full transform tree.
+            In general, these frame names are present:
+                "odom"
+                "gpe"
+                "body"
+
         Returns:
             npt.NDArray[np.float32]:
                 An (N, 4, 4) array of 3D affine transformation matrices,
@@ -327,6 +461,13 @@ class ImuData:
         )
 
         for i, datum in enumerate(self._data):
+            # "body" is the root of the transform tree
+            # body_tform_ref = proto_to_numpy.body_tform_frame(
+            #     datum.tf_tree, reference_frame
+            # )
+            # body_tform_interest = proto_to_numpy.body_tform_frame(
+            #     datum.tf_tree, frame_of_interest
+            # )
             body_tform_ref = datum.body_tform_frames[reference_frame]
             body_tform_interest = datum.body_tform_frames[frame_of_interest]
             ref_tform_interest = np.linalg.inv(body_tform_ref) @ body_tform_interest
