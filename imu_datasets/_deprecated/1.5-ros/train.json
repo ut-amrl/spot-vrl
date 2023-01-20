@@ -1,0 +1,48 @@
+{
+    "_comment": "Training dataset at 1.5 m/s recorded with ROS data stack.",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-06-07/2022-06-07-09-14-33.bag",
+                "start": 1654611281,
+                "end": 1654611880
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-06-07/2022-06-07-09-35-44.bag",
+                "start": 1654612550,
+                "end": 1654612944
+            },
+            {
+                "path": "data/2022-06-07/2022-06-07-09-43-44.bag",
+                "start": 1654613031,
+                "end": 1654613281
+            }
+        ],
+        "sml_rock": [
+            {
+                "path": "data/2022-06-10/2022-06-10-09-58-35.bag",
+                "start": 1654873122,
+                "end": 1654873455
+            },
+            {
+                "path": "data/2022-06-10/2022-06-10-10-09-21.bag",
+                "start": 1654873767,
+                "end": 1654873985
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "concrete",
+            "second": "sml_rock",
+            "label": -1
+        }
+    ]
+}

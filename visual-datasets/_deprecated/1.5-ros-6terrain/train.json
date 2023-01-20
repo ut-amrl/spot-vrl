@@ -1,0 +1,113 @@
+{
+    "_comment": "Training dataset at 1.5 m/s recorded with ROS data stack.",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-06-07/2022-06-07-09-14-33.bag",
+                "start": 1654611281,
+                "end": 1654611880
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-06-07/2022-06-07-09-35-44.bag",
+                "start": 1654612550,
+                "end": 1654612944
+            },
+            {
+                "path": "data/2022-06-07/2022-06-07-09-43-44.bag",
+                "start": 1654613031,
+                "end": 1654613281
+            }
+        ],
+        "grass_fall": [
+            {
+                "path": "data/2022-10-17/2022-10-17-17-57-04.bag",
+                "start": 1666047431,
+                "end": 1666047777
+            },
+            {
+                "path": "data/2022-10-17/2022-10-17-18-05-32.bag",
+                "start": 1666047939,
+                "end": 1666048175
+            }
+        ],
+        "sml_rock": [
+            {
+                "path": "data/2022-06-10/2022-06-10-09-58-35.bag",
+                "start": 1654873122,
+                "end": 1654873455
+            },
+            {
+                "path": "data/2022-06-10/2022-06-10-10-09-21.bag",
+                "start": 1654873767,
+                "end": 1654873985
+            },
+            {
+                "_comment/todo": "PMA; morning; retraining",
+                "path": "data/2022-11-13/pma-training/2022-11-13-08-48-18.bag",
+                "start": 1668350903,
+                "end": 1668350974
+            }
+        ],
+        "speedway": [
+            {
+                "path": "data/2022-06-08/2022-06-08-09-50-40.bag",
+                "start": 1654699846,
+                "end": 1654700323
+            }
+        ],
+        "red_brick": [
+            {
+                "path": "data/2022-06-10/2022-06-10-09-35-11.bag",
+                "start": 1654871717,
+                "end": 1654872325
+            }
+        ],
+        "pebble_pvmt": [
+            {
+                "path": "data/2022-06-10/2022-06-10-10-28-42.bag",
+                "start": 1654874926,
+                "end": 1654875615
+            },
+            {
+                "_comment/todo": "PMA; morning; retraining",
+                "path": "data/2022-11-13/pma-training/2022-11-13-08-52-08.bag",
+                "start": 1668351132,
+                "end": 1668351203
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "grass",
+            "second": "sml_rock",
+            "label": -1
+        },
+        {
+            "first": "concrete",
+            "second": "speedway",
+            "label": 0
+        },
+        {
+            "first": "speedway",
+            "second": "red_brick",
+            "label": 0
+        },
+        {
+            "first": "red_brick",
+            "second": "pebble_pvmt",
+            "label": 0
+        },
+        {
+            "first": "grass",
+            "second": "grass_fall",
+            "label": 0
+        }
+    ]
+}

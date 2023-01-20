@@ -1,0 +1,26 @@
+{
+    "_comment": "Small proof-of-concept dataset for AHG floor and turf",
+    "categories": {
+        "hardwood": [
+            {
+                "path": "data/2022-09-11/2022-09-11-18-15-01.bag",
+                "start": 1662938105,
+                "end": 1662938165
+            }
+        ],
+        "turf": [
+            {
+                "path": "data/2022-09-11/2022-09-11-18-24-53.bag",
+                "start": 1662938695,
+                "end": 1662938783
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "turf",
+            "second": "hardwood",
+            "label": -1
+        }
+    ]
+}

@@ -1,0 +1,84 @@
+{
+    "_comment": "Training dataset at 1.5 m/s recorded with ROS data stack, 2 mins each terrain.",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-06-07/2022-06-07-09-14-33.bag",
+                "start": 1654611281,
+                "end": 1654611401
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-06-07/2022-06-07-09-35-44.bag",
+                "start": 1654612550,
+                "end": 1654612610
+            },
+            {
+                "path": "data/2022-06-07/2022-06-07-09-43-44.bag",
+                "start": 1654613031,
+                "end": 1654613091
+            }
+        ],
+        "sml_rock": [
+            {
+                "path": "data/2022-06-10/2022-06-10-09-58-35.bag",
+                "start": 1654873122,
+                "end": 1654873182
+            },
+            {
+                "path": "data/2022-06-10/2022-06-10-10-09-21.bag",
+                "start": 1654873767,
+                "end": 1654873827
+            }
+        ],
+        "speedway": [
+            {
+                "path": "data/2022-06-08/2022-06-08-09-50-40.bag",
+                "start": 1654699846,
+                "end": 1654699966
+            }
+        ],
+        "red_brick": [
+            {
+                "path": "data/2022-06-10/2022-06-10-09-35-11.bag",
+                "start": 1654871717,
+                "end": 1654871837
+            }
+        ],
+        "pebble_pvmt": [
+            {
+                "path": "data/2022-06-10/2022-06-10-10-28-42.bag",
+                "start": 1654874926,
+                "end": 1654875046
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "grass",
+            "second": "sml_rock",
+            "label": -1
+        },
+        {
+            "first": "concrete",
+            "second": "speedway",
+            "label": 0
+        },
+        {
+            "first": "speedway",
+            "second": "red_brick",
+            "label": 0
+        },
+        {
+            "first": "red_brick",
+            "second": "pebble_pvmt",
+            "label": 0
+        }
+    ]
+}
