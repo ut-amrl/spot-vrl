@@ -21,24 +21,9 @@ from sklearn import metrics
 # finds a k-means clustering chosen at the knee
 def cluster_model(data):
 
-    # print("yes___________THIS_______CHANGED")
-
-    # scaler = StandardScaler()
     data=data.cpu()
     data=data.numpy()
-    # data = scaler.fit_transform(data)
     
-    # Data used to be scaled, now it is not
-
-    # # Use principal component analysis to reduce dimensionality
-    # pca = PCA(n_components=5)
-    # data = pca.fit_transform(data)
-
-
-    # n_components = 3
-    # tsne = TSNE(n_components)#, learning_rate=200,init='random')
-    # data = tsne.fit_transform(data)
-
     # kmeans parameters
     kmeans_kwargs = {
         "init": "random",
@@ -46,25 +31,24 @@ def cluster_model(data):
         "max_iter": 300,
         "random_state": 42,
     }
-
-    # create a set of models 
-    sse = []
-    models = []
-    for k in range(1, 20):
+    
+    best_model, best_silhouette_score = None, -1
+    best_labels, best_elbow = None, 2
+    for k in range(2, 20):
         # create and fit k-means model
         kmeans = KMeans(n_clusters=k, **kmeans_kwargs)
         kmeans.fit(data)
-        sse.append(kmeans.inertia_)
-        models.append(kmeans)
-
-    # find the knee (for the number of clusters)
-    kl = KneeLocator(
-        range(1, 20), sse, curve="convex", direction="decreasing"
-    )
-
-    # print(sse)
+        ss = metrics.silhouette_score(data, kmeans.labels_, metric='euclidean')
+        if ss > best_silhouette_score:
+            best_model = kmeans
+            best_labels = kmeans.labels_
+            best_silhouette_score = ss
+            best_elbow = k
+        
+    # print("best calinski harabasz score: ", best_calinski_harabasz_score)
+    print("best silhouette score: ", best_silhouette_score)
     
-    return models[kl.elbow-1].labels_, kl.elbow, models[kl.elbow-1]
+    return best_labels, best_elbow, best_model
 
 # Creates a k-means model clustering at the knee and finds its accuracy compared to labelled groups
 # also returns the k-means model itself (used in final)
@@ -154,15 +138,16 @@ def cluster(data):
     
     return models[kl.elbow-1].labels_, kl.elbow
 
-def compute_fms_ari(data, labels):
-    clusters, elbow, model = cluster_model(data)
+def compute_fms_ari(data, labels, clusters, elbow, model):
     # compute the fowlkes_mallows_score
     fms = metrics.fowlkes_mallows_score(labels, clusters)
     # compute the rand_score
     ari = metrics.adjusted_rand_score(labels, clusters)
     # compute the silhouette_score
-    ss = metrics.silhouette_score(data, clusters, metric='euclidean')
-    return fms, ari, ss, clusters, elbow, model
+    chs = metrics.calinski_harabasz_score(data, clusters)
+    
+    # ss = metrics.silhouette_score(data, clusters, metric='euclidean')
+    return fms, ari, chs
     
 
 # does the same as accuracy_naive_model above, but returns accuracy instead of model
@@ -199,7 +184,7 @@ def accuracy_naive(data, labels, label_types=["rock", "mulch", "pebble", "speedw
     print("accuracy:")
     print(best_acc)
     print(best_dict)
-    return best_acc
+    return best_acc, clusters, elbow, model
 
 
 

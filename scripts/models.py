@@ -5,27 +5,27 @@ import torch.nn.functional as F
 
 # create a pytorch model for the proprioception data
 class ProprioceptionModel(nn.Module):
-    def __init__(self, latent_size=64):
+    def __init__(self, latent_size=64, p=0.05):
         super(ProprioceptionModel, self).__init__()
         
         self.inertial_encoder = nn.Sequential( # input shape : (batch_size, 1, 1407)
             nn.Flatten(),
-            nn.Linear(1407, 128, bias=False), nn.ReLU(),
-            nn.Dropout(0.05),
+            nn.Linear(201*6, 128, bias=False), nn.ReLU(),
+            nn.Dropout(p),
             nn.Linear(128, 32), nn.ReLU(),
         )
         
         self.leg_encoder = nn.Sequential( # input shape : (batch_size, 1, 900)
             nn.Flatten(),
             nn.Linear(900, 128, bias=False), nn.ReLU(),
-            nn.Dropout(0.05),
+            nn.Dropout(p),
             nn.Linear(128, 32), nn.ReLU(),
         )
         
         self.feet_encoder = nn.Sequential( # input shape : (batch_size, 1, 500)
             nn.Flatten(),
             nn.Linear(500, 128, bias=False), nn.ReLU(),
-            nn.Dropout(0.05),
+            nn.Dropout(p),
             nn.Linear(128, 32), nn.ReLU(),
         )
         
@@ -139,7 +139,7 @@ class VisualEncoderModel(nn.Module):
         x = self.skipblock3(x) + x
         x = self.block4(x)
         x = self.skipblock4(x) + x
-        x = x.view(x.size(0), -1) # flattened to (batch_size, 576)
+        x = x.view(x.size(0), -1) # flattened to (batch_size, 256)
         
         x = self.fc(x)
         

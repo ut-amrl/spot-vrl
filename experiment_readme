@@ -1,17 +1,1 @@
-
-Experimental results on whether spectral norm helps : 
-
-version_0 : using spectral norm for inertial encoder w/o batch norm
-version_1 : no spectral norm
-version_2 : spectral norm only on the projection layer
-version_3 : no spectral norm, using gradient clip val of "norm" of 1.0
-
-
-Results : 
-
-version_0 : very good separability
-version_1 : very good separability
-version_2 : poor separability 
-version_3 : no separability
-
-Conclusion : Donot use any spectral norm / gradient clipping. 
+training version_9 without using any image augmentations except flip

@@ -6,7 +6,6 @@ from termcolor import cprint
 import numpy as np
 from scipy import fftpack
 from scipy.signal import periodogram
-
 from scripts.utils import process_feet_data
 
 
@@ -22,7 +21,6 @@ all_data = {}
 
 data_statistics = pickle.load(open(data_config_path + '/data_statistics.pkl', 'rb'))
 
-
 for pickle_files_root in data_config['train']:
     pickle_files_paths = glob.glob(pickle_files_root + '/*.pkl')
     label = pickle_files_root.split('/')[-2]
@@ -34,7 +32,6 @@ for pickle_files_root in data_config['train']:
         continue
     
     imu_data, leg_data, feet_data = [], [], []
-    
     
     for idx in range(len(pickle_files_paths)):
         with open(pickle_files_paths[idx], 'rb') as f:

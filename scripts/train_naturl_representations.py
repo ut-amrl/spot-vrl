@@ -10,6 +10,9 @@ import pickle
 import glob
 from torch.utils.data import DataLoader, Dataset, ConcatDataset
 import torch.nn.functional as F
+import tensorboard as tb
+import cv2
+from tqdm import tqdm
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -28,21 +31,32 @@ from torchvision import transforms
 from tqdm import tqdm
 from PIL import Image
 
-import tensorboard as tb
 
 from termcolor import cprint
 
 from scripts import cluster_jackal
 
+# terrain_label = {
+#     'cement': 0,
+#     'pebble_pavement': 1,
+#     'grass': 2,
+#     'dark_tile': 3,
+#     'bush': 4,
+#     'asphalt': 5,
+#     'marble_rock': 6,
+#     'red_brick': 7, 
+# }
+
 terrain_label = {
-    'cement': 0,
-    'pebble_pavement': 1,
-    'grass': 2,
-    'dark_tile': 3,
-    'bush': 4,
-    'asphalt': 5,
-    'marble_rock': 6,
-    'red_brick': 7, 
+    'asphalt': 0,
+    'bush': 1,
+    'concrete': 2,
+    'grass': 3,
+    'marble_rock': 4,
+    'mulch': 5,
+    'pebble_pavement': 6,
+    'red_brick': 7,
+    'yellow_brick': 8,
 }
 
 FEET_TOPIC_RATE = 24.0
@@ -51,19 +65,30 @@ IMU_TOPIC_RATE = 200.0
 
 
 class TerrainDataset(Dataset):
-    def __init__(self, pickle_files_root, incl_orientation=False, mean=None, std=None, train=False):
+    def __init__(self, pickle_files_root, incl_orientation=False, 
+                 data_stats=None, train=False, psd=True):
         self.pickle_files_paths = glob.glob(pickle_files_root + '/*.pkl')
         self.label = pickle_files_root.split('/')[-2]
         # self.label = terrain_label[self.label]
         self.incl_orientation = incl_orientation
-        self.mean, self.std = mean, std
+        self.data_stats = data_stats
+        
+        self.psd = psd # this will be False for RCA
+        if not self.psd:
+            print('Using RCA, so not returning PSD values. Returning FFT values instead.')
+        
+        if self.data_stats is not None:
+            self.min, self.max = data_stats['min'], data_stats['max']
+            self.mean, self.std = data_stats['mean'], data_stats['std']
+        
         if train:
             # cprint('Using data augmentation', 'green')
             # use albumentation for data augmentation
             self.transforms = A.Compose([
                 A.Flip(always_apply=False, p=0.5),
-                # A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.2, 0.3), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
-                # A.RandomBrightness(always_apply=False, p=0.5, limit=(-0.2, 0.2)),
+                A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.2, 0.3), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
+                A.RandomBrightnessContrast(always_apply=False, p=0.75, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
+                # A.ColorJitter(always_apply=False, p=0.9, brightness=(0.5, 1.2), contrast=(0.5, 1.2), saturation=(0.5, 1.2), hue=(-0.05, 0.05)),
             ])
         else:
             self.transforms = None
@@ -74,36 +99,57 @@ class TerrainDataset(Dataset):
     def __getitem__(self, idx):
         with open(self.pickle_files_paths[idx], 'rb') as f:
             data = pickle.load(f)
-        patches, imu, feet, leg = data['patches'], data['imu'], data['feet'], data['leg']
+        imu, feet, leg = data['imu'], data['feet'], data['leg']
+        patches = data['patches']
+        # data['patches'] contains the folder path of the patches stored as images. 
+        # find the number of images in the folder
+        # patches = self.pickle_files_paths[idx].replace('.pkl', '') # location where the patches are stored
+        # num_patches = len(glob.glob(self.pickle_files_paths[idx].replace('.pkl', '') + '/*.png'))
+        
         
         # process the feet data to remove the mu and std values for non-contacting feet
         feet = process_feet_data(feet)
         
-        if not self.incl_orientation: imu = imu[:, :-3]
+        if not self.incl_orientation: imu = imu[:, :-4]
+
+        if self.psd:
+            imu = periodogram(imu, fs=IMU_TOPIC_RATE, axis=0)[1]
+            leg = periodogram(leg, fs=LEG_TOPIC_RATE, axis=0)[1]
+            feet = periodogram(feet, fs=FEET_TOPIC_RATE, axis=0)[1]
+        else: # used for RCA
+            # perform FFT of the data and return the amplitude values
+            imu = np.abs(np.fft.fft(imu, axis=0))
+            leg = np.abs(np.fft.fft(leg, axis=0))
+            feet = np.abs(np.fft.fft(feet, axis=0))
+            imu = imu[:imu.shape[0]//2]
+            leg = leg[:leg.shape[0]//2]
+            feet = feet[:feet.shape[0]//2]
         
         # normalize the imu data
-        if self.mean is not None and self.std is not None:
-            imu = (imu - self.mean['imu']) / (self.std['imu'] + 1e-7)
-            imu = periodogram(imu, fs=IMU_TOPIC_RATE, axis=0)[1]
+        # if self.mean is not None and self.std is not None:
+        if self.data_stats is not None and self.psd:
+            #minmax normalization
+            imu = (imu - self.min['imu']) / (self.max['imu'] - self.min['imu'] + 1e-7)
             imu = imu.flatten()
             imu = imu.reshape(1, -1)
             
-            leg = (leg - self.mean['leg']) / (self.std['leg'] + 1e-7)
-            leg = periodogram(leg, fs=LEG_TOPIC_RATE, axis=0)[1]
+            leg = (leg - self.min['leg']) / (self.max['leg'] - self.min['leg'] + 1e-7)
             leg = leg.flatten()
             leg = leg.reshape(1, -1)
             
-            feet = (feet - self.mean['feet']) / (self.std['feet'] + 1e-7)
-            feet = periodogram(feet, fs=FEET_TOPIC_RATE, axis=0)[1]
+            feet = (feet - self.min['feet']) / (self.max['feet'] - self.min['feet'] + 1e-7)
             feet = feet.flatten()
             feet = feet.reshape(1, -1)
-        
+            
         # sample 2 values between 0 and num_patches-1
         patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
+        # patch1_idx, patch2_idx = np.random.choice(num_patches, 2, replace=False)
         patch1, patch2 = patches[patch_1_idx], patches[patch_2_idx]
+        # patch1, patch2 = os.path.join(patches, f'{patch1_idx}.png'), os.path.join(patches, f'{patch2_idx}.png')
+        # patch1, patch2 = cv2.imread(patch1), cv2.imread(patch2)
         
         # convert BGR to RGB
-        patch1, patch2 = patch1[:, :, ::-1], patch2[:, :, ::-1]
+        patch1, patch2 = cv2.cvtColor(patch1, cv2.COLOR_BGR2RGB), cv2.cvtColor(patch2, cv2.COLOR_BGR2RGB)
         
         # apply the transforms
         if self.transforms is not None:
@@ -121,19 +167,21 @@ class TerrainDataset(Dataset):
 
 # create pytorch lightning data module
 class NATURLDataModule(pl.LightningDataModule):
-    def __init__(self, data_config_path, batch_size=64, num_workers=2, include_orientation_imu=False):
+    def __init__(self, data_config_path, batch_size=64, num_workers=2, include_orientation_imu=False, psd=True):
         super().__init__()
         
         # read the yaml file
         cprint('Reading the yaml file at : {}'.format(data_config_path), 'green')
         self.data_config = yaml.load(open(data_config_path, 'r'), Loader=yaml.FullLoader)
         self.data_config_path = '/'.join(data_config_path.split('/')[:-1])
+        self.psd = psd # this will be false for the RCA model
 
         self.include_orientation_imu = include_orientation_imu
 
         self.batch_size, self.num_workers = batch_size, num_workers
         
         self.mean, self.std = {}, {}
+        self.min, self.max = {}, {}
         
         # load the train and val datasets
         self.load()
@@ -147,16 +195,19 @@ class NATURLDataModule(pl.LightningDataModule):
         if os.path.exists(self.data_config_path + '/data_statistics.pkl'):
             cprint('Loading the mean and std from the data_statistics.pkl file', 'green')
             data_statistics = pickle.load(open(self.data_config_path + '/data_statistics.pkl', 'rb'))
-            self.mean, self.std = data_statistics['mean'], data_statistics['std']
+            # self.mean, self.std = data_statistics['mean'], data_statistics['std']
+            # self.min, self.max = data_statistics['min'], data_statistics['max']
             
         else:
             # find the mean and std of the train dataset
+            cprint('data_statistics.pkl file not found!', 'yellow')
             cprint('Finding the mean and std of the train dataset', 'green')
-            self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu) for pickle_files_root in self.data_config['train']])
-            self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=1, num_workers=0, shuffle=False)
+            self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, psd=True) for pickle_files_root in self.data_config['train']])
+            self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=128, num_workers=10, shuffle=False)
+            cprint('the length of the tmp_dataloader is : {}'.format(len(self.tmp_dataloader)), 'green')
             # find the mean and std of the train dataset
             imu_data, leg_data, feet_data = [], [], []
-            for _, _, imu, leg, feet, _ in self.tmp_dataloader:
+            for _, _, imu, leg, feet, _, _ in tqdm(self.tmp_dataloader):
                 imu_data.append(imu.cpu().numpy())
                 leg_data.append(leg.cpu().numpy())
                 feet_data.append(feet.cpu().numpy())
@@ -169,20 +220,28 @@ class NATURLDataModule(pl.LightningDataModule):
             feet_data = feet_data.reshape(-1, feet_data.shape[-1])
             
             self.mean['imu'], self.std['imu'] = np.mean(imu_data, axis=0), np.std(imu_data, axis=0)
+            self.min['imu'], self.max['imu'] = np.min(imu_data, axis=0), np.max(imu_data, axis=0)
+            
             self.mean['leg'], self.std['leg'] = np.mean(leg_data, axis=0), np.std(leg_data, axis=0)
+            self.min['leg'], self.max['leg'] = np.min(leg_data, axis=0), np.max(leg_data, axis=0)
+            
             self.mean['feet'], self.std['feet'] = np.mean(feet_data, axis=0), np.std(feet_data, axis=0)
+            self.min['feet'], self.max['feet'] = np.min(feet_data, axis=0), np.max(feet_data, axis=0)
             
             cprint('Mean : {}'.format(self.mean), 'green')
             cprint('Std : {}'.format(self.std), 'green')
+            cprint('Min : {}'.format(self.min), 'green')
+            cprint('Max : {}'.format(self.max), 'green')
             
             # save the mean and std
-            cprint('Saving the mean and std to the data_statistics.pkl file', 'green')
-            pickle.dump({'mean': self.mean, 'std': self.std}, open(self.data_config_path + '/data_statistics.pkl', 'wb'))
+            cprint('Saving the mean, std, min, max to the data_statistics.pkl file', 'green')
+            data_statistics = {'mean': self.mean, 'std': self.std, 'min': self.min, 'max': self.max}
             
-        
+            pickle.dump(data_statistics, open(self.data_config_path + '/data_statistics.pkl', 'wb'))
+            
         # load the train data
-        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, mean=self.mean, std=self.std, train=True) for pickle_files_root in self.data_config['train']])
-        self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, mean=self.mean, std=self.std) for pickle_files_root in self.data_config['val']])
+        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, data_stats=data_statistics, train=True, psd=self.psd) for pickle_files_root in self.data_config['train']])
+        self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, data_stats=data_statistics, psd=self.psd) for pickle_files_root in self.data_config['val']])
         
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, drop_last= True if len(self.train_dataset) % self.batch_size != 0 else False)
@@ -192,7 +251,7 @@ class NATURLDataModule(pl.LightningDataModule):
 
 
 class NATURLRepresentationsModel(pl.LightningModule):
-    def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, weight_decay=1e-6, l1_coeff=0.5):
+    def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, weight_decay=1e-6, l1_coeff=0.5, rep_size=128):
         super(NATURLRepresentationsModel, self).__init__()
         
         self.save_hyperparameters(
@@ -201,19 +260,21 @@ class NATURLRepresentationsModel(pl.LightningModule):
             'scale_loss',
             'lambd',
             'weight_decay',
-            'l1_coeff'
+            'l1_coeff',
+            'rep_size'
         )
         
         self.lr, self.latent_size, self.scale_loss, self.lambd, self.weight_decay = lr, latent_size, scale_loss, lambd, weight_decay
         self.l1_coeff = l1_coeff
+        self.rep_size = rep_size
         
         # visual encoder architecture
-        self.visual_encoder = VisualEncoderModel(latent_size=128)
+        self.visual_encoder = VisualEncoderModel(latent_size=rep_size)
         
-        self.proprioceptive_encoder = ProprioceptionModel(latent_size=128)
+        self.proprioceptive_encoder = ProprioceptionModel(latent_size=rep_size)
         
         self.projector = nn.Sequential(
-            nn.Linear(128, latent_size), nn.ReLU(inplace=True),
+            nn.Linear(rep_size, latent_size), nn.ReLU(inplace=True),
             nn.Linear(latent_size, latent_size)
         )
         
@@ -425,10 +486,10 @@ class NATURLRepresentationsModel(pl.LightningModule):
         self.sampleidx = torch.cat(self.sampleidx, dim=0)
         self.label = np.concatenate(self.label)
         
-        print('Visual Encoding Shape: {}'.format(self.visual_encoding.shape))
-        print('Inertial Encoding Shape: {}'.format(self.inertial_encoding.shape))
-        print('Visual Patch Shape: {}'.format(self.visual_patch.shape))
-        print('Sample Index Shape: {}'.format(self.sampleidx.shape))
+        # print('Visual Encoding Shape: {}'.format(self.visual_encoding.shape))
+        # print('Inertial Encoding Shape: {}'.format(self.inertial_encoding.shape))
+        # print('Visual Patch Shape: {}'.format(self.visual_patch.shape))
+        # print('Sample Index Shape: {}'.format(self.sampleidx.shape))
     
     def on_validation_end(self):
         if (self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs-1) and torch.cuda.current_device() == 0:
@@ -455,21 +516,22 @@ class NATURLRepresentationsModel(pl.LightningModule):
             
             # calculate and print accuracy
             cprint('finding accuracy...', 'yellow')
-            out = cluster_jackal.accuracy_naive(data, ll, label_types=list(terrain_label.keys()))
-            fms, ari, ss, kmeanslabels, kmeanselbow, kmeansmodel = cluster_jackal.compute_fms_ari(data, ll)
+            accuracy, kmeanslabels, kmeanselbow, kmeansmodel = cluster_jackal.accuracy_naive(data, ll, label_types=list(terrain_label.keys()))
+            fms, ari, chs = cluster_jackal.compute_fms_ari(data, ll, clusters=kmeanslabels, elbow=kmeanselbow, model=kmeansmodel)
             
-            if not self.max_acc or out > self.max_acc:
-                self.max_acc = out
+            if not self.max_acc or accuracy > self.max_acc:
+                self.max_acc = accuracy
                 self.kmeanslabels, self.kmeanselbow, self.kmeansmodel = kmeanslabels, kmeanselbow, kmeansmodel
                 self.vispatchsaved = torch.clone(vis_patch)
                 self.sampleidxsaved = torch.clone(self.sampleidx)
                 cprint('best model saved', 'green')
                 
             # log k-means accurcay and projection for tensorboard visualization
-            self.logger.experiment.add_scalar("K-means accuracy", out, self.current_epoch)
+            self.logger.experiment.add_scalar("K-means accuracy", accuracy, self.current_epoch)
             self.logger.experiment.add_scalar("Fowlkes-Mallows score", fms, self.current_epoch)
             self.logger.experiment.add_scalar("Adjusted Rand Index", ari, self.current_epoch)
-            self.logger.experiment.add_scalar("Silhouette score", ss, self.current_epoch)
+            self.logger.experiment.add_scalar("Calinski-Harabasz Score", chs, self.current_epoch)
+            self.logger.experiment.add_scalar("K-means elbow", self.kmeanselbow, self.current_epoch)
             
             # Save the cluster image grids on the final epoch only
             if self.current_epoch == self.trainer.max_epochs-1:
@@ -519,7 +581,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train representations using the NATURL framework')
     parser.add_argument('--batch_size', '-b', type=int, default=256, metavar='N',
                         help='input batch size for training (default: 512)')
-    parser.add_argument('--epochs', type=int, default=120, metavar='N',
+    parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--lr', type=float, default=3e-4, metavar='LR',
                         help='learning rate (default: 3e-4)')

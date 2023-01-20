@@ -28,10 +28,9 @@ SPOT_LEG_STATUS_TOPIC = '/joint_states'
 PATCH_SIZE = 64
 PATCH_EPSILON = 0.5 * PATCH_SIZE * PATCH_SIZE
 
-TOTAL_SAMPLES = 1000
 
 class RosbagParser:
-    def __init__(self, bag_file, output_dir_path, verbose=False):
+    def __init__(self, bag_file, output_dir_path, verbose=False, total_samples=1000):
         self.bag_file = bag_file
         self.output_dir_path = output_dir_path
         # find name of the bag file:
@@ -39,11 +38,12 @@ class RosbagParser:
         self.output_dir_path = os.path.join(self.output_dir_path, bag_file_name)
         cprint("Output directory: {}".format(self.output_dir_path), 'green')
         
+        cprint("Opening rosbag file: {}".format(bag_file), 'yellow')
         self.bag = rosbag.Bag(bag_file)
         
         # find total time in the rosbag in seconds
         self.total_time = self.find_total_time(self.bag)
-        self.time_between_datapoints = self.total_time / TOTAL_SAMPLES
+        self.time_between_datapoints = self.total_time / total_samples
         
         print('Total time travelled: {} sec'.format(self.total_time))
         print('Min time between each data point: {} sec'.format(self.time_between_datapoints))        
@@ -81,11 +81,17 @@ class RosbagParser:
         """
         self.camera_t, self.vectornav_t, self.odom_t = [], [], []
         self.feet_t, self.leg_t = [], []
+        start_t = None
         for topic, msg, t in self.bag.read_messages(topics=[BEV_CAMERA_IMAGE_TOPIC, 
                                                             VECTORNAV_IMU_TOPIC, 
                                                             ODOM_TOPIC,
                                                             SPOT_FEET_STATUS_TOPIC,
                                                             SPOT_LEG_STATUS_TOPIC]):
+            if start_t is None: start_t = t
+            
+            # wait for 5 seconds before starting to extract data
+            if t - start_t < rospy.Duration(5): continue
+            
             if topic == BEV_CAMERA_IMAGE_TOPIC:
                 if len(self.camera_t) == 0: self.camera_start_t = t
                 self.camera_t.append(t)
@@ -123,8 +129,8 @@ class RosbagParser:
                 print('closest feet time: ', closest_feet_t.to_sec()-self.feet_start_t.to_sec())
                 print('closest leg time: ', closest_leg_t.to_sec()-self.leg_start_t.to_sec())
                 
-            # wait for 10 seconds
-            # if current_t.to_sec()-self.camera_start_t.to_sec() < 10: continue
+            # # wait for 5 seconds
+            # if current_t.to_sec()-self.camera_start_t.to_sec() < 5: continue
             
             """
             IMU data
@@ -254,13 +260,12 @@ class RosbagParser:
                 # else:
                     # print('No patch was extracted')
                     
-                if len(patch_list) == 10: break
+                if len(patch_list) == 20: break # upto 2 meters away
 
-            
             if len(patch_list) == 0:
                 cprint('No patch was extracted', 'red')
             
-            while len(self.storage_buffer['image']) > 15:
+            while len(self.storage_buffer['image']) > 30:
                 self.storage_buffer['image'].pop(0)
                 self.storage_buffer['odom'].pop(0)
                 
@@ -391,6 +396,18 @@ class RosbagParser:
             
             pickle_path = os.path.join(self.output_dir_path, "{}.pkl".format(ix))
             
+            # # instead of saving the patch of images as a dict into the pickle file, save
+            # # it inside a folder and each image as a separate file
+            # pickle_dir = os.path.join(self.output_dir_path, "{}".format(ix))
+            # if not os.path.exists(pickle_dir):
+            #     os.makedirs(pickle_dir)
+                
+            # for patch_ix, patch in enumerate(datapt['patches']):
+            #     cv2.imwrite(os.path.join(pickle_dir, "{}.png".format(patch_ix)), patch)
+                
+            # # remove the patches from the dict
+            # datapt['patches'] = pickle_dir
+            
             # save the data
             with open(pickle_path, 'wb') as f:
                 pickle.dump(datapt, f)
@@ -452,9 +469,10 @@ if __name__ == '__main__':
     args.add_argument('--bag_file', '-b', type=str, default='data/spot.bag')
     args.add_argument('--output_dir_path', '-o', type=str, default='spot_data/')
     args.add_argument('--verbose', '-v', action='store_true')
+    args.add_argument('--total_samples', '-n', type=int, default=1000)
     args = args.parse_args()
     
-    rosbag_parser = RosbagParser(args.bag_file, args.output_dir_path, verbose=args.verbose)
+    rosbag_parser = RosbagParser(args.bag_file, args.output_dir_path, verbose=args.verbose, total_samples=args.total_samples)
     
     cprint("saving data", 'green')
     rosbag_parser.save_data()
