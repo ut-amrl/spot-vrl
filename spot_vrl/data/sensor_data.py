@@ -13,7 +13,7 @@ import rosbag
 from spot_vrl.data import ros_to_numpy
 
 
-class SensorMetrics:
+class SpotMetrics:
     joint_order: ClassVar[Dict[str, int]] = {
         "fl.hx": 0,
         "fl.hy": 1,
@@ -151,14 +151,14 @@ class SensorMetrics:
             logger.warning("Spot is flying (no feet made contact with the ground)")
 
 
-class ImuData:
-    """Storage container for non-visual Spot sensor data of interest.
+class SpotSensorData:
+    """Storage container for proprioceptive Spot data.
 
-    This class stores a time-ordered sequence sensor data.
+    This class stores a time-ordered sequence of sensor data.
 
     The full sequence of each field can be accessed as numpy arrays using the
-    property fields of the ImuData class. Each item in the sequence is
-    represented as a row vector.
+    property fields of this class. Each item in the sequence is represented as a
+    row vector.
     """
 
     def __init__(self, filename: Union[str, Path]) -> None:
@@ -166,7 +166,7 @@ class ImuData:
         Args:
             filename (str | Path): Path to a BDDF file.
         """
-        self._data: List[SensorMetrics] = []
+        self._data: List[SpotMetrics] = []
         self._path: Path = Path(filename)
 
         if self._path.suffix == ".bag":
@@ -216,7 +216,7 @@ class ImuData:
 
         for v in synced_msgs.values():
             if v.valid():
-                self._data.append(SensorMetrics(v))
+                self._data.append(SpotMetrics(v))
 
     def __len__(self) -> int:
         return len(self._data)
@@ -357,9 +357,9 @@ class ImuData:
             ValueError: Invalid time range or property matrix.
 
         Examples:
-            >>> imu = ImuData(...)
-            >>> timestamps, data = imu.query_time_range(imu.all_sensor_data, 1000, 2000)
-            >>> timestamps, power = imu.query_time_range(imu.power, 1000, 2000)
+            >>> spot_data = SpotSensorData(...)
+            >>> timestamps, data = spot_data.query_time_range(spot_data.all_sensor_data, 1000, 2000)
+            >>> timestamps, power = spot_data.query_time_range(spot_data.power, 1000, 2000)
         """
         if start >= end:
             raise ValueError("start >= end")

@@ -15,7 +15,7 @@ from loguru import logger
 from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
-from spot_vrl.data import ImuData
+from spot_vrl.data.sensor_data import SpotSensorData
 from spot_vrl.data._deprecated.image_data import ImageData
 from spot_vrl.homography._deprecated.perspective_transform import TopDown
 from spot_vrl.utils.video_writer import VideoWriter
@@ -64,7 +64,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         """Mapping of image sequence numbers to patches from previous
         viewpoints."""
 
-        imu_data = ImuData(self.path)
+        spot_data = SpotSensorData(self.path)
         img_data = ImageData.factory(self.path, lazy=False)
 
         fwd_patches: Dict[int, Dict[int, Tuple[slice, slice]]] = defaultdict(dict)
@@ -79,11 +79,11 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             img_ts, images = img_data[i]
             if img_ts < start:
                 continue
-            elif img_ts > end or img_ts > imu_data.timestamp_sec[-1]:
+            elif img_ts > end or img_ts > spot_data.timestamp_sec[-1]:
                 break
 
-            imu_ts, poses = imu_data.query_time_range(
-                imu_data.tforms("odom", "body"), float(img_ts)
+            spot_ts, poses = spot_data.query_time_range(
+                spot_data.tforms("odom", "body"), float(img_ts)
             )
             first_tform_odom = np.linalg.inv(poses[0])
 
@@ -110,11 +110,11 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             for j in range(i, len(img_data)):
                 jmg_ts, _ = img_data[j]
 
-                if jmg_ts > imu_data.timestamp_sec[-1]:
+                if jmg_ts > spot_data.timestamp_sec[-1]:
                     break
 
-                _, poses = imu_data.query_time_range(
-                    imu_data.tforms("odom", "body"), jmg_ts
+                _, poses = spot_data.query_time_range(
+                    spot_data.tforms("odom", "body"), jmg_ts
                 )
                 disp = first_tform_odom @ poses[0]
 

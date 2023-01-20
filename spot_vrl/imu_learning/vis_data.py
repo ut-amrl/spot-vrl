@@ -1,5 +1,5 @@
 """
-Visualizes trajectory and IMU data to aid with time window selection.
+Visualizes trajectory and Sensor data to aid with time window selection.
 
 In general, windows can be filtered/selected based on:
   - visual terrain type
@@ -19,7 +19,7 @@ import tqdm
 from bosdyn.api.bddf_pb2 import SeriesBlockIndex
 from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.bddf import DataReader, ProtobufReader
-from spot_vrl.data import ImuData
+from spot_vrl.data.sensor_data import SpotSensorData
 from spot_vrl.data._deprecated.image_data import CameraImage, SpotImage
 from spot_vrl.homography._deprecated.perspective_transform import TopDown
 from spot_vrl.scripts.gp import ImageWithText  # maybe a bad dependency
@@ -66,15 +66,19 @@ class ImageIterator:
 
 
 def vis_data(path: Path) -> None:
-    imu = ImuData(path)
+    spot_data = SpotSensorData(path)
     images = ImageIterator(path)
     vid = VideoWriter(Path("images") / path.stem / "imu_vis.mp4")
 
     for _ in tqdm.trange(images.num_msgs, desc="Processing Video"):
         ts, image = next(images)
 
-        _, linear_vels = imu.query_time_range(imu.linear_vel, start=ts, end=ts + 1)
-        _, foot_depths = imu.query_time_range(imu.foot_depth_mean, start=ts, end=ts + 1)
+        _, linear_vels = spot_data.query_time_range(
+            spot_data.linear_vel, start=ts, end=ts + 1
+        )
+        _, foot_depths = spot_data.query_time_range(
+            spot_data.foot_depth_mean, start=ts, end=ts + 1
+        )
 
         if linear_vels.size == 0:
             continue

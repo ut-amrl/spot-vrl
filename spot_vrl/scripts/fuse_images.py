@@ -17,7 +17,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import tqdm
-from spot_vrl.data import ImuData
+from spot_vrl.data.sensor_data import SpotSensorData
 from spot_vrl.data._deprecated.image_data import ImageData, CameraImage
 from spot_vrl.homography._deprecated import camera_transform, perspective_transform
 from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
@@ -44,11 +44,11 @@ def fuse_images(filename: str) -> None:
     """
     filepath = Path(filename)
 
-    imu = ImuData(filepath)
+    spot_data = SpotSensorData(filepath)
     img_data = ImageData.factory(filepath, lazy=True)
 
     start_ts = img_data[0][0]
-    start_tform_odom: npt.NDArray[np.float32] = imu.tforms("body", "odom")[0]
+    start_tform_odom: npt.NDArray[np.float32] = spot_data.tforms("body", "odom")[0]
 
     fps = estimate_fps(img_data)
     video_writer = VideoWriter(Path("images") / f"{filepath.stem}.mp4", fps=fps)
@@ -65,13 +65,13 @@ def fuse_images(filename: str) -> None:
         leave=False,
         total=len(img_data),
     ):
-        if ts > imu.timestamp_sec[-1]:
+        if ts > spot_data.timestamp_sec[-1]:
             break
 
-        _, odom_poses = imu.query_time_range(imu.tforms("odom", "body"), ts)
+        _, odom_poses = spot_data.query_time_range(spot_data.tforms("odom", "body"), ts)
         displacement = (start_tform_odom @ odom_poses[0])[:3, 3]
 
-        _, lin_vels = imu.query_time_range(imu.linear_vel, ts)
+        _, lin_vels = spot_data.query_time_range(spot_data.linear_vel, ts)
         lin_vel = lin_vels[0]
 
         td = perspective_transform.TopDown(images)
@@ -94,7 +94,7 @@ def fuse_images(filename: str) -> None:
         img_wrapper.add_line(f" {y:.2f}")
         img_wrapper.add_line(f" {z:.2f}")
 
-        fd = imu.query_time_range(imu.foot_depth_mean, ts)[1][0]
+        fd = spot_data.query_time_range(spot_data.foot_depth_mean, ts)[1][0]
         img_wrapper.add_line(f"depth: {fd}")
 
         video_writer.add_frame(img_wrapper.img)

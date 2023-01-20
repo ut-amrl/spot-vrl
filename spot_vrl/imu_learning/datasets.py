@@ -12,11 +12,11 @@ import torch.utils.data
 from loguru import logger
 from torch.utils.data import ConcatDataset, Dataset
 
-from spot_vrl.data import ImuData
+from spot_vrl.data.sensor_data import SpotSensorData
 
 
 class SingleTerrainDataset(Dataset[torch.Tensor]):
-    """IMU dataset from a single terrain type.
+    """Sensor dataset from a single terrain type.
 
     Data are time windows as fixed-sized matrices in the layout:
 
@@ -50,16 +50,18 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         self.start = start
         self.end = end
 
-        imu = ImuData(path)
+        spot_data = SpotSensorData(path)
 
         window_size = self.window_size
         self.windows: List[torch.Tensor] = []
 
-        ts, _ = imu.query_time_range(imu.all_sensor_data, start, end)
+        ts, _ = spot_data.query_time_range(spot_data.all_sensor_data, start, end)
         # Overlap windows for more data points
         for window_start in np.arange(ts[0], ts[-1] - window_size, 0.5):
-            _, window = imu.query_time_range(
-                imu.all_sensor_data[:, -4:], window_start, window_start + window_size
+            _, window = spot_data.query_time_range(
+                spot_data.all_sensor_data[:, -4:],
+                window_start,
+                window_start + window_size,
             )
 
             # compute ffts
@@ -141,7 +143,7 @@ Triplet = Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
 
 
 class BaseTripletDataset(Dataset[Triplet]):
-    """Base class for IMU Triplet Datasets
+    """Base class for Sensor Triplet Datasets
 
     All derived classes must overload `__len__`, optionally using a scaling
     multiplier to artificially increase the number of triplets to generate.

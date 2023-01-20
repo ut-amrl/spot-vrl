@@ -22,7 +22,7 @@ from bosdyn.api.image_pb2 import GetImageResponse
 from bosdyn.api.robot_id_pb2 import RobotIdResponse
 from bosdyn.bddf import DataReader, ProtobufReader
 
-from spot_vrl.data import ImuData
+from spot_vrl.data.sensor_data import SpotSensorData
 from spot_vrl.data._deprecated.image_data import SpotImage, CameraImage
 from spot_vrl.homography._deprecated import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
@@ -84,10 +84,10 @@ class SensorData:
     def _init_depths(self) -> None:
         assert self._start_ts != 0, "Initialize self._start_ts first."
 
-        imu = ImuData(self._datapath)
-        ts = imu.timestamp_sec - self._start_ts
+        spot_data = SpotSensorData(self._datapath)
+        ts = spot_data.timestamp_sec - self._start_ts
 
-        for t, d in zip(ts, imu.foot_depth_mean):
+        for t, d in zip(ts, spot_data.foot_depth_mean):
             self.depths[t] = d
 
     def num_images(self) -> int:
