@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Dict, List, Set, Tuple, Union, Optional
 
 import cv2
 import numpy as np
+import numpy.typing as npt
 import torch
 import tqdm
 from loguru import logger
@@ -25,6 +26,11 @@ Patch = torch.Tensor
 """uint8 image patch"""
 
 Triplet = Tuple[Patch, Patch, Patch]
+
+
+def zero_pixel_ratio(image: npt.NDArray[np.uint8]) -> float:
+    b_or = image[:, :, 0] | image[:, :, 1] | image[:, :, 2]
+    return 1.0 - np.count_nonzero(b_or) / (image.shape[0] * image.shape[1])
 
 
 class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
@@ -137,10 +143,14 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 tl_y = origin_y - int(disp_x * RESOLUTION)
                 patch_slice = np.s_[tl_y : tl_y + PATCH_SIZE, tl_x : tl_x + PATCH_SIZE]
 
-                patch = torch.from_numpy(bev_image[patch_slice].copy())
+                patch = bev_image[patch_slice]
 
                 # Filter out patches that contain out-of-view areas
-                if patch.shape == (PATCH_SIZE, PATCH_SIZE, 3) and (patch != 0).all():
+                if (
+                    patch.shape == (PATCH_SIZE, PATCH_SIZE, 3)
+                    and zero_pixel_ratio(patch) < 0.02
+                ):
+                    patch = torch.from_numpy(patch.copy())
                     self.patches[j][i] = torch.permute(
                         patch, (2, 0, 1)
                     )  # Move channels axis to front for Pytorch
