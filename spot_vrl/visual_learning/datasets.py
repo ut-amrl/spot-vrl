@@ -16,8 +16,7 @@ from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data.sensor_data import SpotSensorData
-from spot_vrl.data._deprecated.image_data import ImageData
-from spot_vrl.homography._deprecated.perspective_transform import TopDown
+from spot_vrl.data.image_data import BEVImageSequence
 from spot_vrl.utils.video_writer import VideoWriter
 
 
@@ -65,7 +64,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         viewpoints."""
 
         spot_data = SpotSensorData(self.path)
-        img_data = ImageData.factory(self.path, lazy=False)
+        bev_img_data = BEVImageSequence(self.path)
 
         fwd_patches: Dict[int, Dict[int, Tuple[slice, slice]]] = defaultdict(dict)
         """Mapping of image sequence numbers to the future image slices
@@ -75,8 +74,14 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         if make_vis_vid:
             video_writer = VideoWriter(self.output_dir / f"{self.path.stem}.mp4")
 
-        for i in tqdm.trange(len(img_data), desc="Loading Dataset"):
-            img_ts, images = img_data[i]
+        for i in tqdm.trange(
+            len(bev_img_data),
+            desc="Loading Dataset",
+            position=parallel.tqdm_position(),
+            dynamic_ncols=True,
+            leave=False,
+        ):
+            img_ts, image = bev_img_data[i]
             if img_ts < start:
                 continue
             elif img_ts > end or img_ts > spot_data.timestamp_sec[-1]:
@@ -87,28 +92,20 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             )
             first_tform_odom = np.linalg.inv(poses[0])
 
-            resolution = 150
-            horizon_dist = 4.0
-            # The center of the 60x60 patch with this top-left coordinate is
-            # (0,0) in the body frame. Using this coordinate as the first patch
-            # causes the first few patches in each subtrajectory to contain pixels
-            # that are out of view (channel == 0).
-            # origin_y = 866
-            # origin_x = 732
-            # origin_y = images[0].height - 30
-            # origin_x = (images[0].width // 2) - 30
+            RESOLUTION = 150  # pixels per meter
+            PATCH_SIZE = 64
 
             # front_images = [img for img in images if "front" in img.frame_name]
-            td = TopDown(images).get_view(resolution, horizon_dist)
+            bev_image = image.decoded_image()
 
             # Assume (0, 0) in the body frame is at the center-bottom of this image.
-            origin_y = td.shape[0] - 30
-            origin_x = (td.shape[1] // 2) - 30
+            origin_y = bev_image.shape[0] - PATCH_SIZE // 2
+            origin_x = (bev_image.shape[1] // 2) - PATCH_SIZE // 2
 
             total_dist = np.float64(0)
             last_odom_pose = poses[0]
-            for j in range(i, len(img_data)):
-                jmg_ts, _ = img_data[j]
+            for j in range(i, len(bev_img_data)):
+                jmg_ts, _ = bev_img_data[j]
 
                 if jmg_ts > spot_data.timestamp_sec[-1]:
                     break
@@ -122,9 +119,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 total_dist += np.linalg.norm(inst_odom_disp[:2, 3])
                 last_odom_pose = poses[0]
 
-                # The viewable distance is greater than horizon_dist
-                # TODO: is this a bug in the TopDown class?
-                if total_dist > 6:
+                if total_dist > 4:
                     break
 
                 # Odometry suffers from inaccuracies when turning. Truncate the
@@ -137,28 +132,29 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 disp_y = disp[1, 3]
 
                 # note: image and world coordinates use different handedness
-                tl_x = origin_x - int(disp_y * resolution)
-                tl_y = origin_y - int(disp_x * resolution)
-                patch_slice = np.s_[tl_y : tl_y + 60, tl_x : tl_x + 60]
+                tl_x = origin_x - int(disp_y * RESOLUTION)
+                tl_y = origin_y - int(disp_x * RESOLUTION)
+                patch_slice = np.s_[tl_y : tl_y + PATCH_SIZE, tl_x : tl_x + PATCH_SIZE]
 
-                patch = torch.from_numpy(td[patch_slice].copy())
+                patch = torch.from_numpy(bev_image[patch_slice].copy())
 
                 # Filter out patches that contain out-of-view areas
-                if patch.shape == (60, 60, 3) and (patch != 0).all():
-                    self.patches[j][i] = torch.permute(patch, (2, 0, 1))
+                if patch.shape == (PATCH_SIZE, PATCH_SIZE, 3) and (patch != 0).all():
+                    self.patches[j][i] = torch.permute(
+                        patch, (2, 0, 1)
+                    )  # Move channels axis to front for Pytorch
                     fwd_patches[i][j] = patch_slice
 
             if video_writer is not None:
-                # td = cv2.cvtColor(td, cv2.COLOR_GRAY2BGR)
                 for _, s in fwd_patches[i].items():
                     # rectangle() takes x,y point order
-                    td = cv2.rectangle(
-                        td,
+                    bev_image = cv2.rectangle(
+                        bev_image,
                         (s[1].start, s[0].start),
                         (s[1].stop, s[0].stop),
                         (0, 255, 0),
                     )
-                video_writer.add_frame(td)
+                video_writer.add_frame(bev_image)
 
         if video_writer is not None:
             video_writer.close()
@@ -167,10 +163,10 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
 
     @staticmethod
     def get_serialized_filename(
-        bddf_path: Union[str, Path], start: float, end: float
+        path: Union[str, Path], start: float, end: float
     ) -> str:
-        bddf_path = Path(bddf_path)
-        return f"{bddf_path.stem}-{start:.0f}-to-{end:.0f}.pkl"
+        path = Path(path)
+        return f"{path.stem}-{start:.0f}-to-{end:.0f}.pkl"
 
     @classmethod
     def load(
