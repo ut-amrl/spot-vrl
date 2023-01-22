@@ -32,3 +32,8 @@ warnings.filterwarnings(
     category=DeprecationWarning,
     module=r".*rosbag.*",
 )
+warnings.filterwarnings(
+    "ignore",
+    category=DeprecationWarning,
+    module=r".*torch.*utils.*tensorboard.*",
+)
