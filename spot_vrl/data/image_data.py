@@ -21,7 +21,7 @@ class Image:
     def decoded_image(self) -> npt.NDArray[np.uint8]:
         img: npt.NDArray[np.uint8] = simplejpeg.decode_jpeg(
             self._imgbuf,
-            colorspace="BGR",  # for opencv compatibility
+            colorspace="RGB",
         )
         return img
 
@@ -44,7 +44,7 @@ class ImageSequence(abc.ABC):
 
     The return type for all indexing operations is a tuple containing:
         - [0] np.float64: A unix timestamp.
-        - [1] np.NDArray[np.uint8]: A BGR image.
+        - [1] np.NDArray[np.uint8]: An RGB image.
     """
 
     def __init__(self, filename: Union[str, Path]) -> None:
@@ -160,6 +160,8 @@ class BEVImageSequence(ImageSequence):
 
             for timestamp, list_with_a_single_image in image_data:
                 bev_image = TopDown(list_with_a_single_image).get_view(150)
+                # Deprecated code used BGR. Convert to RGB
+                bev_image = bev_image[:, :, ::-1]
                 self._images.append(DecodedImage(timestamp, bev_image))
 
         self._timestamps = np.array(

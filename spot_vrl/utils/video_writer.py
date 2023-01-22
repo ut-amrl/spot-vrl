@@ -1,3 +1,4 @@
+import io
 import os
 import subprocess
 from pathlib import Path
@@ -6,6 +7,8 @@ from typing import Optional, Tuple, Union
 import cv2
 import numpy as np
 import numpy.typing as npt
+import PIL
+from PIL import Image as PIL_Image
 from loguru import logger
 
 
@@ -89,6 +92,7 @@ class VideoWriter:
             "-loglevel", "warning",
             "-y",
             "-f", "image2pipe",
+            "-probesize", "32M",
             "-r", str(fps),  # input fps needs to be specified or frames may be dropped
             "-i", "-",
             "-c:v", "libx264",
@@ -130,13 +134,25 @@ class VideoWriter:
         if self._ffmpeg.returncode:
             raise ChildProcessError("The ffmpeg process has terminated.")
 
-        img_buf: npt.NDArray[np.uint8]
-        success, img_buf = cv2.imencode(".bmp", frame)
-        if not success:
-            raise ValueError("The image could not be encoded.")
+        # PIL is slightly faster than OpenCV due to not needing to convert RGB to BGR
+        with io.BytesIO() as image_buffer:
+            im = PIL_Image.fromarray(frame)
+            im.save(image_buffer, format="BMP")
 
-        assert self._ffmpeg.stdin  # redundant check, silence Optional[] check
-        self._ffmpeg.stdin.write(img_buf.tobytes())
+            assert self._ffmpeg.stdin  # redundant check, silence Optional[] check
+            self._ffmpeg.stdin.write(image_buffer.getvalue())
+
+        # # OpenCV expects the input to be in BGR order.
+        # if frame.ndim == 3:
+        #     frame = frame[:, :, ::-1]
+
+        # img_buf: npt.NDArray[np.uint8]
+        # success, img_buf = cv2.imencode(".bmp", frame)
+        # if not success:
+        #     raise ValueError("The image could not be encoded.")
+
+        # assert self._ffmpeg.stdin  # redundant check, silence Optional[] check
+        # self._ffmpeg.stdin.write(img_buf.tobytes())
 
     def close(self) -> None:
         """Closes the ffmpeg subprocess."""

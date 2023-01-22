@@ -13,7 +13,7 @@ from spot_vrl.data.image_data import BEVImageSequence, Image
 @dataclass
 class Datum:
     image: npt.NDArray[np.uint8]
-    """BEV image."""
+    """An RGB BEV image."""
 
     odom: npt.NDArray[np.float32]
     """
