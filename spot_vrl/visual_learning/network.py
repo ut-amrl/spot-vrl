@@ -30,15 +30,15 @@ class EmbeddingNet(nn.Module):
     def __init__(self, embedding_dim: int) -> None:
         super().__init__()
 
-        # Reduce 1x60x60 image into a 128x1x1 image
+        # Reduce 3x64x64 image into a 128x1x1 image
         self.convnet = nn.Sequential(
-            # 1x60x60
+            # 1x64x64
             self.ConvBlock(3, 16, 7),
-            # 16x30x30
+            # 16x32x32
             self.ConvBlock(16, 64, 5),
-            # 64x15x15
+            # 64x16x16
             self.ConvBlock(64, 128, 5),
-            # 128 x 7 x 7
+            # 128 x 8 x 8
         )
 
         self.fc = nn.Linear(128, embedding_dim)
