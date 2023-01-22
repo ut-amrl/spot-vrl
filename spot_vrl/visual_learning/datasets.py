@@ -36,7 +36,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
     serialize them to disk using the `save()` method.
     """
 
-    output_dir: ClassVar[Path] = Path("visual-datasets/cache")
+    output_dir: ClassVar[Path] = Path("datasets/cache/visual")
 
     def __init__(
         self,

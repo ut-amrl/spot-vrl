@@ -31,7 +31,7 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
     window_size: ClassVar[float] = 3.0
     """seconds"""
 
-    output_dir: ClassVar[Path] = Path("imu_datasets/cache")
+    output_dir: ClassVar[Path] = Path("datasets/cache/inertial")
 
     @classmethod
     def set_global_window_size(cls, new_size: int) -> None:
