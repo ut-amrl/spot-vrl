@@ -42,7 +42,17 @@ import signal
 import threading
 import time
 from contextlib import contextmanager
-from typing import Any, Callable, ClassVar, List, Generator, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    List,
+    Generator,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import tqdm
 from loguru import logger
@@ -139,7 +149,7 @@ def tqdm_position() -> int:
 
 def fork_join(
     task: Callable[..., Any],
-    task_args: List[Union[Any, Tuple[Any, ...]]],
+    task_args: Sequence[Union[Any, Tuple[Any, ...]]],
     n_proc: int = 2,
 ) -> List[Any]:
     """Parallelize calls to a function using pooled fork-join.
