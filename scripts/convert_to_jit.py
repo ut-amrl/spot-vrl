@@ -8,7 +8,7 @@ import torch.nn as nn
 # pytorch version 
 print('PyTorch version: ', torch.__version__)
 
-pt_file_path = '/robodata/haresh92/spot-vrl/models/acc_0.9924_19-01-2023-01-10-47_/cost_model.pt'
+pt_file_path = '/robodata/haresh92/spot-vrl/models/acc_0.99604_20-01-2023-08-13-17_/cost_model.pt'
 jit_file_save_path =pt_file_path.replace('.pt', '.jit')
 
 # load the model

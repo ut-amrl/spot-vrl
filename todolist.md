@@ -21,8 +21,10 @@
 - [X] QOL Improvement- Make the NATURL representation learning script (cost/train_naturl_representations.py) train parallely on multiple GPUs.
     - Now can train both representations and cost function network parallely on multiple GPUs.
     
-- [ ] Design the experiments. Come up with a list of training terrains and the scenarios we will need to train and test the NATURL algorithm on the spot. 
-- [ ] Train the encoder and cost function network for the appropriate terrains and sync with Elvin for the actual experiments on the spot.
+- [X] Design the experiments. Come up with a list of training terrains and the scenarios we will need to train and test the NATURL algorithm on the spot. 
+- [X] Train the encoder and cost function network for the appropriate terrains and sync with Elvin for the actual experiments on the spot.
 - [ ] Start writing the pre-writing form for this paper. Start writing the Abstract and Introduction, Related Work and Experimental Setup sections.
+
+- [ ] Start training on hazard / pepi machines
 
 

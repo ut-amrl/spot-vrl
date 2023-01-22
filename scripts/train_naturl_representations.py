@@ -87,8 +87,9 @@ class TerrainDataset(Dataset):
             self.transforms = A.Compose([
                 A.Flip(always_apply=False, p=0.5),
                 A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.2, 0.3), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
+                A.Perspective(always_apply=False, p=1.0, scale=(0.05, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
                 A.RandomBrightnessContrast(always_apply=False, p=0.75, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
-                # A.ColorJitter(always_apply=False, p=0.9, brightness=(0.5, 1.2), contrast=(0.5, 1.2), saturation=(0.5, 1.2), hue=(-0.05, 0.05)),
+                A.ColorJitter(always_apply=False, p=0.9, brightness=(0.5, 1.2), contrast=(0.5, 1.2), saturation=(0.5, 1.2), hue=(-0.05, 0.05)),
             ])
         else:
             self.transforms = None

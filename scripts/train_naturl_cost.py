@@ -74,18 +74,25 @@ class NATURLCostModel(pl.LightningModule):
         # }
         
         self.preferences = {
-            0: 0, # red_bricks
-            1: 0, # yellow_bricks
-            2: 0, # cement_sidewalk
-            3: 3, # grass
-            4: 1, # asphalt
-            5: 0, # cement_sidewalk with shadows
-            6: 0, # pebble_sidewalk
-            7: 4, # marble_rocks
-            8: 5, # bush
-            9: 0, # red_bricks 2
-            10: 0, # pebble_sidewalk 2
-            11: 2, # mulch
+            0: 3, #dry grass
+            1: 0, #pebble sidewalk
+            2: 4, #marble rocks
+            3: 1, #asphalt
+            4: 0, #pebble sidewalk
+            5: 0, #pebble sidewalk
+            6: 3, #green grass
+            7: 4, #marble rocks
+            8: 0, #shadow yellow bricks
+            9: 0, #red bricks
+            10: 1, #asphalt
+            11: 0, # cement sidewalk
+            12: 0, #red bricks
+            13: 0, #yellow bricks
+            14: 5, #bush
+            15: 0, #pebble sidewalk
+            16: 2, #mulch
+            17: 0, #cement sidewalk shadow
+            18: 0, #red bricks
         }
         
         self.best_val_loss = 1000000.0

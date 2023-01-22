@@ -2,95 +2,94 @@ import rosbag
 import numpy as np
 import torch
 import torch.nn as nn
-from scripts.models import VisualEncoderModel
+from scripts.models import VisualEncoderModel, CostNet
 from termcolor import cprint
 import cv2
 from tqdm import tqdm
 import albumentations as A
+import torchvision
+import torch.nn.functional as F
+import argparse
 
 class CostVisualizer:
     def __init__(self, model_path):
         self.model_path = model_path
         
         visual_encoder = VisualEncoderModel(latent_size=128)
-        cost_net = nn.Sequential(
-            nn.Linear(128, 64), nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(64, 1), nn.ReLU()
-        )
-        
-        self.pred_model = nn.Sequential(visual_encoder, cost_net)
+        cost_net = CostNet(latent_size=128)
+
+        self.model = nn.Sequential(visual_encoder, cost_net)
         # load weights of model
-        model_state_dict = torch.load('/robodata/haresh92/spot-vrl/models/acc_0.99979/cost_model.pt')
-        self.pred_model.load_state_dict(model_state_dict)
-        self.pred_model.eval()
-        
-        self.conv = nn.LazyConv2d()
-        
+        model_state_dict = torch.load(self.model_path)
+        self.model.load_state_dict(model_state_dict)
+        self.model.eval()
+
         cprint('Model loaded', 'green')
         
     def forward(self, bevimage: torch.Tensor, stride: int = 1):
-        # pad bevimage with zeros of size 32 on all sides
-        bevimage_padded = torch.zeros(bevimage.shape[0], bevimage.shape[1], bevimage.shape[2]+64, bevimage.shape[3]+64)
-        bevimage_padded[:, :, 32:32+bevimage.shape[2], 32:32+bevimage.shape[3]] = bevimage
-        
-        # cost_pred is a grayscale image of size (batch_size, 1, patch_height, patch_width)
-        cost_batch = []
-        
-        for b in range(bevimage_padded.shape[0]):
-            cost_pred = []
-            for i in range(0, bevimage_padded.shape[2], stride):
-                cost_row = []
-                for j in range(0, bevimage_padded.shape[3], stride):
-                    # extract a patch of size 64x64 from the padded bevimage with stride 
-                    # patch_64 = bevimage_padded[b, :, i*stride:i*stride+64, j*stride:j*stride+64].unsqueeze(0)
-                    patch_64 = bevimage_padded[b, :, i:i+64, j:j+64].unsqueeze(0)
-                    print('patch64 shape : ',patch_64.shape)
-                    # pass the patch through the model
-                    with torch.no_grad():
-                        cost_row.append(self.pred_model(patch_64).item())
-
-                cost_pred.append(cost_row)
-            cost_batch.append(cost_pred)
-        cost_batch = torch.tensor(np.asarray(cost_batch))
-            
-        # convert list of list of tensors to tensor
-        return cost_batch
+        """
+        Args:
+            bevimage: [C, H, W]
+            stride: stride of the sliding window
+        """
+        patches = bevimage.unfold(0, 3, 3).unfold(1, 64, stride).unfold(2, 64, stride)
+        patches = patches.contiguous().view(-1, 3, 64, 64)
+        with torch.no_grad():
+            cost = self.model(patches)
+        costm = cost.view(11, 23)
+        cost = F.interpolate(costm.unsqueeze(0).unsqueeze(0), size=(704, 1472), mode='nearest')
+        return cost
     
 if __name__ == '__main__':
-    costviz = CostVisualizer('/robodata/haresh92/spot-vrl/models/acc_0.99979/cost_model.pt')
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--model_path', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.99604_20-01-2023-08-13-17_/cost_model.pt')
+    parser.add_argument('--bag_path', type=str, default='/robodata/eyang/data/2023-01-21/2023-01-21-15-41-04.bag')
+    parser.add_argument('--output_path', type=str, default='cost_video.mp4', help='path to save the video, including the name w/ extension (.mp4)')
+    args = parser.parse_args()
     
-    rosbag = rosbag.Bag('/robodata/eyang/data/2022-12-13/2022-12-13-07-39-25.bag')
-    for topic, msg, t in rosbag.read_messages(topics=['/bev/single/compressed']):
+    costviz = CostVisualizer(args.model_path)
+    rosbag = rosbag.Bag(args.bag_path)
+    
+    # find number of frames in the rosbag
+    numframes = rosbag.get_message_count(topic_filters=['/bev/single/compressed'])
+    
+    stacked_img_list = []
+    
+    # save all the stacked images in a list and save in disk as a MPEG-4 video
+    out = cv2.VideoWriter(args.output_path, cv2.VideoWriter_fourcc(*'MP4V'), 10, (1472*2, 704))
+
+    # use tqdm and rosbag to iterate over the frames
+    for topic, msg, t in tqdm(rosbag.read_messages(topics=['/bev/single/compressed']), total=numframes):
         curr_bev_img = np.fromstring(msg.data, np.uint8)
         curr_bev_img = cv2.imdecode(curr_bev_img, cv2.IMREAD_COLOR)
-        
-        # resize the image by half
-        # curr_bev_img = cv2.resize(curr_bev_img, (curr_bev_img.shape[1]//4, curr_bev_img.shape[0]//4))
-        # resize to 640x480
-        curr_bev_img = cv2.resize(curr_bev_img, (1024, 768))
+        # curr_bev_img = cv2.cvtColor(curr_bev_img, cv2.COLOR_BGR2RGB) # img size is (749, 1476, 3)
+        # remove the bottom and right part of the image to get a size of (704, 1472, 3)
+        curr_bev_img = curr_bev_img[:704, :1472, :] #(64*11, 64*23, 3)
         
         bevimage = curr_bev_img.copy()
-        cv2.imwrite('/robodata/haresh92/spot-vrl/bevimage.png', bevimage)
         
         curr_bev_img = curr_bev_img.transpose(2, 0, 1).astype(np.float32) / 255.0
         
         # convert to tensor
-        curr_bev_img = torch.from_numpy(curr_bev_img).unsqueeze(0)
+        curr_bev_img = torch.from_numpy(curr_bev_img)
         
-        cprint('Predicting cost...', 'yellow')
-        cost = costviz.forward(curr_bev_img, stride=64)
-        cprint('Done', 'green')
-        
-        print('predicted cost shape: ', cost.shape)
+        cost = costviz.forward(curr_bev_img, stride=64).squeeze(0).squeeze(0)
         
         cost = cost.numpy()
-        cost = (cost * 255.0).astype(np.uint8)
-        print(cost.shape)
-        cost = cost.transpose(1, 2, 0)
-        cost = cv2.applyColorMap(cost, cv2.COLORMAP_JET)
-        cost = cv2.resize(cost, (1024, 768)) 
+        cost = (cost * 255.0/6.0).astype(np.uint8)
+        cost = cv2.cvtColor(cost, cv2.COLOR_GRAY2RGB)
+        cost = cv2.resize(cost, (1472, 704))
         
-        cv2.imwrite('/robodata/haresh92/spot-vrl/cost_prediction.png', cost)
-        exit()
+        stacked_img = cv2.cvtColor(np.hstack((bevimage, cost)), cv2.COLOR_RGB2BGR)
+        out.write(stacked_img)
+            
+        # if ctrl+c is pressed, break the loop, save the video and exit
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            out.release()
+            break
+
+    # out.release()
+        
+        
         

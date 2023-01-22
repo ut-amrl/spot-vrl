@@ -45,32 +45,6 @@ class ProprioceptionModel(nn.Module):
         features = F.normalize(features, dim=-1)
         
         return features
-    
-
-# class VisualEncoderModel(nn.Module):
-#     def __init__(self, latent_size=64):
-#         super(VisualEncoderModel, self).__init__()
-#         self.encoder = nn.Sequential( # input shape : (batch_size, 3, 64, 64)
-#             nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 64, 64)
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 8, 32, 32)
-#             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 32, 32)
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 16, 16, 16)
-#             nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 16, 16)
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 32, 8, 8)
-#             nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 8, 8)
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 64, 4, 4)
-#             nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(128), # output shape : (batch_size, 128, 4, 4)
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 128, 2, 2)
-#             nn.Flatten(),
-#             nn.Linear(512, latent_size)
-#         )
-    
-#     def forward(self, x):
-#         x = self.encoder(x)
-        
-#         x = F.normalize(x, dim=-1)
-#         return x
-
 
 class CostNet(nn.Module):
     def __init__(self, latent_size=64):

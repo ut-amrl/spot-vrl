@@ -20,7 +20,7 @@ if __name__ == '__main__':
     
     model = nn.Sequential(visual_encoder, cost_net)
     # load weights of model
-    model_state_dict = torch.load('/robodata/haresh92/spot-vrl/models/acc_0.9924_19-01-2023-01-10-47_/cost_model.pt')
+    model_state_dict = torch.load('/robodata/haresh92/spot-vrl/models/acc_0.99604_20-01-2023-08-13-17_/cost_model.pt')
     model.load_state_dict(model_state_dict)
     model.eval()
     model.cuda()
