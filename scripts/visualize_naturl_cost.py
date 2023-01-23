@@ -23,7 +23,6 @@ class CostVisualizer:
         model_state_dict = torch.load(self.model_path)
         self.model.load_state_dict(model_state_dict)
         self.model.eval()
-
         cprint('Model loaded', 'green')
         
     def forward(self, bevimage: torch.Tensor, stride: int = 1):
@@ -63,7 +62,7 @@ if __name__ == '__main__':
     for topic, msg, t in tqdm(rosbag.read_messages(topics=['/bev/single/compressed']), total=numframes):
         curr_bev_img = np.fromstring(msg.data, np.uint8)
         curr_bev_img = cv2.imdecode(curr_bev_img, cv2.IMREAD_COLOR)
-        # curr_bev_img = cv2.cvtColor(curr_bev_img, cv2.COLOR_BGR2RGB) # img size is (749, 1476, 3)
+        curr_bev_img = cv2.cvtColor(curr_bev_img, cv2.COLOR_BGR2RGB) # img size is (749, 1476, 3)
         # remove the bottom and right part of the image to get a size of (704, 1472, 3)
         curr_bev_img = curr_bev_img[:704, :1472, :] #(64*11, 64*23, 3)
         

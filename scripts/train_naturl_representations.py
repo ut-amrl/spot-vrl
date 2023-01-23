@@ -23,7 +23,7 @@ import os
 from sklearn import metrics
 
 from scipy.signal import periodogram
-from scripts.models import ProprioceptionModel, VisualEncoderModel
+from scripts.models import ProprioceptionModel, VisualEncoderModel, VisualEncoderEfficientModel
 from scripts.utils import process_feet_data
 
 import albumentations as A
@@ -86,10 +86,11 @@ class TerrainDataset(Dataset):
             # use albumentation for data augmentation
             self.transforms = A.Compose([
                 A.Flip(always_apply=False, p=0.5),
-                A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.2, 0.3), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
-                A.Perspective(always_apply=False, p=1.0, scale=(0.05, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
-                A.RandomBrightnessContrast(always_apply=False, p=0.75, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
-                A.ColorJitter(always_apply=False, p=0.9, brightness=(0.5, 1.2), contrast=(0.5, 1.2), saturation=(0.5, 1.2), hue=(-0.05, 0.05)),
+                A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(0.0, 1.0), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
+                A.Perspective(always_apply=False, p=0.5, scale=(0.05, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
+                A.RandomBrightnessContrast(always_apply=False, p=0.5, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
+                A.HueSaturationValue(always_apply=False, p=0.75, hue_shift_limit=(-5, 5), sat_shift_limit=(-30, 30), val_shift_limit=(-20, 20)),
+                A.ToGray(always_apply=False, p=0.5),
             ])
         else:
             self.transforms = None
@@ -129,7 +130,7 @@ class TerrainDataset(Dataset):
         # normalize the imu data
         # if self.mean is not None and self.std is not None:
         if self.data_stats is not None and self.psd:
-            #minmax normalization
+            # #minmax normalization
             imu = (imu - self.min['imu']) / (self.max['imu'] - self.min['imu'] + 1e-7)
             imu = imu.flatten()
             imu = imu.reshape(1, -1)
@@ -141,6 +142,19 @@ class TerrainDataset(Dataset):
             feet = (feet - self.min['feet']) / (self.max['feet'] - self.min['feet'] + 1e-7)
             feet = feet.flatten()
             feet = feet.reshape(1, -1)
+            
+            # # tanh estimator normalization
+            # imu = (imu - self.mean['imu']) / (self.std['imu'] + 1e-7)
+            # imu = 0.5 * np.tanh(0.01 * imu)
+            # imu = imu.flatten().reshape(1, -1)
+            
+            # leg = (leg - self.mean['leg']) / (self.std['leg'] + 1e-7)
+            # leg = 0.5 * np.tanh(0.01 * leg)
+            # leg = leg.flatten().reshape(1, -1)
+            
+            # feet = (feet - self.mean['feet']) / (self.std['feet'] + 1e-7)
+            # feet = 0.5 * np.tanh(0.01 * feet)
+            # feet = feet.flatten().reshape(1, -1)
             
         # sample 2 values between 0 and num_patches-1
         patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
@@ -245,10 +259,16 @@ class NATURLDataModule(pl.LightningDataModule):
         self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, data_stats=data_statistics, psd=self.psd) for pickle_files_root in self.data_config['val']])
         
     def train_dataloader(self):
-        return DataLoader(self.train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, drop_last= True if len(self.train_dataset) % self.batch_size != 0 else False)
+        return DataLoader(self.train_dataset, batch_size=self.batch_size, 
+                          num_workers=self.num_workers, shuffle=True, 
+                          drop_last= True if len(self.train_dataset) % self.batch_size != 0 else False,
+                          pin_memory=True)
     
     def val_dataloader(self):
-        return DataLoader(self.val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, shuffle=True, drop_last= False)
+        return DataLoader(self.val_dataset, batch_size=self.batch_size, 
+                          num_workers=self.num_workers, shuffle=True, 
+                          drop_last= False,
+                          pin_memory=True)
 
 
 class NATURLRepresentationsModel(pl.LightningModule):
@@ -271,6 +291,7 @@ class NATURLRepresentationsModel(pl.LightningModule):
         
         # visual encoder architecture
         self.visual_encoder = VisualEncoderModel(latent_size=rep_size)
+        # self.visual_encoder = VisualEncoderEfficientModel(latent_size=rep_size)
         
         self.proprioceptive_encoder = ProprioceptionModel(latent_size=rep_size)
         
@@ -575,7 +596,6 @@ class NATURLRepresentationsModel(pl.LightningModule):
         torch.save(self.proprioceptive_encoder.state_dict(), os.path.join(path_root, 'proprioceptive_encoder.pt'))
         cprint('proprioceptive encoder saved', 'green')
         cprint('All models successfully saved', 'green', attrs=['bold'])
-        
         
 if __name__ == '__main__':
     
