@@ -29,6 +29,11 @@ Triplet = Tuple[Patch, Patch, Patch]
 
 
 def zero_pixel_ratio(image: npt.NDArray[np.uint8]) -> float:
+    """Calculate the ratio of zero pixels to all pixels in an image.
+
+    Args:
+        image (npt.NDArray[np.uint8]): A HxWx3 image.
+    """
     b_or = image[:, :, 0] | image[:, :, 1] | image[:, :, 2]
     return 1.0 - np.count_nonzero(b_or) / (image.shape[0] * image.shape[1])
 
@@ -66,9 +71,12 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         self.path = Path(path)
         self.start = start
         self.end = end
-        self.patches: Dict[int, Dict[int, Patch]] = defaultdict(dict)
-        """Mapping of image sequence numbers to patches from previous
-        viewpoints."""
+        self.patch_stack: torch.Tensor
+        self.patch_idx_lookup: Dict[int, Dict[int, int]] = defaultdict(dict)
+        """Mapping of image sequence numbers to the stack indices of patches
+        from previous viewpoints."""
+        self.keys: List[int]
+        """List of keys in the lookup table."""
 
         spot_data = SpotSensorData(self.path)
         bev_img_data = BEVImageSequence(self.path)
@@ -81,6 +89,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         if make_vis_vid:
             video_writer = VideoWriter(self.output_dir / f"{self.path.stem}.mp4")
 
+        patches_pre_concat: List[npt.NDArray[np.uint8]] = []
         for i in tqdm.trange(
             len(bev_img_data),
             desc="Loading Dataset",
@@ -102,7 +111,6 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             RESOLUTION = 150  # pixels per meter
             PATCH_SIZE = 64
 
-            # front_images = [img for img in images if "front" in img.frame_name]
             bev_image = image.decoded_image()
 
             # Assume (0, 0) in the body frame is at the center-bottom of this image.
@@ -150,10 +158,8 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                     patch.shape == (PATCH_SIZE, PATCH_SIZE, 3)
                     and zero_pixel_ratio(patch) < 0.02
                 ):
-                    patch = torch.from_numpy(patch.copy())
-                    self.patches[j][i] = torch.permute(
-                        patch, (2, 0, 1)
-                    )  # Move channels axis to front for Pytorch
+                    self.patch_idx_lookup[j][i] = len(patches_pre_concat)
+                    patches_pre_concat.append(patch)
                     fwd_patches[i][j] = patch_slice
 
             if video_writer is not None:
@@ -170,7 +176,11 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         if video_writer is not None:
             video_writer.close()
 
-        self.keys = list(self.patches.keys())
+        stack = np.stack(patches_pre_concat, axis=0)
+        stack = np.moveaxis(stack, 3, 1)  # Move channels axis to front for tensors
+        self.patch_stack = torch.from_numpy(stack).contiguous()
+        logger.debug(f"{self.path.stem}: {self.patch_stack.shape}")
+        self.keys = list(self.patch_idx_lookup.keys())
 
     @staticmethod
     def get_serialized_filename(
@@ -222,22 +232,22 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         from two different viewpoints."""
 
         viewpoint = self.keys[idx]
-        patch_ids = tuple(self.patches[viewpoint].keys())
+        patch_ids = tuple(self.patch_idx_lookup[viewpoint].keys())
 
         # Use the clearest possible view of the patch as an anchor
-        a_id = max(patch_ids)
+        a_idx = max(patch_ids)
 
         # Use a random view of this patch as a positive
-        s_id = np.random.choice(patch_ids, size=1)[0]
+        s_idx = np.random.choice(patch_ids, size=1)[0]
 
         # Debug option: use only the clearest and fuzziest patches
-        # s_id = min(patch_ids)
+        # s_idx = min(patch_ids)
 
         # Completely random sampling
         # singleton = len(patch_ids) == 1
-        # a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
+        # a_idx, s_idx = np.random.choice(patch_ids, size=2, replace=singleton)
 
-        return self.patches[viewpoint][a_id], self.patches[viewpoint][s_id]
+        return self.patch_stack[a_idx], self.patch_stack[s_idx]
 
 
 class BaseTripletDataset(Dataset[Triplet], ABC):
