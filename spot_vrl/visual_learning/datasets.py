@@ -273,11 +273,15 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
         self._rng = np.random.default_rng()
 
     @staticmethod
-    def _pll_create_and_save(
-        _category: str, path: str, start: float, end: float
-    ) -> None:
-        dataset = SingleTerrainDataset(path, start, end, True)
-        dataset.save()
+    def _pll_load_or_create(
+        category: str, path: str, start: float, end: float
+    ) -> Tuple[str, SingleTerrainDataset]:
+        try:
+            dataset = SingleTerrainDataset.load(path, start, end)
+        except FileNotFoundError:
+            dataset = SingleTerrainDataset(path, start, end, True)
+            dataset.save()
+        return category, dataset
 
     def init_from_json(self, filename: Union[str, Path]) -> "BaseTripletDataset":
         """Initializes/overwrites this dataset using a JSON specification file.
@@ -298,9 +302,10 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
             }
         }
         """
-        categories: Dict[str, List[SingleTerrainDataset]] = defaultdict(list)
-        pending: List[Tuple[str, str, float, float]] = []
 
+        categories: Dict[str, List[SingleTerrainDataset]] = defaultdict(list)
+
+        task_args = []
         with open(filename) as f:
             category: str
             datafiles: List[Dict[str, Any]]
@@ -309,22 +314,14 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
                     path: str = dataset_spec["path"]
                     start: float = dataset_spec["start"]
                     end: float = dataset_spec["end"]
+                    task_args.append((category, path, start, end))
 
-                    try:
-                        dataset = SingleTerrainDataset.load(path, start, end)
-                        categories[category].append(dataset)
-                    except FileNotFoundError:
-                        pending.append((category, path, start, end))
+        task_results = parallel.fork_join(
+            BaseTripletDataset._pll_load_or_create, task_args, n_proc=8
+        )
 
-        if pending:
-            # There is an issue with transferring datasets between processes,
-            # so save and reload new datasets from disk.
-            parallel.fork_join(
-                BaseTripletDataset._pll_create_and_save, pending, n_proc=4
-            )
-            for category, path, start, end in pending:
-                dataset = SingleTerrainDataset.load(path, start, end)
-                categories[category].append(dataset)
+        for category, dataset in task_results:
+            categories[category].append(dataset)
 
         for category, datasets in categories.items():
             self._add_category(category, datasets)
