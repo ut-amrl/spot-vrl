@@ -15,6 +15,21 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
 
 
+# Replace the unbuffered torch.utils.tensorboard._embedding.make_mat with
+# this function for networked filesystems.
+# def buffered_make_mat(matlist, save_path):
+#     import io
+
+#     with io.BytesIO() as buffer:
+#         for x in matlist:
+#             x = [str(i.item()) for i in x]
+#             buffer.write(tf.compat.as_bytes("\t".join(x) + "\n"))
+
+#         fs = tf.io.gfile.get_filesystem(save_path)
+#         with tf.io.gfile.GFile(fs.join(save_path, "tensors.tsv"), "wb") as f:
+#             f.write(buffer.getvalue())
+
+
 class EmbeddingGenerator:
     def __init__(
         self,
@@ -65,7 +80,6 @@ class EmbeddingGenerator:
                 for start in range(0, tensor.size(dim=0), self.batch_size):
                     end = min(start + self.batch_size, tensor.size(dim=0))
                     embeddings.append(model.get_embedding(tensor[start:end]))
-                    start = end
 
                 self.tb_writer.add_embedding(
                     torch.cat(embeddings),
