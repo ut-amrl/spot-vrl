@@ -235,17 +235,20 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         patch_ids = tuple(self.patch_idx_lookup[viewpoint].keys())
 
         # Use the clearest possible view of the patch as an anchor
-        a_idx = max(patch_ids)
+        a_id = max(patch_ids)
 
         # Use a random view of this patch as a positive
-        s_idx = np.random.choice(patch_ids, size=1)[0]
+        s_id = np.random.choice(patch_ids, size=1)[0]
 
         # Debug option: use only the clearest and fuzziest patches
-        # s_idx = min(patch_ids)
+        # s_id = min(patch_ids)
 
         # Completely random sampling
         # singleton = len(patch_ids) == 1
-        # a_idx, s_idx = np.random.choice(patch_ids, size=2, replace=singleton)
+        # a_id, s_id = np.random.choice(patch_ids, size=2, replace=singleton)
+
+        a_idx = self.patch_idx_lookup[viewpoint][a_id]
+        s_idx = self.patch_idx_lookup[viewpoint][s_id]
 
         return self.patch_stack[a_idx], self.patch_stack[s_idx]
 
