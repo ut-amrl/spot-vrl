@@ -86,11 +86,13 @@ class TerrainDataset(Dataset):
             # use albumentation for data augmentation
             self.transforms = A.Compose([
                 A.Flip(always_apply=False, p=0.5),
-                A.ShiftScaleRotate(always_apply=False, p=0.5, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(0.0, 1.0), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
-                A.Perspective(always_apply=False, p=0.5, scale=(0.05, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
-                A.RandomBrightnessContrast(always_apply=False, p=0.5, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
-                A.HueSaturationValue(always_apply=False, p=0.75, hue_shift_limit=(-5, 5), sat_shift_limit=(-30, 30), val_shift_limit=(-20, 20)),
-                A.ToGray(always_apply=False, p=0.5),
+                # A.AdvancedBlur(always_apply=False, p=1.0, blur_limit=(3, 7), sigmaX_limit=(0.2, 1.0), sigmaY_limit=(0.2, 1.0), rotate_limit=(-90, 90), beta_limit=(0.5, 8.0), noise_limit=(0.9, 1.1)),
+                # A.ShiftScaleRotate(always_apply=False, p=0.75, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.1, 2.0), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
+                # A.Perspective(always_apply=False, p=0.5, scale=(0.05, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
+                # A.ISONoise(always_apply=False, p=0.5, intensity=(0.1, 0.5), color_shift=(0.01, 0.05)),
+                # A.RandomBrightnessContrast(always_apply=False, p=0.5, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
+                # A.HueSaturationValue(always_apply=False, p=0.25, hue_shift_limit=(-5, 5), sat_shift_limit=(-30, 30), val_shift_limit=(-20, 20)),
+                # A.ToGray(always_apply=False, p=0.5),
             ])
         else:
             self.transforms = None
@@ -157,7 +159,13 @@ class TerrainDataset(Dataset):
             # feet = feet.flatten().reshape(1, -1)
             
         # sample 2 values between 0 and num_patches-1
-        patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
+        # patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
+        
+        # sample a number between 0 and (num_patches-1)/2
+        patch_1_idx = np.random.randint(0, len(patches)//2)
+        # sample a number between (num_patches-1)/2 and num_patches-1
+        patch_2_idx = np.random.randint(len(patches)//2, len(patches))
+        
         # patch1_idx, patch2_idx = np.random.choice(num_patches, 2, replace=False)
         patch1, patch2 = patches[patch_1_idx], patches[patch_2_idx]
         # patch1, patch2 = os.path.join(patches, f'{patch1_idx}.png'), os.path.join(patches, f'{patch2_idx}.png')

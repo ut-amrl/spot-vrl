@@ -68,7 +68,7 @@ class NATURLCostModel(pl.LightningModule):
                 
     def forward(self, visual):
         visual_encoding = self.visual_encoder(visual.float())
-        return self.cost_net(visual_encoding)
+        return self.cost_net(visual_encoding), visual_encoding
     
     def softmax_with_temp(self, x, y, temp=1.0):
         x = torch.exp(x / temp)
@@ -115,8 +115,8 @@ class NATURLCostModel(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         patch1, patch2, inertial, leg, feet, label, _ = batch
         
-        cost1 = self.forward(patch1)
-        cost2 = self.forward(patch2)
+        cost1, ve1 = self.forward(patch1)
+        cost2, ve2 = self.forward(patch2)
                 
         preference_labels = [self.preferences[i] for i in label]
 
@@ -126,7 +126,7 @@ class NATURLCostModel(pl.LightningModule):
         pref_loss = 0.5*self.compute_ranking_loss(cost1, preference_labels) + 0.5*self.compute_ranking_loss(cost2, preference_labels)
         
         # cost must be invariant to the viewpoint of the patch
-        vpt_inv_loss = torch.mean((cost1 - cost2)**2)
+        vpt_inv_loss = torch.mean((ve1 - ve2)**2)
         # penalty for the cost crossing 25.0
         penalty_loss = torch.mean(torch.relu(cost1 - 25.0)) + torch.mean(torch.relu(cost2 - 25.0))
         
@@ -141,8 +141,8 @@ class NATURLCostModel(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         patch1, patch2, inertial, leg, feet, label, _ = batch
         
-        cost1 = self.forward(patch1)
-        cost2 = self.forward(patch2)
+        cost1, ve1 = self.forward(patch1)
+        cost2, ve2 = self.forward(patch2)
                 
         preference_labels = [self.preferences[i] for i in label]
 
@@ -152,7 +152,7 @@ class NATURLCostModel(pl.LightningModule):
         pref_loss = 0.5*self.compute_ranking_loss(cost1, preference_labels) + 0.5*self.compute_ranking_loss(cost2, preference_labels)
         
         # cost must be invariant to the viewpoint of the patch
-        vpt_inv_loss = torch.mean((cost1 - cost2)**2)
+        vpt_inv_loss = torch.mean((ve1 - ve2)**2)
         # penalty for the cost crossing 25.0
         penalty_loss = torch.mean(torch.relu(cost1 - 25.0)) + torch.mean(torch.relu(cost2 - 25.0))
         
@@ -190,13 +190,14 @@ class NATURLCostModel(pl.LightningModule):
     
     def configure_optimizers(self):
         # use only costnet parameters
-        return torch.optim.AdamW(self.cost_net.parameters(), lr=1e-5, weight_decay=1e-5, amsgrad=True)
+        # return torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-7, amsgrad=True)
+        return torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9, weight_decay=1e-7)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', '-b', type=int, default=64, metavar='N',
+    parser.add_argument('--batch_size', '-b', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 512)')
-    parser.add_argument('--epochs', type=int, default=100, metavar='N',
+    parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--num_gpus','-g', type=int, default=8, metavar='N',
                         help='number of GPUs to use (default: 8)')
@@ -222,7 +223,9 @@ if __name__ == "__main__":
                          strategy='ddp',
                          num_sanity_val_steps=0,
                          sync_batchnorm=True,
-                         logger=tb_logger
+                         logger=tb_logger,
+                         gradient_clip_val=10.0,
+                         gradient_clip_algorithm='norm',
                          )
 
     # fit the model

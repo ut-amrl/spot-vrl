@@ -231,7 +231,7 @@ class RosbagParser:
                 self.storage_buffer['odom'].append(odom_data)
                 # self.last_sample_dist = odom_data
                 self.last_sample_time = current_t.to_sec()
-            elif dist_moved > 0.1:
+            elif dist_moved > 0.05:
                 self.storage_buffer['image'].append(curr_bev_img)
                 self.storage_buffer['odom'].append(odom_data)
             
@@ -260,12 +260,12 @@ class RosbagParser:
                 # else:
                     # print('No patch was extracted')
                     
-                if len(patch_list) == 20: break # upto 2 meters away
+                if len(patch_list) >= 80: break # upto 4 meters away patches are extracted
 
             if len(patch_list) == 0:
                 cprint('No patch was extracted', 'red')
             
-            while len(self.storage_buffer['image']) > 30:
+            while len(self.storage_buffer['image']) > 80:
                 self.storage_buffer['image'].pop(0)
                 self.storage_buffer['odom'].pop(0)
                 

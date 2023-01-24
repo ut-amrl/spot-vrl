@@ -5,7 +5,7 @@ a script that reads the yaml file spot_data/data_config.yaml and sorts the datas
 import yaml
 import os
 
-terrains = ['concrete', 'asphalt', 'grass', 'marble_rock', 'yellow_brick', 'red_brick', 'pebbled_sidewalk', 'mulch', 'bush']
+terrains = ['concrete', 'asphalt', 'grass', 'marble_rock', 'yellow_brick', 'red_brick', 'pebble_pavement', 'mulch', 'bush']
 
 # check if the train and test folders and subfolders exis
 if not os.path.exists("spot_data/train"):

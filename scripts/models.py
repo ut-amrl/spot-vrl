@@ -2,6 +2,7 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
+from efficientnet_pytorch import EfficientNet
 
 # create a pytorch model for the proprioception data
 class ProprioceptionModel(nn.Module):
@@ -51,12 +52,25 @@ class CostNet(nn.Module):
         super(CostNet, self).__init__()
         self.fc = nn.Sequential(
             nn.Linear(latent_size, latent_size//2), nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(latent_size//2, 1), nn.ReLU()
+            nn.Dropout(0.25),
+            nn.Linear(latent_size//2, 1), nn.Softplus(), #nn.ReLU()
         )
         
     def forward(self, x):
         return self.fc(x)
+    
+class VisualEncoderEfficientModel(nn.Module):
+    def __init__(self, latent_size=64):
+        super(VisualEncoderEfficientModel, self).__init__()
+        
+        self.model = EfficientNet.from_pretrained('efficientnet-b0')
+        del self.model._fc
+        self.model._fc = nn.Linear(1280, latent_size)
+        
+    def forward(self, x):
+        x = self.model(x)
+        x = F.normalize(x, dim=-1)
+        return x
     
 class VisualEncoderModel(nn.Module):
     def __init__(self, latent_size=64):

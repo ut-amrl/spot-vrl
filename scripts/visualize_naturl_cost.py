@@ -35,16 +35,19 @@ class CostVisualizer:
         patches = patches.contiguous().view(-1, 3, 64, 64)
         with torch.no_grad():
             cost = self.model(patches)
-        costm = cost.view(11, 23)
+        # costm = cost.view(704//stride, 1472//stride)
+        costm = cost.view((704-64)//stride+1, (1472-64)//stride+1)
+        
         cost = F.interpolate(costm.unsqueeze(0).unsqueeze(0), size=(704, 1472), mode='nearest')
+        # cost = F.interpolate(costm.unsqueeze(0).unsqueeze(0), size=(704, 1472), mode='bilinear', align_corners=True)
         return cost
     
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--model_path', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.99604_20-01-2023-08-13-17_/cost_model.pt')
-    parser.add_argument('--bag_path', type=str, default='/robodata/eyang/data/2023-01-21/2023-01-21-15-41-04.bag')
-    parser.add_argument('--output_path', type=str, default='cost_video.mp4', help='path to save the video, including the name w/ extension (.mp4)')
+    parser.add_argument('--bag_path', '-b', type=str, default='/robodata/eyang/data/2023-01-21/2023-01-21-15-41-04.bag')
+    parser.add_argument('--output_path', '-o' ,type=str, default='cost_video.mp4', help='path to save the video, including the name w/ extension (.mp4)')
     args = parser.parse_args()
     
     costviz = CostVisualizer(args.model_path)
