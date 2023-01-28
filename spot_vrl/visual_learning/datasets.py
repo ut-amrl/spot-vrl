@@ -185,7 +185,6 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
         stack = np.stack(patches_pre_concat, axis=0)
         stack = np.moveaxis(stack, 3, 1)  # Move channels axis to front for tensors
         self.patch_stack = torch.from_numpy(stack).contiguous()
-        logger.debug(f"{self.path.stem}: {self.patch_stack.shape}")
         self.keys = list(self.patch_idx_lookup.keys())
 
     @staticmethod
