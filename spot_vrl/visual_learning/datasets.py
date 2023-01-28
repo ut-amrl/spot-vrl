@@ -119,6 +119,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
             origin_y = bev_image.shape[0] - PATCH_SIZE // 2
             origin_x = (bev_image.shape[1] // 2) - PATCH_SIZE // 2
 
+            MIN_DIST_BETWEEN_PATCHES = 0.10
             total_dist = np.float64(0)
             last_odom_pose = poses[0]
             for j in range(i, len(bev_img_data)):
@@ -133,10 +134,13 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 disp = first_tform_odom @ poses[0]
 
                 inst_odom_disp = np.linalg.inv(last_odom_pose) @ poses[0]
+                inst_odom_dist = np.linalg.norm(inst_odom_disp[:2, 3])
+                if inst_odom_dist < MIN_DIST_BETWEEN_PATCHES:
+                    continue
                 total_dist += np.linalg.norm(inst_odom_disp[:2, 3])
                 last_odom_pose = poses[0]
 
-                if total_dist > 4:
+                if total_dist > 4.5:
                     break
 
                 # Odometry suffers from inaccuracies when turning. Truncate the
