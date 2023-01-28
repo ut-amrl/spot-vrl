@@ -90,7 +90,9 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
 
         video_writer: Optional[VideoWriter] = None
         if make_vis_vid:
-            video_writer = VideoWriter(self.output_dir / f"{self.path.stem}.mp4")
+            video_writer = VideoWriter(
+                self.output_dir / f"{self.path.stem}.mp4", fps=15
+            )
 
         patches_pre_concat: List[npt.NDArray[np.uint8]] = []
         for i in tqdm.trange(
