@@ -27,6 +27,9 @@ Patch = torch.Tensor
 
 Triplet = Tuple[Patch, Patch, Patch]
 
+RESOLUTION = 150  # pixels per meter
+PATCH_SIZE = 64
+
 
 def zero_pixel_ratio(image: npt.NDArray[np.uint8]) -> float:
     """Calculate the ratio of zero pixels to all pixels in an image.
@@ -107,9 +110,6 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 spot_data.tforms("odom", "body"), float(img_ts)
             )
             first_tform_odom = np.linalg.inv(poses[0])
-
-            RESOLUTION = 150  # pixels per meter
-            PATCH_SIZE = 64
 
             bev_image = image.decoded_image()
 
