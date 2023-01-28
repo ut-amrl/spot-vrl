@@ -7,14 +7,18 @@ import numpy.typing as npt
 import simplejpeg
 from loguru import logger
 
-import rosbag
-from sensor_msgs.msg import CompressedImage
+try:
+    import rosbag
+    from sensor_msgs.msg import CompressedImage
+except ModuleNotFoundError:
+    logger.warning("TODO: better warning about missing ros stuff")
+    pass
 
 
 class Image:
     """Container to lazily decode (JPEG) ROS CompressedImage messages."""
 
-    def __init__(self, compressed_image: CompressedImage) -> None:
+    def __init__(self, compressed_image: "CompressedImage") -> None:
         self._timestamp = np.float64(compressed_image.header.stamp.to_sec())
         self._imgbuf = np.frombuffer(compressed_image.data, dtype=np.uint8)
 

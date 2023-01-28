@@ -7,10 +7,14 @@ import numpy as np
 import numpy.typing as npt
 from loguru import logger
 
-import geometry_msgs.msg
-import spot_msgs.msg
-import rosbag
-from spot_vrl.data import ros_to_numpy
+try:
+    import geometry_msgs.msg
+    import spot_msgs.msg
+    import rosbag
+    from spot_vrl.data import ros_to_numpy
+except ModuleNotFoundError:
+    logger.warning("TODO: better warning about missing ros stuff")
+    pass
 
 
 class SpotMetrics:
@@ -45,7 +49,7 @@ class SpotMetrics:
         "rear_right_knee": 11,
     }
 
-    def __init__(self, msgs: ros_to_numpy.TimeSyncedMessages) -> None:
+    def __init__(self, msgs: "ros_to_numpy.TimeSyncedMessages") -> None:
         self.ts: np.float64 = np.float64(0)
         """Robot system timestamp of the data in seconds."""
 
