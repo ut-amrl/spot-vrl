@@ -30,8 +30,8 @@ def main() -> None:
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=float, default=1)
-    parser.add_argument("--lr", type=float, default=5e-4)
-    parser.add_argument("--bs", type=int, default=32)
+    parser.add_argument("--lr", type=float, default=2e-3)
+    parser.add_argument("--bs", type=int, default=64)
     parser.add_argument("--comment", type=str, default="")
 
     args = parser.parse_args()
