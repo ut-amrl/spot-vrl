@@ -2,54 +2,44 @@ import argparse
 from pathlib import Path
 from typing import List
 
-import cv2
 import numpy as np
 import torch
 import tqdm
 from loguru import logger
 
-from spot_vrl.data._deprecated.image_data import ImageData, SpotImage, CameraImage
-from spot_vrl.homography._deprecated import perspective_transform
+from spot_vrl.data.image_data import BEVImageSequence, Image
+from spot_vrl.visual_learning.datasets import PATCH_SIZE, zero_pixel_ratio
 from spot_vrl.utils.video_writer import VideoWriter
-
-# TODO: fix bad coding practices
-from spot_vrl.scripts.fuse_images import estimate_fps
 
 
 def load_cost_model(path: Path) -> torch.jit.ScriptModule:
     cost_model: torch.jit.ScriptModule = torch.jit.load(
         path, map_location=torch.device("cpu")
-    )
+    )  # type: ignore
     cost_model.eval()
     return cost_model
 
 
 @torch.no_grad()  # type: ignore
 def make_cost_vid(filename: Path, cost_model: torch.jit.ScriptModule) -> None:
-    imgdata = ImageData.factory(filename, lazy=True)[::3]
+    bev_image_data = BEVImageSequence(filename)
 
-    # fps = estimate_fps(imgdata)
     fps = 15
     video_writer = VideoWriter(Path("images") / f"{filename.stem}-cost.mp4", fps=fps)
 
-    images: List[CameraImage]
-    # for _, images in tqdm.tqdm(
-    #     imgdata, desc="Processing Cost Video", total=len(imgdata), dynamic_ncols=True
-    # ):
-    for images in tqdm.tqdm(
-        imgdata[1],
+    image: Image
+    for _, image in tqdm.tqdm(
+        bev_image_data,
         desc="Processing Cost Video",
-        total=len(imgdata[1]),
+        total=len(bev_image_data),
         dynamic_ncols=True,
     ):
-        # images = [image for image in images if "front" in image.frame_name]
-        td = perspective_transform.TopDown(images)
-        view = td.get_view(resolution=150, horizon_dist=5.0)
+        view = image.decoded_image()
         cost_view = np.zeros(view.shape, dtype=np.uint8)
+        cost_view[:, :, 0] = 255
 
-        PATCH_SIZE = 60
         MIN_COST = 0
-        MAX_COST = 2
+        MAX_COST = 3.5
         for row in range(0, view.shape[0], PATCH_SIZE):
             patch_y = np.s_[row : min(view.shape[0], row + PATCH_SIZE)]
 
@@ -59,15 +49,19 @@ def make_cost_vid(filename: Path, cost_model: torch.jit.ScriptModule) -> None:
 
             for col in range(0, view.shape[1], PATCH_SIZE):
                 patch_x = np.s_[col : min(view.shape[1], col + PATCH_SIZE)]
-                patch = torch.from_numpy(view[patch_y, patch_x]).permute((2, 0, 1))[
-                    None, :
-                ]
+                patch = view[patch_y, patch_x]
 
-                if patch.shape[2] < 60 or patch.shape[3] < 60 or 0 in patch:
-                    continue
+                # this changes RGB to BGR, if necessary (e.g. with old models)
+                # patch = patch[:, :, ::-1]
 
-                patch_slices.append(patch_x)
-                patch_imgs.append(patch)
+                if (
+                    patch.shape == (PATCH_SIZE, PATCH_SIZE, 3)
+                    and zero_pixel_ratio(patch) < 0.5
+                ):
+                    patch_t = torch.from_numpy(patch.copy()).permute((2, 0, 1))[None, :]
+
+                    patch_slices.append(patch_x)
+                    patch_imgs.append(patch_t)
 
             if len(patch_imgs) == 0:
                 continue
@@ -82,13 +76,12 @@ def make_cost_vid(filename: Path, cost_model: torch.jit.ScriptModule) -> None:
 
                 # color map:
                 # gradient:
-                #   bright red = high cost
+                #   bright = high cost
                 #   dark = low cost
-                red = (cost - MIN_COST) / (MAX_COST - MIN_COST)
-                red = np.clip(red, 0.0, 1.0)
-                cost_view[patch_y, patch_x, 2] = int(red * 255)
+                intensity = (cost - MIN_COST) / (MAX_COST - MIN_COST)
+                intensity = np.clip(intensity, 0.0, 1.0)
+                cost_view[patch_y, patch_x] = int(intensity * 255)
 
-        # view = cv2.cvtColor(view, cv2.COLOR_GRAY2BGR)
         view = np.vstack((view, cost_view))
         video_writer.add_frame(view)
 
@@ -117,12 +110,12 @@ def main() -> None:
         "--cost-model",
         type=Path,
         required=True,
-        help="Path to saved CostNet model.",
+        help="Path to saved JIT CostNet model.",
     )
     parser.add_argument(
         "datafile",
         type=Path,
-        help="Path to BDDF file to visualize.",
+        help="Path to rosbag to visualize.",
     )
 
     args = parser.parse_args()
