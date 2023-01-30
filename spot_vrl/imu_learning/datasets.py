@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Sequence, Set, Tuple, Union
 
 import numpy as np
+import numpy.typing as npt
 import scipy.stats as stats
 import torch
 import torch.utils.data
@@ -44,7 +45,10 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         cls.window_size = new_size
 
     def __init__(
-        self, path: Union[str, Path], start: float = 0, end: float = np.inf
+        self,
+        path: Union[str, Path],
+        start: float = 0,
+        end: float = np.inf,
     ) -> None:
         self.path = Path(path)
         self.start = start
@@ -53,8 +57,9 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         spot_data = SpotSensorData(path)
 
         window_size = self.window_size
-        self.windows: List[torch.Tensor] = []
+        self.windows: torch.Tensor
 
+        windows_pre_concat: List[npt.NDArray[np.float32]] = []
         ts, _ = spot_data.query_time_range(spot_data.all_sensor_data, start, end)
         # Overlap windows for more data points
         for window_start in np.arange(ts[0], ts[-1] - window_size, 0.5):
@@ -90,7 +95,10 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
             window = np.vstack((mean, std, skew, kurtosis, med, q1, q3)).astype(
                 np.float32
             )
-            self.windows.append(torch.from_numpy(window))
+            windows_pre_concat.append(window)
+
+        stack = np.stack(windows_pre_concat, axis=0)
+        self.windows = torch.from_numpy(stack).contiguous()
 
     @staticmethod
     def get_serialized_filename(
