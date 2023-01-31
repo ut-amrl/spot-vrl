@@ -2,6 +2,7 @@ import json
 import os
 import pickle
 import random
+from collections import defaultdict
 from pathlib import Path
 from typing import Any, ClassVar, Dict, List, Sequence, Set, Tuple, Union
 
@@ -184,7 +185,18 @@ class BaseTripletDataset(Dataset[Triplet]):
         self._cumulative_sizes: List[int] = []
         self._rng = np.random.default_rng()
 
-    def init_from_json(self, spec: Union[str, Path]) -> "BaseTripletDataset":
+    @staticmethod
+    def _pll_load_or_create(
+        category: str, path: str, start: float, end: float
+    ) -> Tuple[str, SingleTerrainDataset]:
+        try:
+            dataset = SingleTerrainDataset.load(path, start, end)
+        except FileNotFoundError:
+            dataset = SingleTerrainDataset(path, start, end)
+            dataset.save()
+        return category, dataset
+
+    def init_from_json(self, spec_filename: Union[str, Path]) -> "BaseTripletDataset":
         """Initializes/overwrites this dataset using a JSON specification file.
 
         The JSON file is expected to contain the following format:
@@ -203,24 +215,28 @@ class BaseTripletDataset(Dataset[Triplet]):
             }
         }
         """
-        with open(spec) as f:
+        task_args = []
+        with open(spec_filename) as f:
             category: str
             datafiles: List[Dict[str, Any]]
             for category, datafiles in json.load(f)["categories"].items():
-                datasets: List[SingleTerrainDataset] = []
                 for dataset_spec in datafiles:
                     path: str = dataset_spec["path"]
                     start: float = dataset_spec["start"]
                     end: float = dataset_spec["end"]
+                    task_args.append((category, path, start, end))
 
-                    try:
-                        dataset = SingleTerrainDataset.load(path, start, end)
-                    except FileNotFoundError:
-                        dataset = SingleTerrainDataset(path, start, end)
-                        dataset.save()
+        task_results = parallel.fork_join(
+            BaseTripletDataset._pll_load_or_create, task_args, n_proc=8
+        )
 
-                    datasets.append(dataset)
-                self._add_category(category, datasets)
+        categories: Dict[str, List[SingleTerrainDataset]] = defaultdict(list)
+        for category, dataset in task_results:
+            categories[category].append(dataset)
+
+        for category, datasets in categories.items():
+            self._add_category(category, datasets)
+
         return self
 
     def _add_category(self, key: str, datasets: Sequence[SingleTerrainDataset]) -> None:
