@@ -70,6 +70,8 @@ def main() -> None:
         sys.exit(1)
 
     # Set up data loaders
+    logger.info("Loading training data")
+
     SingleTerrainDataset.set_global_window_size(window_size)
     triplet_dataset = TripletTrainingDataset().init_from_json(train_dataset_spec)
     train_size = int(len(triplet_dataset) * 0.75)
@@ -114,12 +116,14 @@ def main() -> None:
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 
+    logger.info("Loading evaluation data")
     embedder = EmbeddingGenerator(
         device,
         triplet_dataset,
         TripletHoldoutDataset().init_from_json(holdout_dataset_spec),
         tb_writer,
     )
+    logger.info("Finished loading evaluation data")
 
     fit(
         train_loader,
