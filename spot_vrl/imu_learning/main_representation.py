@@ -21,7 +21,6 @@ from spot_vrl.imu_learning.network import (
     BaseEmbeddingNet,
     LstmEmbeddingNet,
     MlpEmbeddingNet,
-    TripletNet,
 )
 from spot_vrl.imu_learning.trainer import EmbeddingGenerator, fit
 
@@ -84,16 +83,15 @@ def main() -> None:
     logger.info("Finished loading data")
 
     # Set up the network and training parameters
-    embedding_net: BaseEmbeddingNet
+    model: BaseEmbeddingNet
     if model_type == "mlp":
-        embedding_net = MlpEmbeddingNet(triplet_dataset[0][0].shape, embedding_dim)
+        model = MlpEmbeddingNet(triplet_dataset[0][0].shape, embedding_dim)
     elif model_type == "lstm":
-        embedding_net = LstmEmbeddingNet(triplet_dataset[0][0].shape, embedding_dim)
+        model = LstmEmbeddingNet(triplet_dataset[0][0].shape, embedding_dim)
     else:
         logger.error(f"Unknown model type: '{model_type}")
         sys.exit(1)
 
-    model = TripletNet(embedding_net)
     model = model.to(device)
     loss_fn = torch.nn.TripletMarginLoss(margin=margin, swap=True)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -104,7 +102,7 @@ def main() -> None:
         verbose=True,
     )
 
-    save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}-{embedding_net.arch()}"
+    save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}-{model.arch()}"
     os.makedirs(save_dir, exist_ok=True)
 
     tb_writer = SummaryWriter(log_dir=str(save_dir), flush_secs=10)  # type: ignore

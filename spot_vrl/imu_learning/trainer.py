@@ -8,7 +8,7 @@ from spot_vrl.imu_learning.datasets import (
     BaseTripletDataset,
     Triplet,
 )
-from spot_vrl.imu_learning.network import TripletNet
+from spot_vrl.imu_learning.network import BaseEmbeddingNet
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
 from torch.utils.data import DataLoader
@@ -49,12 +49,12 @@ class EmbeddingGenerator:
         for key, val in self.tensors.items():
             self.tensors[key] = val.to(device)
 
-    def write(self, model: TripletNet, epoch: int) -> None:
+    def write(self, model: BaseEmbeddingNet, epoch: int) -> None:
         model.eval()
         with torch.no_grad():  # type: ignore
             for dataset_type, tensor in self.tensors.items():
                 self.tb_writer.add_embedding(
-                    model.get_embedding(tensor),
+                    model(tensor),
                     metadata=self.labels[dataset_type],
                     tag=f"embed-{dataset_type}",
                     global_step=epoch,
@@ -64,7 +64,7 @@ class EmbeddingGenerator:
 def fit(
     train_loader: DataLoader[Triplet],
     val_loader: DataLoader[Triplet],
-    model: TripletNet,
+    model: BaseEmbeddingNet,
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
@@ -111,7 +111,7 @@ def fit(
 
 def train_epoch(
     train_loader: DataLoader[Triplet],
-    model: TripletNet,
+    model: BaseEmbeddingNet,
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
     device: torch.device,
@@ -122,11 +122,14 @@ def train_epoch(
     triplet: Triplet
     for triplet in train_loader:
         triplet = tuple(t.to(device) for t in triplet)  # type: ignore
+        anchor, pos, neg = triplet
 
         optimizer.zero_grad()
-        embeddings: Triplet = model(triplet)
+        e_anchor = model(anchor)
+        e_pos = model(pos)
+        e_neg = model(neg)
 
-        loss: Tensor = loss_fn(*embeddings)
+        loss: Tensor = loss_fn(e_anchor, e_pos, e_neg)
         losses.append(loss.item())
         loss.backward()  # type: ignore
         optimizer.step()
@@ -136,7 +139,7 @@ def train_epoch(
 
 def test_epoch(
     val_loader: DataLoader[Triplet],
-    model: TripletNet,
+    model: BaseEmbeddingNet,
     loss_fn: torch.nn.TripletMarginLoss,
     device: torch.device,
 ) -> float:
@@ -147,9 +150,12 @@ def test_epoch(
         triplet: Triplet
         for triplet in val_loader:
             triplet = tuple(t.to(device) for t in triplet)  # type: ignore
+            anchor, pos, neg = triplet
 
-            embeddings: Triplet = model(triplet)
-            loss: Tensor = loss_fn(*embeddings)
+            e_anchor = model(anchor)
+            e_pos = model(pos)
+            e_neg = model(neg)
+            loss: Tensor = loss_fn(e_anchor, e_pos, e_neg)
             losses.append(loss.item())
 
     return sum(losses) / len(losses)

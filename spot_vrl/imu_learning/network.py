@@ -6,8 +6,6 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from spot_vrl.imu_learning.datasets import Triplet
-
 
 class BaseEmbeddingNet(nn.Module, ABC):
     def __init__(self) -> None:
@@ -104,22 +102,6 @@ class LstmEmbeddingNet(BaseEmbeddingNet):
         return f"lstm-nblk{self.num_blocks}-nlyr{self.num_layers}"
 
 
-class TripletNet(nn.Module):
-    def __init__(self, embedding_net: BaseEmbeddingNet):
-        super().__init__()
-        self._embedding_net = embedding_net
-
-    def get_embedding(self, x: torch.Tensor) -> torch.Tensor:
-        return self._embedding_net.forward(x)
-
-    def forward(self, t: Triplet) -> Triplet:
-        e_anchor = self.get_embedding(t[0])
-        e_pos = self.get_embedding(t[1])
-        e_neg = self.get_embedding(t[2])
-
-        return e_anchor, e_pos, e_neg
-
-
 class CostNet(nn.Module):
     def __init__(self, embedding_dim: int) -> None:
         super().__init__()
@@ -142,15 +124,15 @@ class CostNet(nn.Module):
 
 
 class FullPairCostNet(nn.Module):
-    def __init__(self, triplet_net: TripletNet, cost_net: CostNet) -> None:
+    def __init__(self, encoder: BaseEmbeddingNet, cost_net: CostNet) -> None:
         super().__init__()
 
-        self.triplet_net = triplet_net
+        self.encoder = encoder
         self.cost_net = cost_net
 
     def forward(
         self, x: torch.Tensor, y: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        emb_x = self.triplet_net.get_embedding(x)
-        emb_y = self.triplet_net.get_embedding(y)
+        e_x = self.encoder(x)
+        e_y = self.encoder(y)
         return (self.cost_net(emb_x), self.cost_net(emb_y))
