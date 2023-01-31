@@ -47,6 +47,37 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
             raise ValueError("Window size must be positive")
         cls.window_size = new_size
 
+    @staticmethod
+    def preprocess_window(
+        window: npt.NDArray[np.float32],
+    ) -> npt.NDArray[np.float32]:
+        # compute ffts?
+        # ffts: List[npt.NDArray[np.float32]] = []
+        # all_joint_info = window[:, 1:37]
+        # for i in range(36):
+        #     fft = np.fft.fft(all_joint_info[:, i])
+        #     fft = np.abs(fft)
+        #     fft /= np.max(fft)
+        #     ffts.append(fft.astype(np.float32))
+
+        # window = np.vstack((window, *ffts))
+
+        # Add statistical features as additional row vectors
+        mean = window.mean(axis=0)
+        std = window.std(axis=0)
+        skew = stats.skew(window, axis=0)
+        kurtosis = stats.kurtosis(window, axis=0)
+        med = np.median(window, axis=0)
+        q1 = np.quantile(window, 0.25, axis=0).astype(np.float32)
+        q3 = np.quantile(window, 0.75, axis=0).astype(np.float32)
+        # TODO(eyang): Joint data is periodic, so these features may not be
+        # very useful. May want to use quantiles, IQR, min, max, etc.
+
+        # include all data points of the window?
+        # window = np.vstack((window, mean, std, skew, kurtosis, med, q1, q3))
+        window = np.vstack((mean, std, skew, kurtosis, med, q1, q3)).astype(np.float32)
+        return window
+
     def __init__(
         self,
         path: Union[str, Path],
@@ -74,38 +105,12 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
             leave=False,
         ):
             _, window = spot_data.query_time_range(
-                spot_data.all_sensor_data[:, -4:],
+                spot_data.all_sensor_data[:, -4:],  # only use foot depth data
                 window_start,
                 window_start + window_size,
             )
 
-            # compute ffts
-            # ffts: List[npt.NDArray[np.float32]] = []
-            # all_joint_info = window[:, 1:37]
-            # for i in range(36):
-            #     fft = np.fft.fft(all_joint_info[:, i])
-            #     fft = np.abs(fft)
-            #     fft /= np.max(fft)
-            #     ffts.append(fft.astype(np.float32))
-
-            # window = np.vstack((window, *ffts))
-
-            # Add statistical features as additional row vectors
-            mean = window.mean(axis=0)
-            std = window.std(axis=0)
-            skew = stats.skew(window, axis=0)
-            kurtosis = stats.kurtosis(window, axis=0)
-            med = np.median(window, axis=0)
-            q1 = np.quantile(window, 0.25, axis=0).astype(np.float32)
-            q3 = np.quantile(window, 0.75, axis=0).astype(np.float32)
-            # TODO(eyang): Joint data is periodic, so these features may not be
-            # very useful. May want to use quantiles, IQR, min, max, etc.
-
-            # window = np.vstack((window, mean, std, skew, kurtosis, med, q1, q3))
-            window = np.vstack((mean, std, skew, kurtosis, med, q1, q3)).astype(
-                np.float32
-            )
-            windows_pre_concat.append(window)
+            windows_pre_concat.append(SingleTerrainDataset.preprocess_window(window))
 
         stack = np.stack(windows_pre_concat, axis=0)
         self.windows = torch.from_numpy(stack).contiguous()
