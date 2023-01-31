@@ -10,10 +10,12 @@ import numpy.typing as npt
 import scipy.stats as stats
 import torch
 import torch.utils.data
+import tqdm
 from loguru import logger
 from torch.utils.data import ConcatDataset, Dataset
 
 from spot_vrl.data.sensor_data import SpotSensorData
+import spot_vrl.utils.parallel as parallel
 
 
 class SingleTerrainDataset(Dataset[torch.Tensor]):
@@ -62,7 +64,14 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         windows_pre_concat: List[npt.NDArray[np.float32]] = []
         ts, _ = spot_data.query_time_range(spot_data.all_sensor_data, start, end)
         # Overlap windows for more data points
-        for window_start in np.arange(ts[0], ts[-1] - window_size, 0.5):
+        window_start: float
+        for window_start in tqdm.tqdm(
+            np.arange(ts[0], ts[-1] - window_size, 0.5),
+            desc="Loading Dataset",
+            position=parallel.tqdm_position(),
+            dynamic_ncols=True,
+            leave=False,
+        ):
             _, window = spot_data.query_time_range(
                 spot_data.all_sensor_data[:, -4:],
                 window_start,
