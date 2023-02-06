@@ -67,12 +67,11 @@ LEG_TOPIC_RATE = 24.0
 IMU_TOPIC_RATE = 200.0
 
 class TerrainDataset(Dataset):
-    def __init__(self, pickle_files_root, incl_orientation=False, 
+    def __init__(self, pickle_files_root,
                  data_stats=None, train=False):
         self.pickle_files_paths = glob.glob(pickle_files_root + '/*.pkl')
         self.label = pickle_files_root.split('/')[-2]
         # self.label = terrain_label[self.label]
-        self.incl_orientation = incl_orientation
         self.data_stats = data_stats
         
         if self.data_stats is not None:
@@ -96,7 +95,9 @@ class TerrainDataset(Dataset):
         # process the feet data to remove the mu and std values for non-contacting feet
         feet = process_feet_data(feet)
         
-        if not self.incl_orientation: imu = imu[:, :-4]
+        imu = imu[:, :-4] # donot include the orientation data
+        # select only columns 0, 1, 5
+        imu = imu[:, [0, 1, 5]] # angular_x, angular_y, linear_z
 
         imu = periodogram(imu, fs=IMU_TOPIC_RATE, axis=0)[1]
         leg = periodogram(leg, fs=LEG_TOPIC_RATE, axis=0)[1]
@@ -107,14 +108,17 @@ class TerrainDataset(Dataset):
         if self.data_stats is not None:
             # #minmax normalization
             imu = (imu - self.min['imu']) / (self.max['imu'] - self.min['imu'] + 1e-7)
+            # shape : (bs, 201, 3)
             imu = imu.flatten()
             imu = imu.reshape(1, -1)
             
             leg = (leg - self.min['leg']) / (self.max['leg'] - self.min['leg'] + 1e-7)
+            # shape : (bs, 25, 36)
             leg = leg.flatten()
             leg = leg.reshape(1, -1)
             
             feet = (feet - self.min['feet']) / (self.max['feet'] - self.min['feet'] + 1e-7)
+            # shape : (bs, 25, 20)
             feet = feet.flatten()
             feet = feet.reshape(1, -1)
             
@@ -150,15 +154,13 @@ class TerrainDataset(Dataset):
 
 # create pytorch lightning data module
 class NATURLDataModule(pl.LightningDataModule):
-    def __init__(self, data_config_path, batch_size=64, num_workers=2, include_orientation_imu=False):
+    def __init__(self, data_config_path, batch_size=64, num_workers=2):
         super().__init__()
         
         # read the yaml file
         cprint('Reading the yaml file at : {}'.format(data_config_path), 'green')
         self.data_config = yaml.load(open(data_config_path, 'r'), Loader=yaml.FullLoader)
         self.data_config_path = '/'.join(data_config_path.split('/')[:-1])
-
-        self.include_orientation_imu = include_orientation_imu
 
         self.batch_size, self.num_workers = batch_size, num_workers
         
@@ -184,7 +186,7 @@ class NATURLDataModule(pl.LightningDataModule):
             # find the mean and std of the train dataset
             cprint('data_statistics.pkl file not found!', 'yellow')
             cprint('Finding the mean and std of the train dataset', 'green')
-            self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu) for pickle_files_root in self.data_config['train']])
+            self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root) for pickle_files_root in self.data_config['train']])
             self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=128, num_workers=2, shuffle=False)
             cprint('the length of the tmp_dataloader is : {}'.format(len(self.tmp_dataloader)), 'green')
             # find the mean and std of the train dataset
@@ -200,10 +202,6 @@ class NATURLDataModule(pl.LightningDataModule):
             print('leg_data.shape : ', leg_data.shape)
             print('feet_data.shape : ', feet_data.shape)
             exit()
-            
-            imu_data = imu_data.reshape(-1, imu_data.shape[-1])
-            leg_data = leg_data.reshape(-1, leg_data.shape[-1])
-            feet_data = feet_data.reshape(-1, feet_data.shape[-1])
             
             self.mean['imu'], self.std['imu'] = np.mean(imu_data, axis=0), np.std(imu_data, axis=0)
             self.min['imu'], self.max['imu'] = np.min(imu_data, axis=0), np.max(imu_data, axis=0)
@@ -226,8 +224,8 @@ class NATURLDataModule(pl.LightningDataModule):
             pickle.dump(data_statistics, open(self.data_config_path + '/data_statistics.pkl', 'wb'))
             
         # load the train data
-        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, data_stats=data_statistics, train=True, psd=self.psd) for pickle_files_root in self.data_config['train']])
-        self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, data_stats=data_statistics, psd=self.psd) for pickle_files_root in self.data_config['val']])
+        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, train=True, psd=self.psd) for pickle_files_root in self.data_config['train']])
+        self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, psd=self.psd) for pickle_files_root in self.data_config['val']])
         
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, 
