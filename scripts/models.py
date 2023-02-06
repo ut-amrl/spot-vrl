@@ -156,10 +156,6 @@ class VisualEncoderEfficientModel(nn.Module):
 #     def __init__(self, latent_size=64) -> None:
 #         super(VisualEncoderModel, self).__init__()
         
-#         # design a conv network with skip connections that takes a 64x64 RGB image and produces
-#         # a 64 dimensional feature vector. The network should be able to downsample the image
-#         # and use skip connections to preserve the spatial information.
-        
 #         self.block1 = nn.Sequential(
 #             nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 64, 64),
 #             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 8, 32, 32),
@@ -230,91 +226,91 @@ class VisualEncoderEfficientModel(nn.Module):
 #         x = x.view(x.size(0), -1)
 #         x = self.fc(x)
         
-#         # x = F.normalize(x, dim=-1)
+#         x = F.normalize(x, dim=-1)
         
 #         return x 
         
     
-class VisualEncoderModel(nn.Module):
-    def __init__(self, latent_size=64):
-        super(VisualEncoderModel, self).__init__()
-        self.model = nn.Sequential(
-            nn.Conv2d(3, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm2d(8), nn.PReLU(), # output shape : (batch_size, 8, 31, 31),
-            nn.Conv2d(8, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm2d(16), nn.PReLU(), # output shape : (batch_size, 16, 15, 15),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), nn.BatchNorm2d(32), nn.PReLU(), # output shape : (batch_size, 32, 7, 7),
-            nn.Conv2d(32, 64, kernel_size=3, stride=2), nn.PReLU(), # output shape : (batch_size, 64, 3, 3),
-            nn.AvgPool2d(kernel_size=3), # output shape : (batch_size, 64, 1, 1),
-            nn.Flatten(),
-            nn.Linear(64, latent_size), nn.ReLU(),
-        )
-    
-    def forward(self, x):
-        # return F.normalize(self.model(x), dim=-1)
-        return self.model(x)
-    
 # class VisualEncoderModel(nn.Module):
 #     def __init__(self, latent_size=64):
 #         super(VisualEncoderModel, self).__init__()
-        
-#         self.block1 = nn.Sequential(
-#             nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 64, 64),
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 8, 32, 32),
+#         self.model = nn.Sequential(
+#             nn.Conv2d(3, 8, kernel_size=3, stride=2, bias=False), nn.BatchNorm2d(8), nn.PReLU(), # output shape : (batch_size, 8, 31, 31),
+#             nn.Conv2d(8, 16, kernel_size=3, stride=2, bias=False), nn.BatchNorm2d(16), nn.PReLU(), # output shape : (batch_size, 16, 15, 15),
+#             nn.Conv2d(16, 32, kernel_size=3, stride=2, bias=False), nn.BatchNorm2d(32), nn.PReLU(), # output shape : (batch_size, 32, 7, 7),
+#             nn.Conv2d(32, 64, kernel_size=3, stride=2), nn.PReLU(), # output shape : (batch_size, 64, 3, 3),
+#             nn.AvgPool2d(kernel_size=3), # output shape : (batch_size, 64, 1, 1),
+#             nn.Flatten(),
+#             nn.Linear(64, latent_size), nn.ReLU(),
 #         )
-        
-#         self.skipblock = nn.Sequential(
-#             nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 32, 32),
-#             nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 32, 32),
-#         )
-        
-#         self.block2 = nn.Sequential(
-#             nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 32, 32),
-#             nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 16, 16, 16),
-#         )
-        
-#         self.skipblock2 = nn.Sequential(
-#             nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 16, 16),
-#             nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 16, 16),
-#         )
-        
-#         self.block3 = nn.Sequential(
-#             nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 16, 16),
-#             nn.AvgPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 32, 8, 8),
-#         )
-        
-#         self.skipblock3 = nn.Sequential(
-#             nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 8, 8),
-#             nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 8, 8),
-#         )
-        
-#         self.block4 = nn.Sequential(
-#             nn.Conv2d(32, 64, kernel_size=5, stride=3, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 2, 2),
-#         )
-        
-#         self.skipblock4 = nn.Sequential(
-#             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 2, 2),
-#             nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 2, 2),
-#         )
-        
-#         self.fc = nn.Linear(256, latent_size)
-        
     
 #     def forward(self, x):
-#         x = self.block1(x)
-#         x = self.skipblock(x) + x
-#         x = self.block2(x)
-#         x = self.skipblock2(x) + x
-#         x = self.block3(x)
-#         x = self.skipblock3(x) + x
-#         x = self.block4(x)
-#         x = self.skipblock4(x) + x
-#         x = x.view(x.size(0), -1) # flattened to (batch_size, 256)
+#         # return F.normalize(self.model(x), dim=-1)
+#         return self.model(x)
+    
+class VisualEncoderModel(nn.Module):
+    def __init__(self, latent_size=64):
+        super(VisualEncoderModel, self).__init__()
         
-#         x = self.fc(x)
+        self.block1 = nn.Sequential(
+            nn.Conv2d(3, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 64, 64),
+            nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 8, 32, 32),
+        )
         
-#         # normalize
-#         x = F.normalize(x, dim=-1)
+        self.skipblock = nn.Sequential(
+            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 32, 32),
+            nn.Conv2d(8, 8, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(8), # output shape : (batch_size, 8, 32, 32),
+        )
         
-#         return x
+        self.block2 = nn.Sequential(
+            nn.Conv2d(8, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 32, 32),
+            nn.MaxPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 16, 16, 16),
+        )
+        
+        self.skipblock2 = nn.Sequential(
+            nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 16, 16),
+            nn.Conv2d(16, 16, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(16), # output shape : (batch_size, 16, 16, 16),
+        )
+        
+        self.block3 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 16, 16),
+            nn.AvgPool2d(kernel_size=2, stride=2), # output shape : (batch_size, 32, 8, 8),
+        )
+        
+        self.skipblock3 = nn.Sequential(
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 8, 8),
+            nn.Conv2d(32, 32, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(32), # output shape : (batch_size, 32, 8, 8),
+        )
+        
+        self.block4 = nn.Sequential(
+            nn.Conv2d(32, 64, kernel_size=5, stride=3, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 2, 2),
+        )
+        
+        self.skipblock4 = nn.Sequential(
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 2, 2),
+            nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False), nn.ReLU(), nn.BatchNorm2d(64), # output shape : (batch_size, 64, 2, 2),
+        )
+        
+        self.fc = nn.Linear(256, latent_size)
+        
+    
+    def forward(self, x):
+        x = self.block1(x)
+        x = self.skipblock(x) + x
+        x = self.block2(x)
+        x = self.skipblock2(x) + x
+        x = self.block3(x)
+        x = self.skipblock3(x) + x
+        x = self.block4(x)
+        x = self.skipblock4(x) + x
+        x = x.view(x.size(0), -1) # flattened to (batch_size, 256)
+        
+        x = self.fc(x)
+        
+        # normalize
+        x = F.normalize(x, dim=-1)
+        
+        return x
 
 
 # class MobileNetBlock(nn.Module):

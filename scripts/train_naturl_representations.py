@@ -68,7 +68,7 @@ IMU_TOPIC_RATE = 200.0
 
 class TerrainDataset(Dataset):
     def __init__(self, pickle_files_root,
-                 data_stats=None, train=False):
+                 data_stats=None, img_augment=False):
         self.pickle_files_paths = glob.glob(pickle_files_root + '/*.pkl')
         self.label = pickle_files_root.split('/')[-2]
         # self.label = terrain_label[self.label]
@@ -78,7 +78,7 @@ class TerrainDataset(Dataset):
             self.min, self.max = data_stats['min'], data_stats['max']
             self.mean, self.std = data_stats['mean'], data_stats['std']
         
-        if train:
+        if img_augment:
             self.transforms = get_transforms()
         else:
             self.transforms = None
@@ -198,10 +198,6 @@ class NATURLDataModule(pl.LightningDataModule):
             imu_data = np.concatenate(imu_data, axis=0)
             leg_data = np.concatenate(leg_data, axis=0)
             feet_data = np.concatenate(feet_data, axis=0)
-            print('imu_data.shape : ', imu_data.shape)
-            print('leg_data.shape : ', leg_data.shape)
-            print('feet_data.shape : ', feet_data.shape)
-            exit()
             
             self.mean['imu'], self.std['imu'] = np.mean(imu_data, axis=0), np.std(imu_data, axis=0)
             self.min['imu'], self.max['imu'] = np.min(imu_data, axis=0), np.max(imu_data, axis=0)
@@ -224,8 +220,8 @@ class NATURLDataModule(pl.LightningDataModule):
             pickle.dump(data_statistics, open(self.data_config_path + '/data_statistics.pkl', 'wb'))
             
         # load the train data
-        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, train=True, psd=self.psd) for pickle_files_root in self.data_config['train']])
-        self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, psd=self.psd) for pickle_files_root in self.data_config['val']])
+        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, img_augment=False) for pickle_files_root in self.data_config['train']])
+        self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics) for pickle_files_root in self.data_config['val']])
         
     def train_dataloader(self):
         return DataLoader(self.train_dataset, batch_size=self.batch_size, 
@@ -236,12 +232,12 @@ class NATURLDataModule(pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size, 
                           num_workers=self.num_workers, shuffle=True, 
-                          drop_last= False,
+                          drop_last= True if len(self.val_dataset) % self.batch_size != 0 else False,
                           pin_memory=True)
 
 
 class NATURLRepresentationsModel(pl.LightningModule):
-    def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, weight_decay=1e-6, l1_coeff=0.5, rep_size=128):
+    def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, weight_decay=1e-6, l1_coeff=0.5, rep_size=64):
         super(NATURLRepresentationsModel, self).__init__()
         
         self.save_hyperparameters(
@@ -363,8 +359,6 @@ class NATURLRepresentationsModel(pl.LightningModule):
     
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, amsgrad=True)
-        # return torch.optim.SGD(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
-        # return torch.optim.RMSprop(self.parameters(), lr=self.lr, momentum=0.9, weight_decay=self.weight_decay)
     
     def on_validation_batch_start(self, batch, batch_idx, dataloader_idx):
         # save the batch data only every other epoch or during the last epoch
@@ -605,6 +599,7 @@ if __name__ == '__main__':
                          sync_batchnorm=True,
                          gradient_clip_val=100.0,
                          gradient_clip_algorithm='norm',
+                         deterministic=True,
                          )
 
     # fit the model
