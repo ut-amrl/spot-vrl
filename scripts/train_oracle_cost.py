@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 import pytorch_lightning as pl
-from scripts.train_naturl_representations import VisualEncoderModel, NATURLDataModule, ProprioceptionModel
+from scripts.train_naturl_representations import VisualEncoderModel, NATURLDataModule, VisualEncoderEfficientModel
 from termcolor import cprint
 import argparse
 import numpy as np
@@ -21,18 +21,13 @@ from datetime import datetime
 import tensorboard
 
 class NATURLCostModel(pl.LightningModule):
-    def __init__(self, latent_size=128, visual_encoder_weights=None, temp=1.0):
+    def __init__(self, latent_size=128, cost_model_save_path=None, temp=1.0):
         super(NATURLCostModel, self).__init__()
-        assert visual_encoder_weights is not None, "visual_encoder_weights cannot be None"
         
-        self.visual_encoder = VisualEncoderModel(latent_size=latent_size)
-        # load the weights from the visual encoder
-        cprint("Loading the weights from the visual encoder", "green")
-        self.visual_encoder.load_state_dict(torch.load(visual_encoder_weights))
-        # self.visual_encoder.eval()
-        # cprint("Loaded the weights from the visual encoder", "green")
+        assert cost_model_save_path is not None, "Please provide a path to save the cost model"
                 
-        self.cost_net = CostNet(latent_size=latent_size)
+        self.visual_encoder = VisualEncoderModel(latent_size=128)
+        self.cost_net = CostNet(latent_size=128)
         self.temp = temp
         
         # hardcode the preferences here for now
@@ -53,7 +48,9 @@ class NATURLCostModel(pl.LightningModule):
         self.preferences = {
             'asphalt': 1,
             'grass': 3,
-            'mulch': 2,
+            # 'grass': 0,
+            # 'mulch': 2,
+            # 'mulch': 0,
             'pebble_pavement': 0,
             'yellow_brick': 0,
             'red_brick': 0,
@@ -63,8 +60,9 @@ class NATURLCostModel(pl.LightningModule):
         }
         
         self.best_val_loss = 1000000.0
-        self.cost_model_save_path = visual_encoder_weights.replace("visual_encoder", "oracle_model")
+        self.cost_model_save_path = cost_model_save_path
         self.mseloss = torch.nn.MSELoss()
+        self.celoss = torch.nn.CrossEntropyLoss(reduction='sum')
                 
     def forward(self, visual):
         visual_encoding = self.visual_encoder(visual.float())
@@ -119,18 +117,25 @@ class NATURLCostModel(pl.LightningModule):
         cost2, ve2 = self.forward(patch2)
                 
         preference_labels = [self.preferences[i] for i in label]
+        
+        # convert preference labels to a one_hot vector
+        # preference_labels = torch.nn.functional.one_hot(torch.tensor(preference_labels).long(), num_classes=6).float().to(cost1.device)
 
         # compute the preference loss
         # pref_loss = 0.5*self.compute_preference_loss(cost1, preference_labels1, temp=self.temp) + \
         #     0.5*self.compute_preference_loss(cost2, preference_labels2, temp=self.temp)
         pref_loss = 0.5*self.compute_ranking_loss(cost1, preference_labels) + 0.5*self.compute_ranking_loss(cost2, preference_labels)
         
+        # use cross entropy loss instead
+        # pref_loss = 0.5*self.celoss(cost1, torch.argmax(preference_labels, dim=1))/6 + \
+        #     0.5*self.celoss(cost2, torch.argmax(preference_labels, dim=1))/6
+        
         # cost must be invariant to the viewpoint of the patch
         vpt_inv_loss = torch.mean((ve1 - ve2)**2)
         # penalty for the cost crossing 25.0
         penalty_loss = torch.mean(torch.relu(cost1 - 25.0)) + torch.mean(torch.relu(cost2 - 25.0))
         
-        loss = pref_loss + 0.1 * vpt_inv_loss + penalty_loss
+        loss = pref_loss + vpt_inv_loss + penalty_loss
     
         self.log("train_loss", loss, prog_bar=True, on_epoch=True)
         self.log("train_pref_loss", pref_loss, prog_bar=True, on_epoch=True)
@@ -145,18 +150,25 @@ class NATURLCostModel(pl.LightningModule):
         cost2, ve2 = self.forward(patch2)
                 
         preference_labels = [self.preferences[i] for i in label]
+        
+        # convert preference labels to a one_hot vector
+        # preference_labels = torch.nn.functional.one_hot(torch.tensor(preference_labels).long(), num_classes=6).float().to(cost1.device)
 
         # compute the preference loss
         # pref_loss = 0.5*self.compute_preference_loss(cost1, preference_labels1, temp=self.temp) + \
         #     0.5*self.compute_preference_loss(cost2, preference_labels2, temp=self.temp)
         pref_loss = 0.5*self.compute_ranking_loss(cost1, preference_labels) + 0.5*self.compute_ranking_loss(cost2, preference_labels)
         
+        # use cross entropy loss instead
+        # pref_loss = 0.5*self.celoss(cost1, torch.argmax(preference_labels, dim=1))/6 + \
+        #     0.5*self.celoss(cost2, torch.argmax(preference_labels, dim=1))/6
+        
         # cost must be invariant to the viewpoint of the patch
         vpt_inv_loss = torch.mean((ve1 - ve2)**2)
         # penalty for the cost crossing 25.0
         penalty_loss = torch.mean(torch.relu(cost1 - 25.0)) + torch.mean(torch.relu(cost2 - 25.0))
         
-        loss = pref_loss + 0.1 * vpt_inv_loss + penalty_loss
+        loss = pref_loss + vpt_inv_loss + penalty_loss
     
         self.log("val_loss", loss, prog_bar=True, on_epoch=True)
         self.log("val_pref_loss", pref_loss, prog_bar=True, on_epoch=True)
@@ -190,12 +202,12 @@ class NATURLCostModel(pl.LightningModule):
     
     def configure_optimizers(self):
         # use only costnet parameters
-        # return torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-7, amsgrad=True)
-        return torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9, weight_decay=1e-7)
+        return torch.optim.AdamW(self.parameters(), lr=3e-4, weight_decay=1e-7, amsgrad=True)
+        # return torch.optim.SGD(self.parameters(), lr=1e-3, momentum=0.9, weight_decay=1e-7)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', '-b', type=int, default=128, metavar='N',
+    parser.add_argument('--batch_size', '-b', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 512)')
     parser.add_argument('--epochs', type=int, default=1000, metavar='N',
                         help='number of epochs to train (default: 1000)')
@@ -203,29 +215,27 @@ if __name__ == "__main__":
                         help='number of GPUs to use (default: 8)')
     parser.add_argument('--latent_size', type=int, default=512, metavar='N',
                         help='Size of the common latent space (default: 128)')
-    parser.add_argument('--save', type=int, default=0, metavar='N',
-                        help='Whether to save the k means model and encoders at the end of the run')
-    parser.add_argument('--expt_save_path', '-e', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.98154_22-01-2023-05-13-46_')
+    parser.add_argument('--cost_model_save_path', '-e', type=str, default='./models/oracle_model.pt')
     parser.add_argument('--data_config_path', type=str, default='spot_data/data_config.yaml')
     parser.add_argument('--temp', type=float, default=1.0)
     args = parser.parse_args()
     
-    model = NATURLCostModel(latent_size=128, visual_encoder_weights=os.path.join(args.expt_save_path, 'visual_encoder.pt'), temp=args.temp)
+    model = NATURLCostModel(latent_size=128, cost_model_save_path=args.cost_model_save_path, temp=args.temp)
     dm = NATURLDataModule(data_config_path=args.data_config_path, batch_size=args.batch_size)
 
-    tb_logger = pl_loggers.TensorBoardLogger(save_dir="cost_training_logs/")
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir="oracle_training_logs/")
     
     print("Training the cost function model...")
     trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),
                          max_epochs=args.epochs,
-                        #  callbacks=[model_checkpoint_cb],
                          log_every_n_steps=10,
                          strategy='ddp',
                          num_sanity_val_steps=0,
                          sync_batchnorm=True,
                          logger=tb_logger,
-                         gradient_clip_val=10.0,
+                         gradient_clip_val=100.0,
                          gradient_clip_algorithm='norm',
+                         stochastic_weight_avg=True,
                          )
 
     # fit the model

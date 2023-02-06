@@ -231,7 +231,7 @@ class RosbagParser:
                 self.storage_buffer['odom'].append(odom_data)
                 # self.last_sample_dist = odom_data
                 self.last_sample_time = current_t.to_sec()
-            elif dist_moved > 0.05:
+            elif dist_moved > 0.1:
                 self.storage_buffer['image'].append(curr_bev_img)
                 self.storage_buffer['odom'].append(odom_data)
             
@@ -240,7 +240,8 @@ class RosbagParser:
             
             if current_t.to_sec() - self.last_sample_time < self.time_between_datapoints: continue
             else: self.last_sample_time = current_t.to_sec()
-                            
+            
+            patch_corners_image_frame_lst = []
             patch_list = []
             
             # need to do the patch extraction here
@@ -249,7 +250,8 @@ class RosbagParser:
                 prev_odom = self.storage_buffer['odom'][j]
                 
                 # extract the patch
-                patch, vis_img = self.extract_patch(odom_data, prev_odom, prev_image, visualize=True)
+                patch, vis_img = self.extract_patch(odom_data, prev_odom, prev_image, visualize=False)
+                # patch, vis_img = self.extract_25_patches(odom_data, prev_odom, prev_image, visualize=True)
                 
                 if patch is not None:
                     patch_list.append(patch)
@@ -260,12 +262,12 @@ class RosbagParser:
                 # else:
                     # print('No patch was extracted')
                     
-                if len(patch_list) >= 80: break # upto 4 meters away patches are extracted
+                if len(patch_list) >= 20: break # upto 2 meters away patches are extracted
 
             if len(patch_list) == 0:
                 cprint('No patch was extracted', 'red')
             
-            while len(self.storage_buffer['image']) > 80:
+            while len(self.storage_buffer['image']) > 20:
                 self.storage_buffer['image'].pop(0)
                 self.storage_buffer['odom'].pop(0)
                 
@@ -288,6 +290,111 @@ class RosbagParser:
     def dist_between_odoms(odom1, odom2):
         return np.linalg.norm(odom1[:2] - odom2[:2])
     
+    def extract_25_patches(self, curr_pos, prev_pos, prev_image, visualize=False):
+        """
+        returns a list of 25 patches in grid taken from image
+        """
+        curr_pos_np = np.array([curr_pos[0], curr_pos[1], 1])
+
+        # numpy array of transformation from previous position
+        prev_pos_transform = np.zeros((3, 3))
+        prev_pos_transform[:2, :2] = R.from_euler('XYZ', [0, 0, prev_pos[2]]).as_matrix()[:2,:2]
+        prev_pos_transform[:, 2] = np.array([prev_pos[0], prev_pos[1], 1]).reshape((3))
+
+        inv_pos_transform = np.linalg.inv(prev_pos_transform)
+
+        curr_z_rotation = R.from_euler('XYZ', [0, 0, curr_pos[2]]).as_matrix()
+
+        CENTER = np.array((1476//2, 749//2 + 320))
+        
+        patch_corners_image_frame_lst = []
+        patch_lst = []
+        for i in range(5):
+            for j in range(5):
+                # find corners of each patch
+                h_shift = -1*(i - int(5/2))
+                patch_corners = [
+                    curr_pos_np + curr_z_rotation @ np.array([0.5 + j, 0.5 + h_shift, 0]),
+                    curr_pos_np + curr_z_rotation @ np.array([0.5 + j, -0.5 + h_shift, 0]),
+                    curr_pos_np + curr_z_rotation @ np.array([-0.5 + j, -0.5 + h_shift, 0]),
+                    curr_pos_np + curr_z_rotation @ np.array([-0.5 + j, 0.5 + h_shift, 0])
+                ]
+
+                # find corners relative to previous frame
+                patch_corners_prev_frame = [
+                    inv_pos_transform @ patch_corners[0],
+                    inv_pos_transform @ patch_corners[1],
+                    inv_pos_transform @ patch_corners[2],
+                    inv_pos_transform @ patch_corners[3],
+                ]
+
+                # scale/re-type patch corners
+                scaled_patch_corners = [
+                    (patch_corners_prev_frame[0] * 150).astype(np.int),
+                    (patch_corners_prev_frame[1] * 150).astype(np.int),
+                    (patch_corners_prev_frame[2] * 150).astype(np.int),
+                    (patch_corners_prev_frame[3] * 150).astype(np.int),
+                ]
+                
+                # create individual image frame for patch
+                patch_corners_image_frame = [
+                    CENTER + np.array((-scaled_patch_corners[0][1], -scaled_patch_corners[0][0])),
+                    CENTER + np.array((-scaled_patch_corners[1][1], -scaled_patch_corners[1][0])),
+                    CENTER + np.array((-scaled_patch_corners[2][1], -scaled_patch_corners[2][0])),
+                    CENTER + np.array((-scaled_patch_corners[3][1], -scaled_patch_corners[3][0]))
+                ]
+                
+                patch_corners_image_frame_lst.append(patch_corners_image_frame)
+
+                # create 64  by 64 image
+                persp = cv2.getPerspectiveTransform(np.float32(patch_corners_image_frame), np.float32([[0, 0], [63, 0], [63, 63], [0, 63]]))
+                patch = cv2.warpPerspective(
+                    prev_image,
+                    persp,
+                    (64, 64)
+                )
+
+                patch_lst.append(patch)
+                
+                vis_img = None
+                
+        if visualize:
+            vis_img = prev_image.copy()
+
+            # draw the patch rectangle by making lines between all patch corners on top of 
+            # copyof previous image
+            for patch_corners_image_frame in patch_corners_image_frame_lst:
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
+                    (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
+                    (0, 255, 0),
+                    2
+                )
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[1][0], patch_corners_image_frame[1][1]),
+                    (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
+                    (0, 255, 0),
+                    2
+                )
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[2][0], patch_corners_image_frame[2][1]),
+                    (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
+                    (0, 255, 0),
+                    2
+                )
+                cv2.line(
+                    vis_img,
+                    (patch_corners_image_frame[3][0], patch_corners_image_frame[3][1]),
+                    (patch_corners_image_frame[0][0], patch_corners_image_frame[0][1]),
+                    (0, 255, 0),
+                    2
+                )
+        
+        return patch_lst, vis_img
+
     def extract_patch(self, curr_pos, prev_pos, prev_image, visualize=False):
         curr_pos_np = np.array([curr_pos[0], curr_pos[1], 1])
         prev_pos_transform = np.zeros((3,3))
@@ -300,10 +407,14 @@ class RosbagParser:
         curr_z_rotation = R.from_euler('XYZ', [0, 0, curr_z_rotation]).as_matrix()
         
         patch_corners = [
-            curr_pos_np + curr_z_rotation @ np.array([0.5, 0.5, 0]),
-            curr_pos_np + curr_z_rotation @ np.array([0.5, -0.5, 0]),
-            curr_pos_np + curr_z_rotation @ np.array([-0.5, -0.5, 0]),
-            curr_pos_np + curr_z_rotation @ np.array([-0.5, 0.5, 0])
+            curr_pos_np + curr_z_rotation @ np.array([0.2133, 0.2133, 0]),
+            curr_pos_np + curr_z_rotation @ np.array([0.2133, -0.2133, 0]),
+            curr_pos_np + curr_z_rotation @ np.array([-0.2133, -0.2133, 0]),
+            curr_pos_np + curr_z_rotation @ np.array([-0.2133, 0.2133, 0])
+            # curr_pos_np + curr_z_rotation @ np.array([0.5, 0.5, 0]),
+            # curr_pos_np + curr_z_rotation @ np.array([0.5, -0.5, 0]),
+            # curr_pos_np + curr_z_rotation @ np.array([-0.5, -0.5, 0]),
+            # curr_pos_np + curr_z_rotation @ np.array([-0.5, 0.5, 0])
         ]
         
         patch_corners_prev_frame = [

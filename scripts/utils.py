@@ -1,4 +1,5 @@
 import numpy as np
+import albumentations as A
 
 def process_feet_data(feet):
     filtered_feet = []
@@ -16,3 +17,16 @@ def process_feet_data(feet):
         
         filtered_feet.append(curr)
     return  np.asarray(filtered_feet)
+
+def get_transforms():
+    return A.Compose([
+                A.Flip(always_apply=False, p=0.5),
+                # A.CoarseDropout(always_apply=False, p=1.0, max_holes=5, max_height=16, max_width=16, min_holes=1, min_height=2, min_width=2, fill_value=(0, 0, 0), mask_fill_value=None),
+                # A.AdvancedBlur(always_apply=False, p=0.1, blur_limit=(3, 7), sigmaX_limit=(0.2, 1.0), sigmaY_limit=(0.2, 1.0), rotate_limit=(-90, 90), beta_limit=(0.5, 8.0), noise_limit=(0.9, 1.1)),
+                A.ShiftScaleRotate(always_apply=False, p=0.75, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.1, 2.0), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
+                A.Perspective(always_apply=False, p=0.5, scale=(0.025, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
+                # A.ISONoise(always_apply=False, p=0.5, intensity=(0.1, 0.5), color_shift=(0.01, 0.05)),
+                # A.RandomBrightnessContrast(always_apply=False, p=0.5, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
+                # A.ToGray(always_apply=False, p=0.5),
+            ])
+    

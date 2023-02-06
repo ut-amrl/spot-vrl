@@ -74,29 +74,22 @@ class NATURLCostModel(pl.LightningModule):
         # }
         
         self.preferences = {
-            0: 3, #dry grass
-            1: 0, #pebble sidewalk
-            2: 4, #marble rocks
-            3: 1, #asphalt
-            4: 0, #pebble sidewalk
-            5: 0, #pebble sidewalk
-            6: 3, #green grass
-            7: 4, #marble rocks
-            8: 0, #shadow yellow bricks
-            9: 0, #red bricks
-            10: 1, #asphalt
-            11: 0, # cement sidewalk
-            12: 0, #red bricks
-            13: 0, #yellow bricks
-            14: 5, #bush
-            15: 0, #pebble sidewalk
-            16: 2, #mulch
-            17: 0, #cement sidewalk shadow
-            18: 0, #red bricks
+            0: 0, # yellow_bricks
+            1: 4, # marble_rocks
+            2: 0, # red_bricks
+            3: 3, # grass
+            # 3: 0, # grass
+            4: 0, #cement_sidewalk
+            5: 5, # bush
+            # 6: 1, # asphalt
+            6: 0, # asphalt
+            7: 0, # pebble_sidewalk
+            # 8: 2  # mulch
+            8: 0  # mulch
         }
         
         self.best_val_loss = 1000000.0
-        self.cost_model_save_path = visual_encoder_weights.replace("visual_encoder", "cost_model")
+        self.cost_model_save_path = visual_encoder_weights.replace("visual_encoder", "cost_model_grass_eq")
         
         assert len(self.preferences) == len(np.unique(self.kmeanslabels)), "The number of preferences must be equal to the number of clusters"
         
@@ -234,7 +227,7 @@ class NATURLCostModel(pl.LightningModule):
                 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--batch_size', '-b', type=int, default=64, metavar='N',
+    parser.add_argument('--batch_size', '-b', type=int, default=128, metavar='N',
                         help='input batch size for training (default: 512)')
     parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of epochs to train (default: 1000)')
@@ -244,7 +237,7 @@ if __name__ == "__main__":
                         help='Size of the common latent space (default: 128)')
     parser.add_argument('--save', type=int, default=0, metavar='N',
                         help='Whether to save the k means model and encoders at the end of the run')
-    parser.add_argument('--expt_save_path', '-e', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.99979/')
+    parser.add_argument('--expt_save_path', '-e', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.98154_22-01-2023-05-13-46_')
     parser.add_argument('--data_config_path', type=str, default='spot_data/data_config.yaml')
     parser.add_argument('--temp', type=float, default=1.0)
     args = parser.parse_args()

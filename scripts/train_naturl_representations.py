@@ -3,6 +3,7 @@
 """code to train the representation learning from the spot data"""
 
 import torch
+torch.multiprocessing.set_sharing_strategy('file_system') #https://github.com/pytorch/pytorch/issues/11201
 import torch.nn as nn
 import pytorch_lightning as pl
 import numpy as np
@@ -16,15 +17,17 @@ from tqdm import tqdm
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
+from pytorch_lightning import loggers as pl_loggers
 from datetime import datetime
 import argparse
 import yaml
 import os
 from sklearn import metrics
 
+
 from scipy.signal import periodogram
 from scripts.models import ProprioceptionModel, VisualEncoderModel, VisualEncoderEfficientModel
-from scripts.utils import process_feet_data
+from scripts.utils import process_feet_data, get_transforms
 
 import albumentations as A
 from torchvision import transforms
@@ -63,37 +66,21 @@ FEET_TOPIC_RATE = 24.0
 LEG_TOPIC_RATE = 24.0
 IMU_TOPIC_RATE = 200.0
 
-
 class TerrainDataset(Dataset):
     def __init__(self, pickle_files_root, incl_orientation=False, 
-                 data_stats=None, train=False, psd=True):
+                 data_stats=None, train=False):
         self.pickle_files_paths = glob.glob(pickle_files_root + '/*.pkl')
         self.label = pickle_files_root.split('/')[-2]
         # self.label = terrain_label[self.label]
         self.incl_orientation = incl_orientation
         self.data_stats = data_stats
         
-        self.psd = psd # this will be False for RCA
-        if not self.psd:
-            print('Using RCA, so not returning PSD values. Returning FFT values instead.')
-        
         if self.data_stats is not None:
             self.min, self.max = data_stats['min'], data_stats['max']
             self.mean, self.std = data_stats['mean'], data_stats['std']
         
         if train:
-            # cprint('Using data augmentation', 'green')
-            # use albumentation for data augmentation
-            self.transforms = A.Compose([
-                A.Flip(always_apply=False, p=0.5),
-                # A.AdvancedBlur(always_apply=False, p=1.0, blur_limit=(3, 7), sigmaX_limit=(0.2, 1.0), sigmaY_limit=(0.2, 1.0), rotate_limit=(-90, 90), beta_limit=(0.5, 8.0), noise_limit=(0.9, 1.1)),
-                # A.ShiftScaleRotate(always_apply=False, p=0.75, shift_limit_x=(-0.1, 0.1), shift_limit_y=(-0.1, 0.1), scale_limit=(-0.1, 2.0), rotate_limit=(-21, 21), interpolation=0, border_mode=0, value=(0, 0, 0), mask_value=None, rotate_method='largest_box'),
-                # A.Perspective(always_apply=False, p=0.5, scale=(0.05, 0.25), keep_size=1, pad_mode=0, pad_val=(0, 0, 0), mask_pad_val=0, fit_output=0, interpolation=3),
-                # A.ISONoise(always_apply=False, p=0.5, intensity=(0.1, 0.5), color_shift=(0.01, 0.05)),
-                # A.RandomBrightnessContrast(always_apply=False, p=0.5, brightness_limit=(-0.2, 0.2), contrast_limit=(-0.2, 0.2), brightness_by_max=True),
-                # A.HueSaturationValue(always_apply=False, p=0.25, hue_shift_limit=(-5, 5), sat_shift_limit=(-30, 30), val_shift_limit=(-20, 20)),
-                # A.ToGray(always_apply=False, p=0.5),
-            ])
+            self.transforms = get_transforms()
         else:
             self.transforms = None
     
@@ -105,33 +92,19 @@ class TerrainDataset(Dataset):
             data = pickle.load(f)
         imu, feet, leg = data['imu'], data['feet'], data['leg']
         patches = data['patches']
-        # data['patches'] contains the folder path of the patches stored as images. 
-        # find the number of images in the folder
-        # patches = self.pickle_files_paths[idx].replace('.pkl', '') # location where the patches are stored
-        # num_patches = len(glob.glob(self.pickle_files_paths[idx].replace('.pkl', '') + '/*.png'))
-        
-        
+    
         # process the feet data to remove the mu and std values for non-contacting feet
         feet = process_feet_data(feet)
         
         if not self.incl_orientation: imu = imu[:, :-4]
 
-        if self.psd:
-            imu = periodogram(imu, fs=IMU_TOPIC_RATE, axis=0)[1]
-            leg = periodogram(leg, fs=LEG_TOPIC_RATE, axis=0)[1]
-            feet = periodogram(feet, fs=FEET_TOPIC_RATE, axis=0)[1]
-        else: # used for RCA
-            # perform FFT of the data and return the amplitude values
-            imu = np.abs(np.fft.fft(imu, axis=0))
-            leg = np.abs(np.fft.fft(leg, axis=0))
-            feet = np.abs(np.fft.fft(feet, axis=0))
-            imu = imu[:imu.shape[0]//2]
-            leg = leg[:leg.shape[0]//2]
-            feet = feet[:feet.shape[0]//2]
+        imu = periodogram(imu, fs=IMU_TOPIC_RATE, axis=0)[1]
+        leg = periodogram(leg, fs=LEG_TOPIC_RATE, axis=0)[1]
+        feet = periodogram(feet, fs=FEET_TOPIC_RATE, axis=0)[1]
         
         # normalize the imu data
         # if self.mean is not None and self.std is not None:
-        if self.data_stats is not None and self.psd:
+        if self.data_stats is not None:
             # #minmax normalization
             imu = (imu - self.min['imu']) / (self.max['imu'] - self.min['imu'] + 1e-7)
             imu = imu.flatten()
@@ -144,19 +117,6 @@ class TerrainDataset(Dataset):
             feet = (feet - self.min['feet']) / (self.max['feet'] - self.min['feet'] + 1e-7)
             feet = feet.flatten()
             feet = feet.reshape(1, -1)
-            
-            # # tanh estimator normalization
-            # imu = (imu - self.mean['imu']) / (self.std['imu'] + 1e-7)
-            # imu = 0.5 * np.tanh(0.01 * imu)
-            # imu = imu.flatten().reshape(1, -1)
-            
-            # leg = (leg - self.mean['leg']) / (self.std['leg'] + 1e-7)
-            # leg = 0.5 * np.tanh(0.01 * leg)
-            # leg = leg.flatten().reshape(1, -1)
-            
-            # feet = (feet - self.mean['feet']) / (self.std['feet'] + 1e-7)
-            # feet = 0.5 * np.tanh(0.01 * feet)
-            # feet = feet.flatten().reshape(1, -1)
             
         # sample 2 values between 0 and num_patches-1
         # patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
@@ -190,14 +150,13 @@ class TerrainDataset(Dataset):
 
 # create pytorch lightning data module
 class NATURLDataModule(pl.LightningDataModule):
-    def __init__(self, data_config_path, batch_size=64, num_workers=2, include_orientation_imu=False, psd=True):
+    def __init__(self, data_config_path, batch_size=64, num_workers=2, include_orientation_imu=False):
         super().__init__()
         
         # read the yaml file
         cprint('Reading the yaml file at : {}'.format(data_config_path), 'green')
         self.data_config = yaml.load(open(data_config_path, 'r'), Loader=yaml.FullLoader)
         self.data_config_path = '/'.join(data_config_path.split('/')[:-1])
-        self.psd = psd # this will be false for the RCA model
 
         self.include_orientation_imu = include_orientation_imu
 
@@ -225,8 +184,8 @@ class NATURLDataModule(pl.LightningDataModule):
             # find the mean and std of the train dataset
             cprint('data_statistics.pkl file not found!', 'yellow')
             cprint('Finding the mean and std of the train dataset', 'green')
-            self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu, psd=True) for pickle_files_root in self.data_config['train']])
-            self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=128, num_workers=10, shuffle=False)
+            self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root, incl_orientation=self.include_orientation_imu) for pickle_files_root in self.data_config['train']])
+            self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=128, num_workers=2, shuffle=False)
             cprint('the length of the tmp_dataloader is : {}'.format(len(self.tmp_dataloader)), 'green')
             # find the mean and std of the train dataset
             imu_data, leg_data, feet_data = [], [], []
@@ -237,6 +196,10 @@ class NATURLDataModule(pl.LightningDataModule):
             imu_data = np.concatenate(imu_data, axis=0)
             leg_data = np.concatenate(leg_data, axis=0)
             feet_data = np.concatenate(feet_data, axis=0)
+            print('imu_data.shape : ', imu_data.shape)
+            print('leg_data.shape : ', leg_data.shape)
+            print('feet_data.shape : ', feet_data.shape)
+            exit()
             
             imu_data = imu_data.reshape(-1, imu_data.shape[-1])
             leg_data = leg_data.reshape(-1, leg_data.shape[-1])
@@ -318,7 +281,9 @@ class NATURLRepresentationsModel(pl.LightningModule):
     
     def forward(self, patch1, patch2, inertial_data, leg, feet):
         v_encoded_1 = self.visual_encoder(patch1.float())
+        v_encoded_1 = F.normalize(v_encoded_1, dim=-1)
         v_encoded_2 = self.visual_encoder(patch2.float())
+        v_encoded_2 = F.normalize(v_encoded_2, dim=-1)        
         
         # i_encoded = self.inertial_encoder(inertial_data.float())
         i_encoded = self.proprioceptive_encoder(inertial_data.float(), leg.float(), feet.float())
@@ -608,7 +573,7 @@ class NATURLRepresentationsModel(pl.LightningModule):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Train representations using the NATURL framework')
-    parser.add_argument('--batch_size', '-b', type=int, default=256, metavar='N',
+    parser.add_argument('--batch_size', '-b', type=int, default=512, metavar='N',
                         help='input batch size for training (default: 512)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 1000)')
@@ -618,7 +583,7 @@ if __name__ == '__main__':
                         help='L1 loss coefficient (1)')
     parser.add_argument('--num_gpus','-g', type=int, default=2, metavar='N',
                         help='number of GPUs to use (default: 8)')
-    parser.add_argument('--latent_size', type=int, default=512, metavar='N',
+    parser.add_argument('--latent_size', type=int, default=128, metavar='N',
                         help='Size of the common latent space (default: 128)')
     parser.add_argument('--save', type=int, default=0, metavar='N',
                         help='Whether to save the k means model and encoders at the end of the run')
@@ -630,19 +595,18 @@ if __name__ == '__main__':
     model = NATURLRepresentationsModel(lr=args.lr, latent_size=args.latent_size, l1_coeff=args.l1_coeff)
     dm = NATURLDataModule(data_config_path=args.data_config_path, batch_size=args.batch_size)
     
-    early_stopping_cb = EarlyStopping(monitor='train_loss', mode='min', min_delta=0.00, patience=1000)
-    # create model checkpoint only at end of training
-    model_checkpoint_cb = ModelCheckpoint(dirpath='models/', filename=datetime.now().strftime("%d-%m-%Y-%H-%M-%S") + '_', verbose=True, monitor='val_loss')
+    tb_logger = pl_loggers.TensorBoardLogger(save_dir="naturl_reptraining_logs/")
     
     print("Training the representation learning model...")
     trainer = pl.Trainer(gpus=list(np.arange(args.num_gpus)),
                          max_epochs=args.epochs,
-                        #  callbacks=[model_checkpoint_cb],
                          log_every_n_steps=10,
                          strategy='ddp',
                          num_sanity_val_steps=0,
-                         logger=True,
+                         logger=tb_logger,
                          sync_batchnorm=True,
+                         gradient_clip_val=100.0,
+                         gradient_clip_algorithm='norm',
                          )
 
     # fit the model

@@ -23,7 +23,7 @@ bag_names=$(cat $bag_names_file)
 # is in the folder /robodata/eyang/data/2022-12-16/2022-12-16-12-02-29.bag
 # second argument is the total samples to extract from the rosbag
 
-total_samples=2000
+total_samples=3000
 for bag_name in $bag_names
 do 
     # tmux session name current time
