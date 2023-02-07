@@ -1,0 +1,130 @@
+train:
+  - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2022-12-14-08-25-36
+  - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2022-12-14-08-31-07
+  - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2022-12-16-10-50-16
+  - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2023-01-25-16-12-48
+  - /robodata/haresh92/spot-vrl/spot_data/train/bush/2022-12-14-07-57-56
+  - /robodata/haresh92/spot-vrl/spot_data/train/bush/2022-12-14-08-00-59
+  - /robodata/haresh92/spot-vrl/spot_data/train/concrete/2022-12-13-07-39-25
+  - /robodata/haresh92/spot-vrl/spot_data/train/concrete/2022-12-15-15-21-36
+  - /robodata/haresh92/spot-vrl/spot_data/train/concrete/2023-01-18-14-05-57
+  - /robodata/haresh92/spot-vrl/spot_data/train/grass/2022-12-13-08-03-54
+  - /robodata/haresh92/spot-vrl/spot_data/train/grass/2022-12-15-15-32-39
+  - /robodata/haresh92/spot-vrl/spot_data/train/grass/2023-01-18-13-54-41
+  - /robodata/haresh92/spot-vrl/spot_data/train/grass/2023-01-25-15-54-21
+  - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-12-14-08-43-22
+  - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-12-14-08-49-07
+  - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-12-16-10-58-00
+  - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2023-01-18-14-41-12
+  - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-11-13-08-48-18
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-12-13-07-51-51
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-12-15-16-04-44
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-18-13-41-50
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-18-14-56-25
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-11-13-08-50-30
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-11-13-08-52-08
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-25-15-49-42
+  - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-25-16-20-21
+  - /robodata/haresh92/spot-vrl/spot_data/train/red_brick/2022-12-14-08-58-04
+  - /robodata/haresh92/spot-vrl/spot_data/train/red_brick/2022-12-14-09-09-20
+  - /robodata/haresh92/spot-vrl/spot_data/train/red_brick/2022-12-16-11-09-30
+  - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2022-12-14-08-05-26
+  - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2022-12-16-10-37-26
+  - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2022-12-16-10-55-04
+  - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2023-01-18-14-34-22
+  # - /robodata/haresh92/spot-vrl/spot_data/train/mulch/2022-12-16-12-02-29
+  # - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2022-12-14-08-28-23
+  # - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2022-12-14-08-33-38
+  # - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2022-12-16-10-52-30
+  # - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2023-01-25-16-15-06
+  # - /robodata/haresh92/spot-vrl/spot_data/test/bush/2022-12-14-07-59-26
+  # - /robodata/haresh92/spot-vrl/spot_data/test/bush/2022-12-14-08-02-07
+  # - /robodata/haresh92/spot-vrl/spot_data/test/concrete/2022-12-13-07-44-22
+  # - /robodata/haresh92/spot-vrl/spot_data/test/concrete/2022-12-15-15-27-03
+  # - /robodata/haresh92/spot-vrl/spot_data/test/concrete/2023-01-18-14-25-11
+  # - /robodata/haresh92/spot-vrl/spot_data/test/grass/2022-12-13-08-09-21
+  # - /robodata/haresh92/spot-vrl/spot_data/test/grass/2022-12-15-15-59-39
+  # - /robodata/haresh92/spot-vrl/spot_data/test/grass/2023-01-18-13-59-56
+  # - /robodata/haresh92/spot-vrl/spot_data/test/grass/2023-01-25-15-57-09
+  # - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2022-12-14-08-46-15
+  # - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2022-12-14-08-52-41
+  # - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2022-12-16-11-03-19
+  # - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2023-01-18-14-43-40
+  # - /robodata/haresh92/spot-vrl/spot_data/test/mulch/2022-12-16-12-04-46
+  # - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2022-12-13-07-58-17
+  # - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2022-12-15-16-10-05
+  # - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-18-13-47-54
+  # - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-18-14-58-28
+  # - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-25-15-52-05
+  # - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-25-16-22-57
+  # - /robodata/haresh92/spot-vrl/spot_data/test/red_brick/2022-12-14-09-03-37
+  # - /robodata/haresh92/spot-vrl/spot_data/test/red_brick/2022-12-14-09-10-50
+  # - /robodata/haresh92/spot-vrl/spot_data/test/red_brick/2022-12-16-11-14-07
+  # - /robodata/haresh92/spot-vrl/spot_data/test/yellow_brick/2022-12-14-08-11-20
+  # - /robodata/haresh92/spot-vrl/spot_data/test/yellow_brick/2022-12-16-10-43-30
+  # - /robodata/haresh92/spot-vrl/spot_data/test/yellow_brick/2023-01-18-14-50-56
+val:
+  - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2022-12-14-08-28-23
+  - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2022-12-14-08-33-38
+  - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2022-12-16-10-52-30
+  - /robodata/haresh92/spot-vrl/spot_data/test/asphalt/2023-01-25-16-15-06
+  - /robodata/haresh92/spot-vrl/spot_data/test/bush/2022-12-14-07-59-26
+  - /robodata/haresh92/spot-vrl/spot_data/test/bush/2022-12-14-08-02-07
+  - /robodata/haresh92/spot-vrl/spot_data/test/concrete/2022-12-13-07-44-22
+  - /robodata/haresh92/spot-vrl/spot_data/test/concrete/2022-12-15-15-27-03
+  - /robodata/haresh92/spot-vrl/spot_data/test/concrete/2023-01-18-14-25-11
+  - /robodata/haresh92/spot-vrl/spot_data/test/grass/2022-12-13-08-09-21
+  - /robodata/haresh92/spot-vrl/spot_data/test/grass/2022-12-15-15-59-39
+  - /robodata/haresh92/spot-vrl/spot_data/test/grass/2023-01-18-13-59-56
+  - /robodata/haresh92/spot-vrl/spot_data/test/grass/2023-01-25-15-57-09
+  - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2022-12-14-08-46-15
+  - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2022-12-14-08-52-41
+  - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2022-12-16-11-03-19
+  - /robodata/haresh92/spot-vrl/spot_data/test/marble_rock/2023-01-18-14-43-40
+  # - /robodata/haresh92/spot-vrl/spot_data/test/mulch/2022-12-16-12-04-46
+  - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2022-12-13-07-58-17
+  - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2022-12-15-16-10-05
+  - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-18-13-47-54
+  - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-18-14-58-28
+  - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-25-15-52-05
+  - /robodata/haresh92/spot-vrl/spot_data/test/pebble_pavement/2023-01-25-16-22-57
+  - /robodata/haresh92/spot-vrl/spot_data/test/red_brick/2022-12-14-09-03-37
+  - /robodata/haresh92/spot-vrl/spot_data/test/red_brick/2022-12-14-09-10-50
+  - /robodata/haresh92/spot-vrl/spot_data/test/red_brick/2022-12-16-11-14-07
+  - /robodata/haresh92/spot-vrl/spot_data/test/yellow_brick/2022-12-14-08-11-20
+  - /robodata/haresh92/spot-vrl/spot_data/test/yellow_brick/2022-12-16-10-43-30
+  - /robodata/haresh92/spot-vrl/spot_data/test/yellow_brick/2023-01-18-14-50-56
+  # - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2022-12-14-08-25-36
+  # - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2022-12-14-08-31-07
+  # - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2022-12-16-10-50-16
+  # - /robodata/haresh92/spot-vrl/spot_data/train/asphalt/2023-01-25-16-12-48
+  # - /robodata/haresh92/spot-vrl/spot_data/train/bush/2022-12-14-07-57-56
+  # - /robodata/haresh92/spot-vrl/spot_data/train/bush/2022-12-14-08-00-59
+  # - /robodata/haresh92/spot-vrl/spot_data/train/concrete/2022-12-13-07-39-25
+  # - /robodata/haresh92/spot-vrl/spot_data/train/concrete/2022-12-15-15-21-36
+  # - /robodata/haresh92/spot-vrl/spot_data/train/concrete/2023-01-18-14-05-57
+  # - /robodata/haresh92/spot-vrl/spot_data/train/grass/2022-12-13-08-03-54
+  # - /robodata/haresh92/spot-vrl/spot_data/train/grass/2022-12-15-15-32-39
+  # - /robodata/haresh92/spot-vrl/spot_data/train/grass/2023-01-18-13-54-41
+  # - /robodata/haresh92/spot-vrl/spot_data/train/grass/2023-01-25-15-54-21
+  # - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-12-14-08-43-22
+  # - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-12-14-08-49-07
+  # - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-12-16-10-58-00
+  # - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2023-01-18-14-41-12
+  # - /robodata/haresh92/spot-vrl/spot_data/train/marble_rock/2022-11-13-08-48-18
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-12-13-07-51-51
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-12-15-16-04-44
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-18-13-41-50
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-18-14-56-25
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-11-13-08-50-30
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2022-11-13-08-52-08
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-25-15-49-42
+  # - /robodata/haresh92/spot-vrl/spot_data/train/pebble_pavement/2023-01-25-16-20-21
+  # - /robodata/haresh92/spot-vrl/spot_data/train/red_brick/2022-12-14-08-58-04
+  # - /robodata/haresh92/spot-vrl/spot_data/train/red_brick/2022-12-14-09-09-20
+  # - /robodata/haresh92/spot-vrl/spot_data/train/red_brick/2022-12-16-11-09-30
+  # - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2022-12-14-08-05-26
+  # - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2022-12-16-10-37-26
+  # - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2022-12-16-10-55-04
+  # - /robodata/haresh92/spot-vrl/spot_data/train/yellow_brick/2023-01-18-14-34-22
+  # # - /robodata/haresh92/spot-vrl/spot_data/train/mulch/2022-12-16-12-02-29
