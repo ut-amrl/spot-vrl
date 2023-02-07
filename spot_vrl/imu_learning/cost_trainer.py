@@ -105,9 +105,7 @@ def fit(
             optimizer,
             device,
         )
-        torch.save(
-            model.state_dict(), os.path.join(save_dir, f"trained_epoch_{epoch}.pth")
-        )
+        torch.jit.script(model).save(save_dir / f"fullcostnet_{epoch:02d}.jit")
         message = (
             f"Epoch {epoch + 1}/{n_epochs}. Train set: Average loss: {train_loss:.4f}"
         )
