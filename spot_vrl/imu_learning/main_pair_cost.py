@@ -20,7 +20,6 @@ from spot_vrl.imu_learning.network import (
     CostNet,
     FullPairCostNet,
     MlpEmbeddingNet,
-    TripletNet,
 )
 from spot_vrl.imu_learning.cost_trainer import EmbeddingGenerator, fit
 
@@ -31,10 +30,10 @@ def main() -> None:
     parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument(
-        "--triplet-model",
+        "--encoder-model",
         type=Path,
         required=True,
-        help="Path to saved TripletNet model.",
+        help="Path to saved encoder model.",
     )
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=20)
@@ -47,7 +46,7 @@ def main() -> None:
 
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
-    triplet_net_path: Path = args.triplet_model
+    encoder_path: Path = args.encoder_model
     dataset_dir: Path = args.dataset_dir
     epochs: int = args.epochs
     margin: float = args.margin
@@ -85,15 +84,14 @@ def main() -> None:
     embedding_net = MlpEmbeddingNet(
         cost_dataset.triplet_dataset[0][0].shape, embedding_dim
     )
-    triplet_net = TripletNet(embedding_net)
-    triplet_net.load_state_dict(
-        torch.load(triplet_net_path, map_location=device),  # type: ignore
+    embedding_net.load_state_dict(
+        torch.load(encoder_path, map_location=device),  # type: ignore
         strict=True,
     )
-    triplet_net.requires_grad_(False)
+    embedding_net.requires_grad_(False)
     cost_net = CostNet(embedding_dim)
 
-    model = FullPairCostNet(triplet_net, cost_net)
+    model = FullPairCostNet(embedding_net, cost_net)
     model = model.to(device)
 
     loss_fn = MarginRankingLoss(margin)

@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -53,7 +52,7 @@ class EmbeddingGenerator:
         fig, ax = plt.subplots(sharey=True, constrained_layout=True)
 
         data = [t for t in dataset.values()]
-        data = [model.triplet_net.get_embedding(t) for t in data]
+        data = [model.encoder(t) for t in data]
         data = [model.cost_net(t) for t in data]
         data = [t.squeeze().cpu().detach().numpy() for t in data]
 

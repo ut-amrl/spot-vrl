@@ -24,7 +24,7 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
     def __init__(self, input_shape: Tuple[int, ...], embedding_dim: int):
         super().__init__()
 
-        input_dim = np.prod(input_shape).astype(int)
+        input_dim = int(np.prod(input_shape))
         self.sizes = [input_dim, 64, 32, embedding_dim]
         # self.sizes = [input_dim, 1024, 256, embedding_dim]
         # self.sizes = [input_dim, 1024, 1024, 256, embedding_dim]
@@ -51,7 +51,7 @@ class MlpEmbeddingNet(BaseEmbeddingNet):
         """
         x = x.view(x.shape[0], -1)
         out = self._fc(x)
-        return F.normalize(out, p=2, dim=1)
+        return F.normalize(out, p=2.0, dim=1)
 
     def arch(self) -> str:
         return "mlp" + "-".join(str(x) for x in self.sizes)
@@ -120,7 +120,7 @@ class CostNet(nn.Module):
         # Enforce non-negative costs. The exponential function is used instead
         # of ReLU since ReLU will produce a 0 gradient if the network output is
         # all non-positive.
-        return torch.exp(out)
+        return torch.exp(out) / 16
 
 
 class FullPairCostNet(nn.Module):
@@ -133,6 +133,6 @@ class FullPairCostNet(nn.Module):
     def forward(
         self, x: torch.Tensor, y: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        e_x = self.encoder(x)
-        e_y = self.encoder(y)
+        emb_x = self.encoder(x)
+        emb_y = self.encoder(y)
         return (self.cost_net(emb_x), self.cost_net(emb_y))
