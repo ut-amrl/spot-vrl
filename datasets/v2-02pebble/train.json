@@ -1,0 +1,55 @@
+{
+    "_comment": "Dataset for training initial model.",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-12-13/2022-12-13-07-39-25.bag",
+                "start": 1670938776,
+                "end": 1670939035
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-12-13/2022-12-13-08-03-54.bag",
+                "start": 1670940245,
+                "end": 1670940529
+            }
+        ],
+        "marble_rock": [
+            {
+                "path": "data/2022-12-14/2022-12-14-08-43-22.bag",
+                "start": 1671029013,
+                "end": 1671029149
+            },
+            {
+                "path": "data/2022-12-14/2022-12-14-08-49-07.bag",
+                "start": 1671029358,
+                "end": 1671029493
+            }
+        ],
+        "pebble_pvmt": [
+            {
+                "path": "data/2022-12-13/2022-12-13-07-51-51.bag",
+                "start": 1670939523,
+                "end": 1670939807
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "grass",
+            "second": "marble_rock",
+            "label": -1
+        },
+        {
+            "first": "concrete",
+            "second": "pebble_pvmt",
+            "label": 0
+        }
+    ]
+}
