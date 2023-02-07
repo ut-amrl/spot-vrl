@@ -16,10 +16,7 @@ from spot_vrl.visual_learning.datasets import (
     TripletHoldoutDataset,
     TripletTrainingDataset,
 )
-from spot_vrl.visual_learning.network import (
-    EmbeddingNet,
-    TripletNet,
-)
+from spot_vrl.visual_learning.network import EmbeddingNet
 from spot_vrl.visual_learning.trainer import EmbeddingGenerator, fit
 
 
@@ -76,9 +73,8 @@ def main() -> None:
     logger.info("Finished loading data")
 
     # Set up the network and training parameters
-    embedding_net = EmbeddingNet(embedding_dim)
+    model = EmbeddingNet(embedding_dim)
 
-    model = TripletNet(embedding_net)
     model = model.to(device)
     loss_fn = torch.nn.TripletMarginLoss(margin=margin, swap=True)
     optimizer = optim.AdamW(model.parameters(), lr=lr)

@@ -26,7 +26,6 @@ from spot_vrl.visual_learning.network import (
     CostNet,
     FullCostNet,
     EmbeddingNet,
-    TripletNet,
 )
 
 
@@ -83,7 +82,7 @@ class EmbeddingGenerator:
                 GPU memory if we pass in the entire dataset tensor at once.
                 """
                 end = min(start + self.batch_size, len(tensors))
-                embeddings.append(model._triplet_net.get_embedding(tensors[start:end]))
+                embeddings.append(model._encoder(tensors[start:end]))
             costs.append(model._cost_net(torch.cat(embeddings)).squeeze().cpu().numpy())
             labels.append(label)
 
@@ -178,10 +177,10 @@ def main() -> None:
     parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument(
-        "--triplet-model",
+        "--encoder-model",
         type=Path,
         required=True,
-        help="Path to saved TripletNet model.",
+        help="Path to saved encoder model.",
     )
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=int, default=20)
@@ -193,7 +192,7 @@ def main() -> None:
     args = parser.parse_args()
     ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
-    triplet_net_path: Path = args.triplet_model
+    encoder_path: Path = args.encoder_model
     dataset_dir: Path = args.dataset_dir
     epochs: int = args.epochs
     margin: float = args.margin
@@ -228,15 +227,14 @@ def main() -> None:
 
     # Set up the network and training parameters
     embedding_net = EmbeddingNet(embedding_dim)
-    triplet_net = TripletNet(embedding_net)
-    triplet_net.load_state_dict(
-        torch.load(triplet_net_path, map_location=device),  # type: ignore
+    embedding_net.load_state_dict(
+        torch.load(encoder_path, map_location=device),  # type: ignore
         strict=True,
     )
-    triplet_net.requires_grad_(False)
+    embedding_net.requires_grad_(False)
     cost_net = CostNet(embedding_dim)
 
-    model = FullCostNet(triplet_net, cost_net)
+    model = FullCostNet(embedding_net, cost_net)
     model = model.to(device)
 
     loss_fn = MarginRankingLoss(margin)

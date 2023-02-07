@@ -2,8 +2,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from spot_vrl.visual_learning.datasets import Triplet
-
 
 class EmbeddingNet(nn.Module):
     class ConvBlock(nn.Module):
@@ -51,23 +49,6 @@ class EmbeddingNet(nn.Module):
         return F.normalize(output, p=2.0, dim=1)
 
 
-class TripletNet(nn.Module):
-    def __init__(self, embedding_net: EmbeddingNet) -> None:
-        super().__init__()
-        self.embedding_net = embedding_net
-
-    def get_embedding(self, x: torch.Tensor) -> torch.Tensor:
-        # exists for type coercion
-        return self.embedding_net(x)  # type: ignore
-
-    def forward(self, t: Triplet) -> Triplet:
-        e_anchor = self.get_embedding(t[0])
-        e_pos = self.get_embedding(t[1])
-        e_neg = self.get_embedding(t[2])
-
-        return e_anchor, e_pos, e_neg
-
-
 class CostNet(nn.Module):
     def __init__(self, embedding_dim: int) -> None:
         super().__init__()
@@ -90,13 +71,12 @@ class CostNet(nn.Module):
 
 
 class FullCostNet(nn.Module):
-    def __init__(self, triplet_net: TripletNet, cost_net: CostNet) -> None:
+    def __init__(self, encoder: EmbeddingNet, cost_net: CostNet) -> None:
         super().__init__()
 
-        # TODO(eyang): it makes more sense for this to be an EmbeddingNet directly
-        self._triplet_net = triplet_net
+        self._encoder = encoder
         self._cost_net = cost_net
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        embedding = self._triplet_net.get_embedding(x)
+        embedding: torch.Tensor = self._encoder(x)
         return self._cost_net(embedding)  # type: ignore
