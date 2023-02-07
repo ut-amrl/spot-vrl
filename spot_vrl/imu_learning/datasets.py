@@ -98,7 +98,7 @@ class SingleTerrainDataset(Dataset[torch.Tensor]):
         # Overlap windows for more data points
         window_start: float
         for window_start in tqdm.tqdm(
-            np.arange(ts[0], ts[-1] - window_size, 0.5),
+            np.arange(ts[0], ts[-1] - window_size, 0.2),
             desc="Loading Dataset",
             position=parallel.tqdm_position(),
             dynamic_ncols=True,
