@@ -102,6 +102,7 @@ class TerrainDataset(Dataset):
         imu = periodogram(imu, fs=IMU_TOPIC_RATE, axis=0)[1]
         leg = periodogram(leg, fs=LEG_TOPIC_RATE, axis=0)[1]
         feet = periodogram(feet, fs=FEET_TOPIC_RATE, axis=0)[1]
+        imu, leg, feet = imu[-201:, :], leg[-25:, :], feet[-25:, :]
         
         # normalize the imu data
         # if self.mean is not None and self.std is not None:
@@ -154,7 +155,7 @@ class TerrainDataset(Dataset):
 
 # create pytorch lightning data module
 class NATURLDataModule(pl.LightningDataModule):
-    def __init__(self, data_config_path, batch_size=64, num_workers=2):
+    def __init__(self, data_config_path, batch_size=64, num_workers=4):
         super().__init__()
         
         # read the yaml file
@@ -168,26 +169,30 @@ class NATURLDataModule(pl.LightningDataModule):
         self.min, self.max = {}, {}
         
         # load the train and val datasets
+        self.data_statistics_pkl_path = self.data_config_path + '/data_statistics.pkl'
+        if 'all' in data_config_path:
+            cprint('This is the pretraining step...', 'green')
+            self.data_statistics_pkl_path = self.data_config_path + '/data_statistics_all.pkl'
+        cprint('data_statistics_pkl_path : {}'.format(self.data_statistics_pkl_path), 'green')
         self.load()
         cprint('Train dataset size : {}'.format(len(self.train_dataset)), 'green')
         cprint('Val dataset size : {}'.format(len(self.val_dataset)), 'green')
         
         
     def load(self):
-        
         # check if the data_statistics.pkl file exists
-        if os.path.exists(self.data_config_path + '/data_statistics.pkl'):
-            cprint('Loading the mean and std from the data_statistics.pkl file', 'green')
-            data_statistics = pickle.load(open(self.data_config_path + '/data_statistics.pkl', 'rb'))
+        if os.path.exists(self.data_statistics_pkl_path):
+            cprint('Loading the mean and std from the data_statistics pickle file', 'green')
+            data_statistics = pickle.load(open(self.data_statistics_pkl_path, 'rb'))
             # self.mean, self.std = data_statistics['mean'], data_statistics['std']
             # self.min, self.max = data_statistics['min'], data_statistics['max']
             
         else:
             # find the mean and std of the train dataset
-            cprint('data_statistics.pkl file not found!', 'yellow')
+            cprint('data_statistics pickle file not found!', 'yellow')
             cprint('Finding the mean and std of the train dataset', 'green')
             self.tmp_dataset = ConcatDataset([TerrainDataset(pickle_files_root) for pickle_files_root in self.data_config['train']])
-            self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=128, num_workers=2, shuffle=False)
+            self.tmp_dataloader = DataLoader(self.tmp_dataset, batch_size=128, num_workers=10, shuffle=True)
             cprint('the length of the tmp_dataloader is : {}'.format(len(self.tmp_dataloader)), 'green')
             # find the mean and std of the train dataset
             imu_data, leg_data, feet_data = [], [], []
@@ -214,10 +219,10 @@ class NATURLDataModule(pl.LightningDataModule):
             cprint('Max : {}'.format(self.max), 'green')
             
             # save the mean and std
-            cprint('Saving the mean, std, min, max to the data_statistics.pkl file', 'green')
+            cprint('Saving the mean, std, min, max to the data_statistics pickle file', 'green')
             data_statistics = {'mean': self.mean, 'std': self.std, 'min': self.min, 'max': self.max}
             
-            pickle.dump(data_statistics, open(self.data_config_path + '/data_statistics.pkl', 'wb'))
+            pickle.dump(data_statistics, open(self.data_statistics_pkl_path, 'wb'))
             
         # load the train data
         self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, img_augment=False) for pickle_files_root in self.data_config['train']])

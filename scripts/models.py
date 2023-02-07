@@ -24,7 +24,7 @@ class ProprioceptionModel(nn.Module):
         self.leg_encoder = nn.Sequential( # input shape : (batch_size, 1, 900)
             nn.Flatten(),
             # nn.BatchNorm1d(900),
-            nn.Linear(900, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(),
+            nn.Linear(25*36, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(),
             nn.Dropout(p),
             nn.Linear(128, latent_size//2), nn.ReLU(), #nn.BatchNorm1d(latent_size//2), nn.ReLU(),
         )
@@ -32,7 +32,7 @@ class ProprioceptionModel(nn.Module):
         self.feet_encoder = nn.Sequential( # input shape : (batch_size, 1, 500)
             nn.Flatten(),
             # nn.BatchNorm1d(500),
-            nn.Linear(500, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(),
+            nn.Linear(25*20, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(),
             nn.Dropout(p),
             nn.Linear(128, latent_size//2), nn.ReLU(), #nn.BatchNorm1d(latent_size//2), nn.ReLU(),
         )
