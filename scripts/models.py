@@ -10,32 +10,35 @@ from termcolor import cprint
 
 # create a pytorch model for the proprioception data
 class ProprioceptionModel(nn.Module):
-    def __init__(self, latent_size=64, p=0.05):
+    def __init__(self, latent_size=64, p=0.2):
         super(ProprioceptionModel, self).__init__()
         
         self.inertial_encoder = nn.Sequential( # input shape : (batch_size, 1, 603)
             nn.Flatten(),
-            nn.Linear(201*3, 128, bias=False), nn.ReLU(),
+            # nn.BatchNorm1d(603),
+            nn.Linear(201*3, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(), 
             nn.Dropout(p),
-            nn.Linear(128, latent_size//2), nn.ReLU(),
+            nn.Linear(128, latent_size//2), nn.ReLU(), #nn.BatchNorm1d(latent_size//2), nn.ReLU(),
         )
         
         self.leg_encoder = nn.Sequential( # input shape : (batch_size, 1, 900)
             nn.Flatten(),
-            nn.Linear(900, 128, bias=False), nn.ReLU(),
+            # nn.BatchNorm1d(900),
+            nn.Linear(900, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(),
             nn.Dropout(p),
-            nn.Linear(128, latent_size//2), nn.ReLU(),
+            nn.Linear(128, latent_size//2), nn.ReLU(), #nn.BatchNorm1d(latent_size//2), nn.ReLU(),
         )
         
         self.feet_encoder = nn.Sequential( # input shape : (batch_size, 1, 500)
             nn.Flatten(),
-            nn.Linear(500, 128, bias=False), nn.ReLU(),
+            # nn.BatchNorm1d(500),
+            nn.Linear(500, 128, bias=False), nn.ReLU(), #nn.BatchNorm1d(128), nn.ReLU(),
             nn.Dropout(p),
-            nn.Linear(128, latent_size//2), nn.ReLU(),
+            nn.Linear(128, latent_size//2), nn.ReLU(), #nn.BatchNorm1d(latent_size//2), nn.ReLU(),
         )
         
         self.fc = nn.Sequential(
-            nn.Linear(3 * latent_size//2, latent_size), nn.ReLU(),
+            nn.Linear(3 * latent_size//2, latent_size), nn.ReLU(), #nn.BatchNorm1d(latent_size), nn.ReLU(),
             nn.Linear(latent_size, latent_size)
         )
         

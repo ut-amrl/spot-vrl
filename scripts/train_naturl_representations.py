@@ -237,7 +237,8 @@ class NATURLDataModule(pl.LightningDataModule):
 
 
 class NATURLRepresentationsModel(pl.LightningModule):
-    def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, weight_decay=1e-6, l1_coeff=0.5, rep_size=64):
+    def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, 
+                 weight_decay=1e-6, l1_coeff=0.5, rep_size=64, pretrain=False):
         super(NATURLRepresentationsModel, self).__init__()
         
         self.save_hyperparameters(
@@ -253,6 +254,9 @@ class NATURLRepresentationsModel(pl.LightningModule):
         self.lr, self.latent_size, self.scale_loss, self.lambd, self.weight_decay = lr, latent_size, scale_loss, lambd, weight_decay
         self.l1_coeff = l1_coeff
         self.rep_size = rep_size
+        self.pretrain = pretrain
+        if self.pretrain:
+            cprint('Pretraining the model', 'green', attrs=['bold', 'underline'])
         
         # visual encoder architecture
         self.visual_encoder = VisualEncoderModel(latent_size=rep_size)
@@ -501,29 +505,31 @@ class NATURLRepresentationsModel(pl.LightningModule):
             
             data = torch.cat((ve, vi), dim=-1)
             
-            # calculate and print accuracy
-            cprint('finding accuracy...', 'yellow')
-            accuracy, kmeanslabels, kmeanselbow, kmeansmodel = cluster_jackal.accuracy_naive(data, ll, label_types=list(terrain_label.keys()))
-            fms, ari, chs = cluster_jackal.compute_fms_ari(data, ll, clusters=kmeanslabels, elbow=kmeanselbow, model=kmeansmodel)
-            
-            if not self.max_acc or accuracy > self.max_acc:
-                self.max_acc = accuracy
-                self.kmeanslabels, self.kmeanselbow, self.kmeansmodel = kmeanslabels, kmeanselbow, kmeansmodel
-                self.vispatchsaved = torch.clone(vis_patch)
-                self.sampleidxsaved = torch.clone(self.sampleidx)
-                cprint('best model saved', 'green')
+            if self.current_epoch == self.trainer.max_epochs-1 and not self.pretrain:
+                cprint('finding accuracy...', 'yellow')
+                accuracy, kmeanslabels, kmeanselbow, kmeansmodel = cluster_jackal.accuracy_naive(data, ll, label_types=list(terrain_label.keys()))
+                fms, ari, chs = cluster_jackal.compute_fms_ari(data, ll, clusters=kmeanslabels, elbow=kmeanselbow, model=kmeansmodel)
                 
-            # log k-means accurcay and projection for tensorboard visualization
-            self.logger.experiment.add_scalar("K-means accuracy", accuracy, self.current_epoch)
-            self.logger.experiment.add_scalar("Fowlkes-Mallows score", fms, self.current_epoch)
-            self.logger.experiment.add_scalar("Adjusted Rand Index", ari, self.current_epoch)
-            self.logger.experiment.add_scalar("Calinski-Harabasz Score", chs, self.current_epoch)
-            self.logger.experiment.add_scalar("K-means elbow", self.kmeanselbow, self.current_epoch)
-            
-            # Save the cluster image grids on the final epoch only
-            if self.current_epoch == self.trainer.max_epochs-1:
-                path_root = "./models/acc_" + str(round(self.max_acc, 5)) + "_" + str(datetime.now().strftime("%d-%m-%Y-%H-%M-%S")) + "_" + "/"
-                self.save_models(path_root)
+                if not self.max_acc or accuracy > self.max_acc:
+                    self.max_acc = accuracy
+                    self.kmeanslabels, self.kmeanselbow, self.kmeansmodel = kmeanslabels, kmeanselbow, kmeansmodel
+                    self.vispatchsaved = torch.clone(vis_patch)
+                    self.sampleidxsaved = torch.clone(self.sampleidx)
+                    cprint('best model saved', 'green')
+                    
+                # log k-means accurcay and projection for tensorboard visualization
+                self.logger.experiment.add_scalar("K-means accuracy", accuracy, self.current_epoch)
+                self.logger.experiment.add_scalar("Fowlkes-Mallows score", fms, self.current_epoch)
+                self.logger.experiment.add_scalar("Adjusted Rand Index", ari, self.current_epoch)
+                self.logger.experiment.add_scalar("Calinski-Harabasz Score", chs, self.current_epoch)
+                self.logger.experiment.add_scalar("K-means elbow", self.kmeanselbow, self.current_epoch)
+                
+                # Save the cluster image grids on the final epoch only
+                if self.current_epoch == self.trainer.max_epochs-1:
+                    path_root = "./models/acc_" + str(round(self.max_acc, 5)) + "_" + str(datetime.now().strftime("%d-%m-%Y-%H-%M-%S")) + "_" + "/"
+                    self.save_models(path_root)
+            else:
+                self.save_models()
                     
             
             if self.current_epoch % 10 == 0:
@@ -538,34 +544,34 @@ class NATURLRepresentationsModel(pl.LightningModule):
         else:
             cprint('directory already exists: ' + path_root, 'red')
         
-        dic = self.sample_clusters(self.kmeanslabels, self.kmeanselbow, self.vispatchsaved)
-        self.img_clusters(dic, self.kmeanselbow, path_root=path_root)
+        if not self.pretrain:
+            dic = self.sample_clusters(self.kmeanslabels, self.kmeanselbow, self.vispatchsaved)
+            self.img_clusters(dic, self.kmeanselbow, path_root=path_root)
+            # save the kmeans model
+            with open(os.path.join(path_root, 'kmeansmodel.pkl'), 'wb') as f:
+                pickle.dump(self.kmeansmodel, f)
+                cprint('kmeans model saved', 'green')
+                
+            # save the kmeans labels, true labels, and sample indices
+            torch.save(self.kmeanslabels, os.path.join(path_root, 'kmeanslabels.pt'))
+            torch.save(self.sampleidxsaved, os.path.join(path_root, 'sampleidx.pt'))
         
-        # ll = np.asarray([terrain_label[l] for l in ll])
-        # dic = self.sample_clusters(ll, 8, vis_patch)
-        # self.img_clusters(dic, 8)
-        
-        # save the kmeans model
-        with open(os.path.join(path_root, 'kmeansmodel.pkl'), 'wb') as f:
-            pickle.dump(self.kmeansmodel, f)
-            cprint('kmeans model saved', 'green')
-            
-        # save the kmeans labels, true labels, and sample indices
-        torch.save(self.kmeanslabels, os.path.join(path_root, 'kmeanslabels.pt'))
-        torch.save(self.sampleidxsaved, os.path.join(path_root, 'sampleidx.pt'))
-            
-        # save the visual encoder
-        torch.save(self.visual_encoder.state_dict(), os.path.join(path_root, 'visual_encoder.pt'))
-        cprint('visual encoder saved', 'green')
-        # save the proprioceptive encoder
-        torch.save(self.proprioceptive_encoder.state_dict(), os.path.join(path_root, 'proprioceptive_encoder.pt'))
-        cprint('proprioceptive encoder saved', 'green')
-        cprint('All models successfully saved', 'green', attrs=['bold'])
+            # save the visual encoder
+            torch.save(self.visual_encoder.state_dict(), os.path.join(path_root, 'visual_encoder.pt'))
+            cprint('visual encoder saved', 'green')
+            # save the proprioceptive encoder
+            torch.save(self.proprioceptive_encoder.state_dict(), os.path.join(path_root, 'proprioceptive_encoder.pt'))
+            cprint('proprioceptive encoder saved', 'green')
+            cprint('All models successfully saved', 'green', attrs=['bold'])
+        else:
+            cprint('Saving the pre-trained models', 'green', attrs=['bold'])
+            torch.save(self.visual_encoder.state_dict(), 'models/visual_encoder_pretrained.pt')
+            torch.save(self.proprioceptive_encoder.state_dict(), 'models/proprioceptive_encoder_pretrained.pt')
         
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='Train representations using the NATURL framework')
-    parser.add_argument('--batch_size', '-b', type=int, default=512, metavar='N',
+    parser.add_argument('--batch_size', '-b', type=int, default=256, metavar='N',
                         help='input batch size for training (default: 512)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of epochs to train (default: 1000)')
@@ -582,9 +588,10 @@ if __name__ == '__main__':
     parser.add_argument('--imu_in_rep', type=int, default=1, metavar='N',
                         help='Whether to include the inertial data in the representation')
     parser.add_argument('--data_config_path', type=str, default='spot_data/data_config.yaml')
+    parser.add_argument('--pretrain', action='store_true', default=False)
     args = parser.parse_args()
     
-    model = NATURLRepresentationsModel(lr=args.lr, latent_size=args.latent_size, l1_coeff=args.l1_coeff)
+    model = NATURLRepresentationsModel(lr=args.lr, latent_size=args.latent_size, l1_coeff=args.l1_coeff, pretrain=args.pretrain)
     dm = NATURLDataModule(data_config_path=args.data_config_path, batch_size=args.batch_size)
     
     tb_logger = pl_loggers.TensorBoardLogger(save_dir="naturl_reptraining_logs/")
