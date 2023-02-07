@@ -71,6 +71,7 @@ def main() -> None:
         sys.exit(1)
 
     # Set up data loaders
+    logger.info("Loading training data")
     cost_dataset = PairCostTrainingDataset(train_dataset_spec)
     train_size = int(len(cost_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
@@ -78,6 +79,7 @@ def main() -> None:
     )
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False)
+    logger.info("Finished loading training data")
 
     # Set up the network and training parameters
     embedding_net = MlpEmbeddingNet(
@@ -107,12 +109,14 @@ def main() -> None:
     if comment:
         tb_writer.add_text("comment", comment)  # type: ignore
 
+    logger.info("Loading evaluation data")
     embedder = EmbeddingGenerator(
         device,
         cost_dataset.triplet_dataset,
         TripletHoldoutDataset().init_from_json(holdout_dataset_spec),
         tb_writer,
     )
+    logger.info("Finished loading evaluation data")
 
     fit(
         train_loader,
