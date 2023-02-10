@@ -30,12 +30,12 @@ class EmbeddingGenerator:
         self.holdout_tensors: Dict[str, torch.Tensor] = {}
         """Dict[terrain_type -> Tensor]"""
 
-        for terrain, ds in train_set._categories.items():
+        for terrain, ds in sorted(train_set._categories.items()):
             t = self.train_tensors.get(terrain, torch.empty(0))
             t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
             self.train_tensors[terrain] = torch.cat((t, t2), dim=0)
 
-        for terrain, ds in holdout_set._categories.items():
+        for terrain, ds in sorted(holdout_set._categories.items()):
             t = self.holdout_tensors.get(terrain, torch.empty(0))
             t2 = torch.cat([ds[i][None, ...] for i in range(len(ds))], dim=0)
             self.holdout_tensors[terrain] = torch.cat((t, t2), dim=0)

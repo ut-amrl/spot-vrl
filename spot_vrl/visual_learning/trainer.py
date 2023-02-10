@@ -48,7 +48,7 @@ class EmbeddingGenerator:
         self.labels: Dict[str, List[str]] = {}
         """Dict[DatasetType -> List[str]]"""
 
-        for terrain, ds in train_set._categories.items():
+        for terrain, ds in sorted(train_set._categories.items()):
             t = self.tensors.get("train", torch.empty(0))
             t2 = torch.cat([ds[i][1][None, ...] for i in range(len(ds))], dim=0)
             self.tensors["train"] = torch.cat((t, t2), dim=0)
@@ -56,7 +56,7 @@ class EmbeddingGenerator:
                 [terrain for _ in range(len(ds))]
             )
 
-        for terrain, ds in holdout_set._categories.items():
+        for terrain, ds in sorted(holdout_set._categories.items()):
             t = self.tensors.get("holdout", torch.empty(0))
             t2 = torch.cat([ds[i][1][None, ...] for i in range(len(ds))], dim=0)
             self.tensors["holdout"] = torch.cat((t, t2), dim=0)
