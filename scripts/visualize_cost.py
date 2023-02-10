@@ -17,9 +17,9 @@ class CostVisualizer:
         if 'rca' in self.model_path:
             self.model = RCAModel(8)
         else:
-            visual_encoder = VisualEncoderModel(latent_size=128)
+            visual_encoder = VisualEncoderModel(latent_size=64)
             # visual_encoder = VisualEncoderEfficientModel(latent_size=128)
-            cost_net = CostNet(latent_size=128)
+            cost_net = CostNet(latent_size=64, use_sigmoid=False)
             self.model = nn.Sequential(visual_encoder, cost_net)
             
         # load weights of model
@@ -58,8 +58,8 @@ class CostVisualizer:
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--model_path', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.99604_20-01-2023-08-13-17_/cost_model.pt')
-    parser.add_argument('--bag_path', '-b', type=str, default='/robodata/eyang/data/2023-01-21/2023-01-21-15-41-04.bag')
+    parser.add_argument('--model_path', '-m', type=str, default='models/acc_0.96133_08-02-2023-22-17-38_/cost_model.pt')
+    parser.add_argument('--bag_path', '-b', type=str, default='spot_data/test_bag.bag')
     parser.add_argument('--output_path', '-o' ,type=str, default='cost_video.mp4', help='path to save the video, including the name w/ extension (.mp4)')
     args = parser.parse_args()
     
@@ -69,12 +69,9 @@ if __name__ == '__main__':
     elif 'oracle' in args.model_path:
         cprint('Oracle model found. Using max_val = 6.0', 'green')
         max_val = 6.0
-    # elif 'naturl' in args.model_path:
-    #     cprint('NATURL model found. Using max_val = 6.0', 'green')
-    #     max_val = 6.0
     else:
-        # raise ValueError('Unknown model')
-        max_val = 6.0
+        cprint('Using max_val = 5.0', 'green')
+        max_val = 5.0
     
     costviz = CostVisualizer(args.model_path)
     rosbag = rosbag.Bag(args.bag_path)
@@ -113,9 +110,9 @@ if __name__ == '__main__':
         out.write(stacked_img)
             
         # if ctrl+c is pressed, break the loop, save the video and exit
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            out.release()
-            break
+        # if cv2.waitKey(1) & 0xFF == ord('q'):
+        #     out.release()
+        #     break
 
     # out.release()
         

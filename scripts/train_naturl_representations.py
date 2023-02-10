@@ -14,6 +14,7 @@ import torch.nn.functional as F
 import tensorboard as tb
 import cv2
 from tqdm import tqdm
+import torch_optimizer as toptim
 
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from pytorch_lightning.callbacks.model_checkpoint import ModelCheckpoint
@@ -23,6 +24,8 @@ import argparse
 import yaml
 import os
 from sklearn import metrics
+
+webhook_url = "https://hooks.slack.com/services/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"
 
 
 from scipy.signal import periodogram
@@ -79,6 +82,7 @@ class TerrainDataset(Dataset):
             self.mean, self.std = data_stats['mean'], data_stats['std']
         
         if img_augment:
+            cprint('Using image augmentations', 'green', attrs=['bold', 'underline'])
             self.transforms = get_transforms()
         else:
             self.transforms = None
@@ -110,26 +114,26 @@ class TerrainDataset(Dataset):
             # #minmax normalization
             imu = (imu - self.min['imu']) / (self.max['imu'] - self.min['imu'] + 1e-7)
             # shape : (bs, 201, 3)
-            imu = imu.flatten()
-            imu = imu.reshape(1, -1)
+            # imu = imu.flatten()
+            # imu = imu.reshape(1, -1)
             
             leg = (leg - self.min['leg']) / (self.max['leg'] - self.min['leg'] + 1e-7)
             # shape : (bs, 25, 36)
-            leg = leg.flatten()
-            leg = leg.reshape(1, -1)
+            # leg = leg.flatten()
+            # leg = leg.reshape(1, -1)
             
             feet = (feet - self.min['feet']) / (self.max['feet'] - self.min['feet'] + 1e-7)
             # shape : (bs, 25, 20)
-            feet = feet.flatten()
-            feet = feet.reshape(1, -1)
+            # feet = feet.flatten()
+            # feet = feet.reshape(1, -1)
             
         # sample 2 values between 0 and num_patches-1
-        # patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
+        patch_1_idx, patch_2_idx = np.random.choice(len(patches), 2, replace=False)
         
         # sample a number between 0 and (num_patches-1)/2
-        patch_1_idx = np.random.randint(0, len(patches)//2)
+        # patch_1_idx = np.random.randint(0, len(patches)//2)
         # sample a number between (num_patches-1)/2 and num_patches-1
-        patch_2_idx = np.random.randint(len(patches)//2, len(patches))
+        # patch_2_idx = np.random.randint(len(patches)//2, len(patches))
         
         # patch1_idx, patch2_idx = np.random.choice(num_patches, 2, replace=False)
         patch1, patch2 = patches[patch_1_idx], patches[patch_2_idx]
@@ -225,7 +229,7 @@ class NATURLDataModule(pl.LightningDataModule):
             pickle.dump(data_statistics, open(self.data_statistics_pkl_path, 'wb'))
             
         # load the train data
-        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, img_augment=False) for pickle_files_root in self.data_config['train']])
+        self.train_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics, img_augment=True) for pickle_files_root in self.data_config['train']])
         self.val_dataset = ConcatDataset([TerrainDataset(pickle_files_root, data_stats=data_statistics) for pickle_files_root in self.data_config['val']])
         
     def train_dataloader(self):
@@ -240,7 +244,6 @@ class NATURLDataModule(pl.LightningDataModule):
                           drop_last= True if len(self.val_dataset) % self.batch_size != 0 else False,
                           pin_memory=True)
 
-
 class NATURLRepresentationsModel(pl.LightningModule):
     def __init__(self, lr=3e-4, latent_size=64, scale_loss=1.0/32, lambd=3.9e-6, 
                  weight_decay=1e-6, l1_coeff=0.5, rep_size=64, pretrain=False):
@@ -253,8 +256,11 @@ class NATURLRepresentationsModel(pl.LightningModule):
             'lambd',
             'weight_decay',
             'l1_coeff',
-            'rep_size'
+            'rep_size',
+            'pretrain'
         )
+        
+        self.best_val_loss = 1000000.0
         
         self.lr, self.latent_size, self.scale_loss, self.lambd, self.weight_decay = lr, latent_size, scale_loss, lambd, weight_decay
         self.l1_coeff = l1_coeff
@@ -270,9 +276,15 @@ class NATURLRepresentationsModel(pl.LightningModule):
         self.proprioceptive_encoder = ProprioceptionModel(latent_size=rep_size)
         
         self.projector = nn.Sequential(
-            nn.Linear(rep_size, latent_size), nn.ReLU(inplace=True),
+            nn.Linear(rep_size, latent_size), nn.PReLU(),
             nn.Linear(latent_size, latent_size)
         )
+        
+        if not pretrain:
+            cprint('Loading the pretrained visual encoder and proprioceptive encoder', 'yellow', attrs=['bold', 'underline'])
+            self.visual_encoder.load_state_dict(torch.load('models/visual_encoder_pretrained_64.pt'))
+            self.proprioceptive_encoder.load_state_dict(torch.load('models/proprioceptive_encoder_pretrained_64.pt'))
+            # self.projector.load_state_dict(torch.load('models/projector_pretrained_64.pt'))
         
         # coefficients for vicreg loss
         self.sim_coeff = 25.0
@@ -489,6 +501,8 @@ class NATURLRepresentationsModel(pl.LightningModule):
     
     def on_validation_end(self):
         if (self.current_epoch % 10 == 0 or self.current_epoch == self.trainer.max_epochs-1) and torch.cuda.current_device() == 0:
+            val_loss = self.trainer.callback_metrics["val_loss"]
+            
             self.validate()
             
             # self.visual_patch = torch.cat(self.visual_patch, dim=0)
@@ -533,9 +547,10 @@ class NATURLRepresentationsModel(pl.LightningModule):
                 if self.current_epoch == self.trainer.max_epochs-1:
                     path_root = "./models/acc_" + str(round(self.max_acc, 5)) + "_" + str(datetime.now().strftime("%d-%m-%Y-%H-%M-%S")) + "_" + "/"
                     self.save_models(path_root)
-            else:
-                self.save_models()
-                    
+            elif self.pretrain:
+                if val_loss < self.best_val_loss:
+                    self.best_val_loss = val_loss
+                    self.save_models()
             
             if self.current_epoch % 10 == 0:
                 self.logger.experiment.add_embedding(mat=data[idx[:2500]], label_img=vis_patch[idx[:2500]], global_step=self.current_epoch, metadata=ll[idx[:2500]], tag='visual_encoding')
@@ -570,8 +585,9 @@ class NATURLRepresentationsModel(pl.LightningModule):
             cprint('All models successfully saved', 'green', attrs=['bold'])
         else:
             cprint('Saving the pre-trained models', 'green', attrs=['bold'])
-            torch.save(self.visual_encoder.state_dict(), 'models/visual_encoder_pretrained.pt')
-            torch.save(self.proprioceptive_encoder.state_dict(), 'models/proprioceptive_encoder_pretrained.pt')
+            torch.save(self.visual_encoder.state_dict(), 'models/visual_encoder_pretrained_64.pt')
+            torch.save(self.proprioceptive_encoder.state_dict(), 'models/proprioceptive_encoder_pretrained_64.pt')
+            torch.save(self.projector.state_dict(), 'models/projector_pretrained_64.pt')
         
 if __name__ == '__main__':
     

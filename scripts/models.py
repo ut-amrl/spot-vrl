@@ -8,6 +8,40 @@ from einops.layers.torch import Rearrange
 import pickle
 from termcolor import cprint
 
+class TransformerModel(nn.Module):
+    # this is the Transformer model
+    def __init__(self, input_size=7, sequence_length=10, output_size=6, d_model=32):
+        super().__init__()
+        # given a sequence of length time_history and a feature size of input_size,
+        # the following transformer will output a feature of size output_size
+        self.linear_head = nn.Linear(input_size, d_model)
+        
+        encoder_layer = nn.TransformerEncoderLayer(d_model=d_model, nhead=4, dim_feedforward=128, 
+                                                   dropout=0.2, activation='gelu', batch_first=True, norm_first=True)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=2, norm=None)
+        self.cls_token = nn.Parameter(torch.randn(1, 1, d_model), requires_grad=True)
+        self.pos_embedding = nn.Parameter(torch.randn(1, sequence_length + 1, d_model), requires_grad=True)
+
+        self.linear_mapping = nn.Sequential(
+            nn.LayerNorm(d_model),
+            nn.Linear(d_model, output_size)
+        )
+        self.do = nn.Dropout(0.2)
+        
+    def forward(self, x):
+        batch_size, seq_len, _ = x.shape
+        x = self.linear_head(x)
+
+        cls_tokens = repeat(self.cls_token, '() n d -> b n d', b=batch_size)
+        x = torch.cat([cls_tokens, x], dim=1)
+        x += self.pos_embedding[:, :(seq_len + 1)]
+        
+        x = self.do(x) # embedding dropout
+        
+        x = self.encoder(x)
+        x = x.mean(dim=1)
+        return self.linear_mapping(x)
+
 # create a pytorch model for the proprioception data
 class ProprioceptionModel(nn.Module):
     def __init__(self, latent_size=64, p=0.2):
@@ -36,6 +70,10 @@ class ProprioceptionModel(nn.Module):
             nn.Dropout(p),
             nn.Linear(128, latent_size//2), nn.ReLU(), #nn.BatchNorm1d(latent_size//2), nn.ReLU(),
         )
+        
+        # self.inertial_encoder = TransformerModel(input_size=3, output_size=latent_size//2, d_model=64, sequence_length=201)
+        # self.leg_encoder = TransformerModel(input_size=36, output_size=latent_size//2, d_model=64, sequence_length=25)
+        # self.feet_encoder = TransformerModel(input_size=20, output_size=latent_size//2, d_model=64, sequence_length=25)
         
         self.fc = nn.Sequential(
             nn.Linear(3 * latent_size//2, latent_size), nn.ReLU(), #nn.BatchNorm1d(latent_size), nn.ReLU(),
@@ -97,12 +135,18 @@ class RCAModelWrapped(nn.Module):
         
 
 class CostNet(nn.Module):
-    def __init__(self, latent_size=64):
+    def __init__(self, latent_size=64, use_sigmoid=True):
         super(CostNet, self).__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(latent_size, latent_size//2), nn.BatchNorm1d(latent_size//2), nn.ReLU(),
-            nn.Linear(latent_size//2, 1), nn.Sigmoid(), #nn.ReLU(), #nn.Softplus(), 
-        )
+        if use_sigmoid:
+            self.fc = nn.Sequential(
+                nn.Linear(latent_size, latent_size//2), nn.BatchNorm1d(latent_size//2), nn.ReLU(),
+                nn.Linear(latent_size//2, 1), nn.Sigmoid(), #nn.ReLU(), #nn.Softplus(), 
+            )
+        else:
+            self.fc = nn.Sequential(
+                nn.Linear(latent_size, latent_size//2), nn.BatchNorm1d(latent_size//2), nn.ReLU(),
+                nn.Linear(latent_size//2, 1), nn.ReLU(), #nn.Softplus(), 
+            )
         
     def forward(self, x):
         return self.fc(x)

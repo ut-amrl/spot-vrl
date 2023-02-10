@@ -41,7 +41,7 @@ class NATURLCostModel(pl.LightningModule):
         self.kmeansmodel = pickle.load(open(visual_encoder_weights.replace("visual_encoder.pt", "kmeansmodel.pkl"), "rb"))
         cprint("Loaded the k-means model from the pickle file", "green")
                 
-        self.cost_net = CostNet(latent_size=latent_size)
+        self.cost_net = CostNet(latent_size=latent_size, use_sigmoid=False)
         self.temp = temp
         
         # load the kmeanslabels
@@ -62,34 +62,28 @@ class NATURLCostModel(pl.LightningModule):
         # self.preferences = [[2, 3, 5],[0,1], 6, 8, 4, 7]
         
         # self.preferences = {
-        #     0: 5, # bush
-        #     1: 0, # yellow_bricks
-        #     2: 0, # pebble_sidewalk
+        #     0: 0, # yellow_bricks
+        #     1: 4, # marble_rocks
+        #     2: 0, # red_bricks
         #     3: 3, # grass
-        #     4: 1, # asphalt 
-        #     5: 4, # marble_rocks
-        #     6: 0, # cement_sidewalk
-        #     7: 2, # mulch
-        #     8: 0  # red_bricks
+        #     # 3: 0, # grass
+        #     4: 0, #cement_sidewalk
+        #     5: 5, # bush
+        #     # 6: 1, # asphalt
+        #     6: 0, # asphalt
+        #     7: 0, # pebble_sidewalk
+        #     # 8: 2  # mulch
+        #     8: 0  # mulch
         # }
         
-        self.preferences = {
-            0: 0, # yellow_bricks
-            1: 4, # marble_rocks
-            2: 0, # red_bricks
-            3: 3, # grass
-            # 3: 0, # grass
-            4: 0, #cement_sidewalk
-            5: 5, # bush
-            # 6: 1, # asphalt
-            6: 0, # asphalt
-            7: 0, # pebble_sidewalk
-            # 8: 2  # mulch
-            8: 0  # mulch
-        }
+        # self.preferences = {0: 4, 1: 0, 2: 0, 3: 0, 4: 4, 5: 3, 6: 3, 7: 0, 8: 0,
+        #                     9: 5, 10: 0, 11: 0, 12: 0, 13: 0, 14: 0, 15: 0}
+        
+        self.preferences = {0: 4, 1: 0, 2: 2, 3: 0, 4: 4, 5: 3, 6: 3, 7: 2, 8: 2,
+                    9: 5, 10: 0, 11: 2, 12: 2, 13: 0, 14: 0, 15: 0}
         
         self.best_val_loss = 1000000.0
-        self.cost_model_save_path = visual_encoder_weights.replace("visual_encoder", "cost_model_grass_eq")
+        self.cost_model_save_path = visual_encoder_weights.replace("visual_encoder", "cost_model")
         
         assert len(self.preferences) == len(np.unique(self.kmeanslabels)), "The number of preferences must be equal to the number of clusters"
         
@@ -123,7 +117,7 @@ class NATURLCostModel(pl.LightningModule):
         # convert list of preferences to a tensor
         preference_labels = torch.tensor(preference_labels).float().to(cost.device)
         # import pdb; pdb.set_trace()
-        return torch.nn.SmoothL1Loss()(cost.flatten(), preference_labels)
+        return torch.nn.SmoothL1Loss(reduction='sum')(cost.flatten(), preference_labels)
         # loss = torch.nn.MSELoss()(cost, torch.tensor(preference_labels).float().to(cost.device))
         
     def training_step(self, batch, batch_idx):
@@ -141,6 +135,13 @@ class NATURLCostModel(pl.LightningModule):
         labels1, labels2 = self.kmeansmodel.predict(rep1), self.kmeansmodel.predict(rep2)
         preference_labels1 = [self.preferences[i] for i in labels1]
         preference_labels2 = [self.preferences[i] for i in labels2]
+        
+        # find the distance of the samples from the center of the cluster
+        # dist1 = np.linalg.norm(rep1 - self.kmeansmodel.cluster_centers_[labels1], axis=1)
+        # dist2 = np.linalg.norm(rep2 - self.kmeansmodel.cluster_centers_[labels2], axis=1)
+        # print(dist1.shape, dist2.shape)
+        # print(dist1, dist2)
+        # exit()
 
         # compute the preference loss
         # pref_loss = 0.5*self.compute_preference_loss(cost1, preference_labels1, temp=self.temp) + \
@@ -233,16 +234,12 @@ if __name__ == "__main__":
                         help='number of epochs to train (default: 1000)')
     parser.add_argument('--num_gpus','-g', type=int, default=8, metavar='N',
                         help='number of GPUs to use (default: 8)')
-    parser.add_argument('--latent_size', type=int, default=512, metavar='N',
-                        help='Size of the common latent space (default: 128)')
-    parser.add_argument('--save', type=int, default=0, metavar='N',
-                        help='Whether to save the k means model and encoders at the end of the run')
-    parser.add_argument('--expt_save_path', '-e', type=str, default='/robodata/haresh92/spot-vrl/models/acc_0.98154_22-01-2023-05-13-46_')
+    parser.add_argument('--expt_save_path', '-e', type=str, default='models/acc_0.96133_08-02-2023-22-17-38_')
     parser.add_argument('--data_config_path', type=str, default='spot_data/data_config.yaml')
     parser.add_argument('--temp', type=float, default=1.0)
     args = parser.parse_args()
     
-    model = NATURLCostModel(latent_size=128, visual_encoder_weights=os.path.join(args.expt_save_path, 'visual_encoder.pt'), temp=args.temp)
+    model = NATURLCostModel(latent_size=64, visual_encoder_weights=os.path.join(args.expt_save_path, 'visual_encoder.pt'), temp=args.temp)
     dm = NATURLDataModule(data_config_path=args.data_config_path, batch_size=args.batch_size)
     
     # early_stopping_cb = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.00, patience=1000)
