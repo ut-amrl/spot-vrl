@@ -9,6 +9,7 @@ from loguru import logger
 
 from spot_vrl.data.image_data import BEVImageSequence, Image
 from spot_vrl.visual_learning.datasets import PATCH_SIZE, zero_pixel_ratio
+from spot_vrl.utils.parallel import tqdm_position, fork_join
 from spot_vrl.utils.video_writer import VideoWriter
 
 
@@ -21,18 +22,23 @@ def load_cost_model(path: Path) -> torch.jit.ScriptModule:
 
 
 @torch.no_grad()  # type: ignore
-def make_cost_vid(filename: Path, cost_model: torch.jit.ScriptModule) -> None:
+def make_cost_vid(filename: Path, cost_model_path: Path) -> None:
+    cost_model: torch.jit.ScriptModule = load_cost_model(cost_model_path)
     bev_image_data = BEVImageSequence(filename)
 
     fps = 15
-    video_writer = VideoWriter(Path("images") / f"{filename.stem}-cost.mp4", fps=fps)
+    video_writer = VideoWriter(
+        Path("images") / f"cost-eval/{filename.stem}.mp4", fps=fps
+    )
 
     image: Image
     for _, image in tqdm.tqdm(
         bev_image_data,
-        desc="Processing Cost Video",
+        desc=f"Processing {filename.name}",
         total=len(bev_image_data),
         dynamic_ncols=True,
+        position=tqdm_position(),
+        leave=False,
     ):
         view = image.decoded_image()
         cost_view = np.zeros(view.shape, dtype=np.uint8)
@@ -113,18 +119,19 @@ def main() -> None:
         help="Path to saved JIT CostNet model.",
     )
     parser.add_argument(
-        "datafile",
+        "bagfiles",
         type=Path,
+        nargs="+",
         help="Path to rosbag to visualize.",
     )
 
     args = parser.parse_args()
 
     cost_model_path: Path = args.cost_model
-    datafile_path: Path = args.datafile
+    bagfile_paths: List[Path] = args.bagfiles
 
-    cost_model = load_cost_model(cost_model_path)
-    make_cost_vid(datafile_path, cost_model)
+    task_args = [(bagfile_path, cost_model_path) for bagfile_path in bagfile_paths]
+    fork_join(make_cost_vid, task_args, n_proc=4)
 
 
 if __name__ == "__main__":
