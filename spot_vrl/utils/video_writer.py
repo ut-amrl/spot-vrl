@@ -97,6 +97,7 @@ class VideoWriter:
             "-i", "-",
             "-c:v", "libx264",
             "-crf", "23",
+            "-preset", "veryfast",
             "-vf", "format=yuv444p",
             "-r", str(fps),
             str(filename)
