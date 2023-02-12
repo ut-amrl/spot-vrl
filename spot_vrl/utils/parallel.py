@@ -41,6 +41,7 @@ import os
 import signal
 import threading
 import time
+import traceback
 from contextlib import contextmanager
 from typing import (
     Any,
@@ -147,6 +148,28 @@ def tqdm_position() -> int:
         return int(multiprocessing.current_process().name.split("-")[1]) - 1
 
 
+class _TryTask:
+    def __init__(self, task: Callable[..., Any], args: Any):
+        self._task = task
+        self._args = args
+
+    def __call__(self) -> Any:
+        try:
+            if self._args is None:
+                return self._task()
+            elif type(self._args) is tuple:
+                return self._task(*self._args)
+            else:
+                return self._task(self._args)
+        except BaseException as ex:
+            logger.error(
+                f"""{ex}
+{"".join(traceback.format_tb(ex.__traceback__)[1:]).rstrip()}
+  Task: {self._task}
+  Args: {self._args}"""
+            )
+
+
 def fork_join(
     task: Callable[..., Any],
     task_args: Sequence[Union[Any, Tuple[Any, ...]]],
@@ -171,12 +194,7 @@ def fork_join(
     with _Internal.get_executor(n_proc) as executor:
         task_futures: List[concurrent.futures.Future[Any]] = []
         for args in task_args:
-            if args is None:
-                task_futures.append(executor.submit(task))
-            elif type(args) == tuple:
-                task_futures.append(executor.submit(task, *args))
-            else:
-                task_futures.append(executor.submit(task, args))
+            task_futures.append(executor.submit(_TryTask(task, args)))
 
         stop_event = _Internal.manager.Event()
         idle_futures: List[concurrent.futures.Future[None]] = []
