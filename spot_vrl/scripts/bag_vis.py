@@ -73,7 +73,12 @@ def fuse_images(filename: str) -> None:
             spot_data.battery_percent, ts
         )[1][0]
 
-        img_wrapper = ImageWithText(compressed_image.decoded_image())
+        image = compressed_image.decoded_image()
+        if image.shape == (1536, 2048, 3):
+            # opencv expects dsize=(width, height)
+            image = cv2.resize(image, dsize=(1440, 1080), interpolation=cv2.INTER_AREA)
+
+        img_wrapper = ImageWithText(image)
         img_wrapper.add_line(f"seq: {seq}")
         img_wrapper.add_line(f"ts: {ts - start_ts:.3f}")
         img_wrapper.add_line(f"unix: {ts:.3f}")
