@@ -60,6 +60,9 @@ class SpotMetrics:
         self.power: np.float32 = np.float32(0)
         """Power consumption measured by battery discharge."""
 
+        self.battery_percent: np.float32 = np.float32(0)
+        """Remaining battery perentage."""
+
         self.joint_pos: npt.NDArray[np.float32] = np.zeros(12, dtype=np.float32)
         """Angular position of each leg joint."""
 
@@ -92,13 +95,17 @@ class SpotMetrics:
         self.ts = msgs.odom.header.stamp.to_sec()
         self.body_tform_frames = ros_to_numpy.body_tform_frames(msgs.tf)
 
-        battery: spot_msgs.msg.BatteryState
-        for battery in msgs.battery_states.battery_states:
-            if battery.current >= 0:
-                logger.warning(
-                    f"Expected negative current reading, got {battery.current}"
-                )
-            self.power += -battery.current * battery.voltage
+        # For now there's only ever one entry
+        if len(msgs.battery_states.battery_states) > 0:
+            battery: spot_msgs.msg.BatteryState
+            for battery in msgs.battery_states.battery_states:
+                if battery.current >= 0:
+                    logger.warning(
+                        f"Expected negative current reading, got {battery.current}"
+                    )
+                self.power += -battery.current * battery.voltage
+                self.battery_percent += battery.charge_percentage
+            self.battery_percent /= len(msgs.battery_states.battery_states)
 
         if len(msgs.joint_states.name) != 12:
             logger.warning(
@@ -232,6 +239,10 @@ class SpotSensorData:
     @cached_property
     def power(self) -> npt.NDArray[np.float32]:
         return np.array([d.power for d in self._data], dtype=np.float32)
+
+    @cached_property
+    def battery_percent(self) -> npt.NDArray[np.float32]:
+        return np.array([d.battery_percent for d in self._data], dtype=np.float32)
 
     @cached_property
     def joint_pos(self) -> npt.NDArray[np.float32]:
