@@ -21,7 +21,7 @@ class ImageWithText:
         self.img = img
         self._y = 0
 
-    def add_line(self, text: str, color: Tuple[int, int, int] = (0, 0, 255)) -> None:
+    def add_line(self, text: str, color: Tuple[int, int, int] = (255, 0, 0)) -> None:
         """Adds a text line to the image and issues a virtual CRLF."""
         face = cv2.FONT_HERSHEY_SIMPLEX
         scale = 1
