@@ -24,19 +24,6 @@ from spot_vrl.utils.video_writer import ImageWithText, VideoWriter
 from spot_vrl.utils.parallel import tqdm_position, fork_join
 
 
-def estimate_fps(img_data: ImageData) -> int:
-    timestamps = []
-    for ts, _ in img_data:
-        timestamps.append(ts)
-
-    timestamps = np.array(timestamps, dtype=np.float64)
-    period = np.diff(timestamps)
-    avg_freq = 1 / period.mean()
-    fps = int(np.rint(avg_freq))
-
-    return max(1, fps)
-
-
 def fuse_images(filename: str) -> None:
     """
     Args:
@@ -50,8 +37,7 @@ def fuse_images(filename: str) -> None:
     start_ts = img_data[0][0]
     start_tform_odom: npt.NDArray[np.float32] = spot_data.tforms("body", "odom")[0]
 
-    fps = estimate_fps(img_data)
-    video_writer = VideoWriter(Path("images") / f"{filepath.stem}.mp4", fps=fps)
+    video_writer = VideoWriter(Path("images") / f"{filepath.stem}.mp4", fps=15)
 
     position = tqdm_position()
 
