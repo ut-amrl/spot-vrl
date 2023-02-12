@@ -1,6 +1,6 @@
 """
-This script generates a video visualization of the top-down images generated
-from all images in a BDDF
+This script generates a video visualization of the images and various stats
+contained in a rosbag.
 """
 
 # Disable numpy multithreading
@@ -27,7 +27,7 @@ from spot_vrl.utils.parallel import tqdm_position, fork_join
 def fuse_images(filename: str) -> None:
     """
     Args:
-        filename (str): The path to the BDDF data file.
+        filename (str): The path to the rosbag.
     """
     filepath = Path(filename)
 
