@@ -1,13 +1,12 @@
-import io
 import os
 import subprocess
+import threading
 from pathlib import Path
 from typing import Optional, Tuple, Union
 
 import cv2
 import numpy as np
 import numpy.typing as npt
-import PIL
 from PIL import Image as PIL_Image
 from loguru import logger
 
@@ -112,6 +111,10 @@ class VideoWriter:
         if self._ffmpeg.stdin is None:
             raise BrokenPipeError("Subprocess' stdin could not be opened.")
 
+        self._io_thread: Optional[threading.Thread] = None
+        """Background (but still synchronous) thread to handle pipe IO
+        operations."""
+
     def add_frame(self, frame: npt.NDArray[np.uint8]) -> None:
         """Add a frame to the video.
 
@@ -135,13 +138,17 @@ class VideoWriter:
         if self._ffmpeg.returncode:
             raise ChildProcessError("The ffmpeg process has terminated.")
 
-        # PIL is slightly faster than OpenCV due to not needing to convert RGB to BGR
-        with io.BytesIO() as image_buffer:
-            im = PIL_Image.fromarray(frame)
-            im.save(image_buffer, format="BMP")
-
-            assert self._ffmpeg.stdin  # redundant check, silence Optional[] check
-            self._ffmpeg.stdin.write(image_buffer.getvalue())
+        if self._io_thread:
+            # Wait for the thread to finish as images must be sent sequentially.
+            self._io_thread.join()
+            self._io_thread = None
+        self._io_thread = threading.Thread(
+            # PIL is slightly faster than OpenCV due to not needing to convert RGB to BGR
+            target=lambda: PIL_Image.fromarray(frame).save(
+                self._ffmpeg.stdin, format="BMP"
+            )
+        )
+        self._io_thread.start()
 
         # # OpenCV expects the input to be in BGR order.
         # if frame.ndim == 3:
@@ -158,6 +165,10 @@ class VideoWriter:
     def close(self) -> None:
         """Closes the ffmpeg subprocess."""
         if self._ffmpeg.returncode is None:
+            if self._io_thread:
+                self._io_thread.join()
+                self._io_thread = None
+
             assert self._ffmpeg.stdin
             self._ffmpeg.stdin.close()
             self._ffmpeg.wait()
