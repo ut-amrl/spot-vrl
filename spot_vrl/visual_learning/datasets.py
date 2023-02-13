@@ -109,7 +109,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                 break
 
             spot_ts, poses = spot_data.query_time_range(
-                spot_data.tforms("odom", "body"), float(img_ts)
+                spot_data.tforms("odom", "base_link"), float(img_ts)
             )
             first_tform_odom = np.linalg.inv(poses[0])
 
@@ -129,7 +129,7 @@ class SingleTerrainDataset(Dataset[Tuple[Patch, Patch]]):
                     break
 
                 _, poses = spot_data.query_time_range(
-                    spot_data.tforms("odom", "body"), jmg_ts
+                    spot_data.tforms("odom", "base_link"), jmg_ts
                 )
                 disp = first_tform_odom @ poses[0]
 
@@ -325,7 +325,7 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
                     task_args.append((category, path, start, end))
 
         task_results = parallel.fork_join(
-            BaseTripletDataset._pll_load_or_create, task_args, n_proc=8
+            BaseTripletDataset._pll_load_or_create, task_args, n_proc=1
         )
 
         for category, dataset in task_results:

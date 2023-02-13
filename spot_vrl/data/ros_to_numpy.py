@@ -13,7 +13,8 @@ from scipy.spatial.transform import Rotation
 import geometry_msgs.msg
 import nav_msgs.msg
 import sensor_msgs.msg
-import spot_msgs.msg
+
+# import spot_msgs.msg
 import tf2_msgs.msg
 
 
@@ -39,17 +40,18 @@ def body_tform_frames(
         child = transform_stamped.child_frame_id
         affine = transform_to_affine(transform_stamped.transform)
 
-        if child == "body":
+        if child == "base_link":
             parent, child = child, parent
             affine = np.linalg.inv(affine)
 
         parent_lookup[child] = parent
         parent_tform_frame[(parent, child)] = affine
 
-    assert "body" not in parent_lookup
+    print(parent_tform_frame)
+    assert "base_link" not in parent_lookup
 
     # Assume the tree is fully formed at this point
-    for (parent, child) in list(parent_tform_frame.keys()):
+    for parent, child in list(parent_tform_frame.keys()):
         while parent in parent_lookup:
             grandparent = parent_lookup[parent]
 
@@ -62,11 +64,11 @@ def body_tform_frames(
 
             parent = grandparent
 
-    parent_tform_frame[("body", "body")] = np.identity(4)
+    parent_tform_frame[("base_link", "base_link")] = np.identity(4)
 
     body_tform_frames: Dict[str, npt.NDArray[np.float64]] = {}
     for (parent, child), affine in parent_tform_frame.items():
-        assert parent == "body"
+        assert parent == "base_link"
         body_tform_frames[child] = affine
 
     return body_tform_frames
@@ -75,20 +77,16 @@ def body_tform_frames(
 class TimeSyncedMessages:
     topic_types: Dict[str, Type[Any]] = {
         "/joint_states": sensor_msgs.msg.JointState,
-        "/odom": nav_msgs.msg.Odometry,
-        "/spot/odometry/twist": geometry_msgs.msg.TwistWithCovarianceStamped,
-        "/spot/status/battery_states": spot_msgs.msg.BatteryStateArray,
-        "/spot/status/feet": spot_msgs.msg.FootStateArray,
+        "/odometry/filtered": nav_msgs.msg.Odometry,
+        "/jackal_velocity_controller/cmd_vel": geometry_msgs.msg.Twist,
         "/tf": tf2_msgs.msg.TFMessage,
     }
 
     def __init__(self) -> None:
         # These MUST be the named using suffix/basename of the corresponding topic names
         self.joint_states: sensor_msgs.msg.JointState = None
-        self.odom: nav_msgs.msg.Odometry = None
-        self.twist: geometry_msgs.msg.TwistWithCovarianceStamped = None
-        self.battery_states: spot_msgs.msg.BatteryStateArray = None
-        self.feet: spot_msgs.msg.FootStateArray = None
+        self.filtered: nav_msgs.msg.Odometry = None
+        self.cmd_vel: geometry_msgs.msg.Twist = None
         self.tf: tf2_msgs.msg.TFMessage = None
 
     def set(self, topic: str, msg: Any) -> None:
@@ -112,9 +110,7 @@ class TimeSyncedMessages:
     def valid(self) -> bool:
         return (
             self.joint_states is not None
-            and self.odom is not None
-            and self.twist is not None
-            and self.battery_states is not None
-            and self.feet is not None
+            and self.filtered is not None
+            and self.cmd_vel is not None
             and self.tf is not None
         )

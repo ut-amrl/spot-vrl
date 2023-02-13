@@ -5,16 +5,19 @@ from typing import ClassVar, Dict, List, Tuple, Union
 
 import numpy as np
 import numpy.typing as npt
+from scipy.spatial.transform import Rotation
 from loguru import logger
 
-try:
-    import geometry_msgs.msg
-    import spot_msgs.msg
-    import rosbag
-    from spot_vrl.data import ros_to_numpy
-except ModuleNotFoundError:
-    logger.warning("TODO: better warning about missing ros stuff")
-    pass
+# try:
+import geometry_msgs.msg
+
+# import spot_msgs.msg
+import rosbag
+from spot_vrl.data import ros_to_numpy
+
+# except ModuleNotFoundError:
+#     logger.warning("TODO: better warning about missing ros stuff")
+#     pass
 
 
 class SpotMetrics:
@@ -89,29 +92,29 @@ class SpotMetrics:
 
         ########
 
-        self.ts = msgs.odom.header.stamp.to_sec()
-        self.body_tform_frames = ros_to_numpy.body_tform_frames(msgs.tf)
+        self.ts = msgs.filtered.header.stamp.to_sec()
+        # self.body_tform_frames = ros_to_numpy.body_tform_frames(msgs.tf)
 
-        battery: spot_msgs.msg.BatteryState
-        for battery in msgs.battery_states.battery_states:
-            if battery.current >= 0:
-                logger.warning(
-                    f"Expected negative current reading, got {battery.current}"
-                )
-            self.power += -battery.current * battery.voltage
+        # battery: spot_msgs.msg.BatteryState
+        # for battery in msgs.battery_states.battery_states:
+        #     if battery.current >= 0:
+        #         logger.warning(
+        #             f"Expected negative current reading, got {battery.current}"
+        #         )
+        #     self.power += -battery.current * battery.voltage
 
-        if len(msgs.joint_states.name) != 12:
-            logger.warning(
-                f"Expected 12 joint states, got {len(msgs.joint_states.name)}"
-            )
-        joint_name: str
-        for i, joint_name in enumerate(msgs.joint_states.name):
-            joint_idx = self.ros_joint_order[joint_name]
-            self.joint_pos[joint_idx] = msgs.joint_states.position[i]
-            self.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
-            self.joint_load[joint_idx] = msgs.joint_states.effort[i]
+        # if len(msgs.joint_states.name) != 12:
+        #     logger.warning(
+        #         f"Expected 12 joint states, got {len(msgs.joint_states.name)}"
+        #     )
+        # joint_name: str
+        # for i, joint_name in enumerate(msgs.joint_states.name):
+        #     joint_idx = self.ros_joint_order[joint_name]
+        #     self.joint_pos[joint_idx] = msgs.joint_states.position[i]
+        #     self.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
+        #     self.joint_load[joint_idx] = msgs.joint_states.effort[i]
 
-        odom_vel = msgs.twist.twist.twist
+        odom_vel = msgs.cmd_vel
         self.linear_vel[:] = (
             odom_vel.linear.x,
             odom_vel.linear.y,
@@ -123,36 +126,42 @@ class SpotMetrics:
             odom_vel.angular.z,
         )
 
-        body_tform_odom = self.body_tform_frames["odom"]
+        body_tform_odom = np.identity(4)
+        q = msgs.filtered.pose.pose.orientation
+        t = msgs.filtered.pose.pose.position
+        body_tform_odom[:3, :3] = Rotation.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
+        body_tform_odom[:3, 3] = [t.x, t.y, t.z]
+        self.body_tform_frames["odom"] = body_tform_odom
+        self.body_tform_frames["base_link"] = np.identity(4)
         self.linear_vel = body_tform_odom[:3, :3] @ self.linear_vel
         self.angular_vel = body_tform_odom[:3, :3] @ self.angular_vel
 
-        feet_in_contact = 0
-        foot_state: spot_msgs.msg.FootState
-        for foot_state in msgs.feet.states:
-            if foot_state.contact != spot_msgs.msg.FootState.CONTACT_MADE:
-                continue
-            feet_in_contact += 1
-            if foot_state.frame_name != "odom":
-                logger.warning(
-                    f"Expected 'odom' as foot reference frame, got {foot_state.frame_name}"
-                )
+        # feet_in_contact = 0
+        # foot_state: spot_msgs.msg.FootState
+        # for foot_state in msgs.feet.states:
+        #     if foot_state.contact != spot_msgs.msg.FootState.CONTACT_MADE:
+        #         continue
+        #     feet_in_contact += 1
+        #     if foot_state.frame_name != "odom":
+        #         logger.warning(
+        #             f"Expected 'odom' as foot reference frame, got {foot_state.frame_name}"
+        #         )
 
-            def _vec3_norm(v: geometry_msgs.msg.Point) -> np.float32:
-                return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
+        #     def _vec3_norm(v: geometry_msgs.msg.Point) -> np.float32:
+        #         return np.linalg.norm((v.x, v.y, v.z)).astype(np.float32)
 
-            self.foot_slip_dist += _vec3_norm(foot_state.foot_slip_distance_rt_frame)
-            self.foot_slip_vel += _vec3_norm(foot_state.foot_slip_velocity_rt_frame)
-            self.foot_depth_mean += foot_state.visual_surface_ground_penetration_mean
-            self.foot_depth_std += foot_state.visual_surface_ground_penetration_std
+        #     self.foot_slip_dist += _vec3_norm(foot_state.foot_slip_distance_rt_frame)
+        #     self.foot_slip_vel += _vec3_norm(foot_state.foot_slip_velocity_rt_frame)
+        #     self.foot_depth_mean += foot_state.visual_surface_ground_penetration_mean
+        #     self.foot_depth_std += foot_state.visual_surface_ground_penetration_std
 
-        if feet_in_contact != 0:
-            self.foot_slip_dist /= feet_in_contact
-            self.foot_slip_vel /= feet_in_contact
-            self.foot_depth_mean /= feet_in_contact
-            self.foot_depth_std /= feet_in_contact
-        else:
-            logger.warning("Spot is flying (no feet made contact with the ground)")
+        # if feet_in_contact != 0:
+        #     self.foot_slip_dist /= feet_in_contact
+        #     self.foot_slip_vel /= feet_in_contact
+        #     self.foot_depth_mean /= feet_in_contact
+        #     self.foot_depth_std /= feet_in_contact
+        # else:
+        #     logger.warning("Spot is flying (no feet made contact with the ground)")
 
 
 class SpotSensorData:
@@ -207,7 +216,7 @@ class SpotSensorData:
             if header["callerid"] == b"/spot/spot_ros":
                 return True
 
-            return False
+            return True
 
         bag = rosbag.Bag(str(self._path))
         for topic, msg, _ in bag.read_messages(
