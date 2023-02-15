@@ -9,7 +9,7 @@ import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation
 
-from bosdyn.api import geometry_pb2, image_pb2
+# from bosdyn.api import geometry_pb2, image_pb2
 from google.protobuf.timestamp_pb2 import Timestamp
 
 
@@ -22,7 +22,7 @@ warnings.warn(
 )
 
 
-def se3pose_to_affine(pose: geometry_pb2.SE3Pose) -> npt.NDArray[np.float64]:
+def se3pose_to_affine(pose) -> npt.NDArray[np.float64]:
     """Converts a SE3Pose proto to a 3D affine transformation matrix.
 
     Args:
@@ -44,9 +44,7 @@ def se3pose_to_affine(pose: geometry_pb2.SE3Pose) -> npt.NDArray[np.float64]:
     return affine
 
 
-def body_tform_frame(
-    tree: geometry_pb2.FrameTreeSnapshot, frame: str
-) -> npt.NDArray[np.float64]:
+def body_tform_frame(tree, frame: str) -> npt.NDArray[np.float64]:
     """Computes the frame-to-body transform from a FrameTreeSnapshot proto.
 
     The FrameTreeSnapshot is assumed to be rooted at the "body" frame and
@@ -77,7 +75,7 @@ def body_tform_frame(
 
 
 def camera_intrinsic_matrix(
-    img_source: image_pb2.ImageSource,
+    img_source,
 ) -> npt.NDArray[np.float64]:
     """Extracts the camera intrinsic matrix from an ImageSource proto.
 

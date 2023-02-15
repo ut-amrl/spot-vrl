@@ -47,7 +47,6 @@ def body_tform_frames(
         parent_lookup[child] = parent
         parent_tform_frame[(parent, child)] = affine
 
-    print(parent_tform_frame)
     assert "base_link" not in parent_lookup
 
     # Assume the tree is fully formed at this point

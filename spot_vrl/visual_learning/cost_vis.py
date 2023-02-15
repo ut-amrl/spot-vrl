@@ -8,7 +8,7 @@ import torch
 import tqdm
 from loguru import logger
 
-from spot_vrl.data._deprecated.image_data import ImageData, SpotImage, CameraImage
+from spot_vrl.data._deprecated.image_data import ImageData, CameraImage
 from spot_vrl.homography._deprecated import perspective_transform
 from spot_vrl.utils.video_writer import VideoWriter
 
@@ -45,6 +45,7 @@ def make_cost_vid(filename: Path, cost_model: torch.jit.ScriptModule) -> None:
         # images = [image for image in images if "front" in image.frame_name]
         td = perspective_transform.TopDown(images)
         view = td.get_view(resolution=150, horizon_dist=5.0)
+        view = view[:, :, ::-1].copy() # BGR -> RGB
         cost_view = np.zeros(view.shape, dtype=np.uint8)
 
         PATCH_SIZE = 60

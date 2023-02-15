@@ -7,10 +7,11 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import simplejpeg
-from bosdyn.api import image_pb2
-from bosdyn.api.bddf_pb2 import SeriesBlockIndex
-from bosdyn.api.image_pb2 import GetImageResponse
-from bosdyn.bddf import DataReader, ProtobufReader
+
+# from bosdyn.api import image_pb2
+# from bosdyn.api.bddf_pb2 import SeriesBlockIndex
+# from bosdyn.api.image_pb2 import GetImageResponse
+# from bosdyn.bddf import DataReader, ProtobufReader
 from loguru import logger
 from scipy.spatial.transform import Rotation
 
@@ -125,7 +126,7 @@ class SpotImage(CameraImage):
       - The ground is always flat
     """
 
-    def __init__(self, image_response: image_pb2.ImageResponse) -> None:
+    def __init__(self, image_response) -> None:
         image_capture = image_response.shot
         image_source = image_response.source
         image = image_capture.image
@@ -249,8 +250,8 @@ class KinectImage(CameraImage):
     # Hardcoded values for components of the transform data. Intrinsic
     # information was generated from the k4a_ros repository using the 1536p
     # setting. Extrinsic information was estimated using a ruler and gyroscope.
-    EXPECTED_HEIGHT: Final[int] = 1536
-    EXPECTED_WIDTH: Final[int] = 2048
+    EXPECTED_HEIGHT: Final[int] = 720
+    EXPECTED_WIDTH: Final[int] = 1280
 
     # TODO: same structure as SpotImage, can put this in CameraImage
     _sky_masks: ClassVar[Dict[str, npt.NDArray[np.bool_]]] = {}

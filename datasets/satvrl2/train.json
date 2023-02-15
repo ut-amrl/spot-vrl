@@ -1,0 +1,26 @@
+{
+    "_comment": "Dataset for training initial satnav ahg indoor model.",
+    "categories": {
+        "grass": [
+            {
+                "path": "data/ahg_grass1.bag",
+                "start": 1676068529,
+                "end": 1676068565
+            }
+        ],
+        "floor": [
+            {
+                "path": "data/ahg_floor1.bag",
+                "start": 1676068718,
+                "end": 1676068753
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "grass",
+            "second": "floor",
+            "label": -1
+        }
+    ]
+}

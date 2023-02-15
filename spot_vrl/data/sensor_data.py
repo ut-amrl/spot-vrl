@@ -131,6 +131,7 @@ class SpotMetrics:
         t = msgs.filtered.pose.pose.position
         body_tform_odom[:3, :3] = Rotation.from_quat([q.x, q.y, q.z, q.w]).as_matrix()
         body_tform_odom[:3, 3] = [t.x, t.y, t.z]
+        body_tform_odom = np.linalg.inv(body_tform_odom)
         self.body_tform_frames["odom"] = body_tform_odom
         self.body_tform_frames["base_link"] = np.identity(4)
         self.linear_vel = body_tform_odom[:3, :3] @ self.linear_vel
