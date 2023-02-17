@@ -74,3 +74,67 @@ Test:
 - clear
 - bright lighting conditions
 - high contrast shadows
+
+## 03ybrick
+
+Derived from 01pebble
+
+Adds yellow brick (brick_yellow) as a terrain category.
+
+Train:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
++ yellow brick
+
+Test:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
++ yellow brick
+
+## 04rbrick
+
+Derived from 01pebble
+
+Adds red brick (brick_red) as a terrain category.
+
+Train:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
++ red brick
+
+Test:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
++ red brick
+
+# 05rybrick
+
+Derived from 01pebble
+
+Adds red and yellow bricks (brick_{red,yellow}) as a terrain categories at the
+same time instead of incrementally. The same rosbags are added as in 03ybrick and
+04rbrick.
+
+Train:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
++ red brick
++ yellow brick
+
+Test:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
++ red brick
++ yellow brick
