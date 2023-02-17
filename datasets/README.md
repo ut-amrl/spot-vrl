@@ -1,11 +1,5 @@
-Loose convention:
-
-- Even numbers: training datasets
-- Odd numbers: evaluation of trained models on OOD data
-
-Exception:
-
-= 99-*: fully supervised or other special cases
+The general workflow is to train a model on dataset N, evaluate the trained
+model on dataset N+1, train on N+1, etc.
 
 ## 00initial
 
@@ -31,29 +25,11 @@ Test:
 
 ## 01pebble
 
-Parent: 00initial
+Derived from 00initial
 
-Dataset to evaluate initial models on unseen pebble pavement terrain.
-
-Pebble pavement has similar inertial characteristics to concrete, but different
-visual characteristics to all of the training datasets.
-
-Train (identical to 00initial):
-* concrete
-* grass
-* marble rocks
-
-Test:
-* concrete
-* grass
-* marble rocks
-+ pebble pavement
-
-## 02pebble
-
-Parent: 00initial
-
-Dataset with pebble pavement in the training set.
+Adds pebble pavement as a terrain category. Pebble pavement has similar inertial
+characteristics to concrete, but different visual characteristics to all of the
+existing terrain categories.
 
 Train:
 * concrete
@@ -67,19 +43,23 @@ Test:
 * marble rocks
 + pebble pavement
 
-## 03shadows
+## 02shadows
 
-Parent: 02pebble
+Derived from 01pebble
 
-The training datasets were mainly taken on overcast days. The evaluation
-datasets were taken on sunny days, which introduces high contrast shadows into
-the visual data.
+The rosbags in 01pebble were mainly taken on overcast days. This dataset
+introduces rosbags with high contrast shadows. No additional labels are
+introduced in the train set. The test set add explicit labels for shadows for
+visualization purposes.
 
-Train (identical to 02pebble):
+Train:
 * concrete
+  + shadows
 * grass
 * marble rocks
+  + shadows
 * pebble pavement
+  + shadows
 
 Test:
 * concrete
@@ -94,28 +74,3 @@ Test:
 - clear
 - bright lighting conditions
 - high contrast shadows
-
-## 04shadows
-
-Parent: 02pebble
-
-Dataset with additional lighting conditions. No additional terrains are
-introduced.
-
-Train:
-* concrete
-  + shadows
-* grass
-* marble rocks
-  + shadows
-* pebble pavement
-  + shadows
-
-Test:
-* concrete
-* grass
-* marble rocks
-* pebble pavement
-+ concrete with shadows             (as explicit terrain category)
-+ pebble pavement with shadows      (as explicit terrain category)
-+ marble rocks with shadows         (as explicit terrain category)
