@@ -27,10 +27,10 @@ from spot_vrl.imu_learning.trainer import EmbeddingGenerator, fit
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument("--model", type=str, required=True, choices=("mlp", "lstm"))
     parser.add_argument("--dataset-dir", type=Path, required=True)
+    parser.add_argument("--continue-from", type=Path)
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -42,10 +42,11 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
     model_type: str = args.model
     dataset_dir: Path = args.dataset_dir
+    continue_from: Path = args.continue_from
+    start_epoch: int = 0
     epochs: int = args.epochs
     margin: int = args.margin
     lr: float = args.lr
@@ -92,6 +93,14 @@ def main() -> None:
         logger.error(f"Unknown model type: '{model_type}")
         sys.exit(1)
 
+    if continue_from is not None and os.path.exists(continue_from):
+        model.load_state_dict(
+            torch.load(continue_from, map_location=device),  # type: ignore
+            strict=True,
+        )
+        model.requires_grad_(True)
+        start_epoch = int(continue_from.stem.split("_")[-1]) + 1
+
     model = model.to(device)
     loss_fn = torch.nn.TripletMarginLoss(margin=margin, swap=True)
     optimizer = optim.AdamW(model.parameters(), lr=lr)
@@ -102,8 +111,16 @@ def main() -> None:
         verbose=True,
     )
 
-    save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}-{model.arch()}"
+    save_dir = (
+        Path("imu-models")
+        / dataset_dir.name
+        / f"{time.strftime('%m-%d-%H-%M-%S')}-{model.arch()}"
+    )
     os.makedirs(save_dir, exist_ok=True)
+    if continue_from is not None and os.path.exists(continue_from):
+        os.symlink(
+            os.path.relpath(continue_from, save_dir), save_dir / continue_from.name
+        )
 
     tb_writer = SummaryWriter(log_dir=str(save_dir), flush_secs=10)  # type: ignore
     tb_writer.add_text("model", model_type)  # type: ignore
@@ -130,6 +147,7 @@ def main() -> None:
         loss_fn,
         optimizer,
         scheduler,
+        start_epoch,
         epochs,
         device,
         save_dir,

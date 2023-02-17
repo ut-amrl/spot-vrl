@@ -68,6 +68,7 @@ def fit(
     loss_fn: torch.nn.TripletMarginLoss,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.ReduceLROnPlateau,
+    start_epoch: int,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
@@ -83,7 +84,7 @@ def fit(
     Siamese network: Siamese loader, siamese model, contrastive loss
     Online triplet learning: batch loader, embedding model, online triplet loss
     """
-    pbar = tqdm.tqdm(range(n_epochs), desc="Training")
+    pbar = tqdm.tqdm(range(start_epoch, start_epoch + n_epochs), desc="Training")
     for epoch in pbar:
         train_loss = train_epoch(
             train_loader,
@@ -107,6 +108,10 @@ def fit(
 
         pbar.clear()
         scheduler.step(val_loss)
+
+    # evaluation-only case
+    if n_epochs == 0 and embedder is not None:
+        embedder.write(model, start_epoch)
 
 
 def train_epoch(

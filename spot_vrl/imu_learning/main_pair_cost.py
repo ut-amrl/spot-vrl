@@ -27,7 +27,6 @@ from spot_vrl.imu_learning.cost_trainer import EmbeddingGenerator, fit
 def main() -> None:
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--ckpt-dir", type=Path, required=True)
     parser.add_argument("--embedding-dim", type=int, required=True)
     parser.add_argument(
         "--encoder-model",
@@ -44,7 +43,6 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    ckpt_dir: Path = args.ckpt_dir
     embedding_dim: int = args.embedding_dim
     encoder_path: Path = args.encoder_model
     dataset_dir: Path = args.dataset_dir
@@ -97,7 +95,11 @@ def main() -> None:
     loss_fn = MarginRankingLoss(margin)
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=lr)
 
-    save_dir = ckpt_dir / f"{time.strftime('%m-%d-%H-%M-%S')}"
+    save_dir = (
+        encoder_path.parent
+        / f"cost-{encoder_path.stem.split('_')[-1]}"
+        / time.strftime("%m-%d-%H-%M-%S")
+    )
     os.makedirs(save_dir, exist_ok=True)
 
     tb_writer = SummaryWriter(log_dir=str(save_dir), flush_secs=1)  # type: ignore
