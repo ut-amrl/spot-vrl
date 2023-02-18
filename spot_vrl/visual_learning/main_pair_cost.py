@@ -21,6 +21,8 @@ from spot_vrl.visual_learning.datasets import (
     BaseTripletDataset,
     TripletHoldoutDataset,
 )
+import spot_vrl.imu_learning.datasets
+import spot_vrl.imu_learning.network
 from spot_vrl.imu_learning.losses import MarginRankingLoss
 from spot_vrl.visual_learning.network import (
     CostNet,
@@ -180,6 +182,11 @@ def main() -> None:
         help="Path to saved encoder model.",
     )
     parser.add_argument("--dataset-dir", type=Path, required=True)
+    parser.add_argument(
+        "--inertial-encoder-model",
+        type=Path,
+        help="Path to saved inertial encoder model.",
+    )
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -190,6 +197,7 @@ def main() -> None:
     embedding_dim: int = args.embedding_dim
     encoder_path: Path = args.encoder_model
     dataset_dir: Path = args.dataset_dir
+    inertial_encoder_path: Path = args.inertial_encoder_model
     epochs: int = args.epochs
     margin: float = args.margin
     lr: float = args.lr
@@ -213,7 +221,28 @@ def main() -> None:
 
     # Set up data loaders
     logger.info("Loading training data")
-    cost_dataset = PairCostTrainingDataset(train_dataset_spec)
+
+    inertial_encoder = None
+    if inertial_encoder_path is not None:
+        # TODO: this process is messy, is there a better way to initialize?
+        # maybe use a jit model where everything is saved?
+        inertial_dataset = (
+            spot_vrl.imu_learning.datasets.TripletTrainingDataset().init_from_json(
+                train_dataset_spec
+            )
+        )
+        inertial_encoder = spot_vrl.imu_learning.network.MlpEmbeddingNet(
+            inertial_dataset[0][0].shape,
+            embedding_dim,  # TODO: may not necessarily be the same
+        )
+        inertial_encoder.load_state_dict(
+            torch.load(inertial_encoder_path, map_location="cpu"),  # type: ignore
+            strict=True,
+        )
+        inertial_encoder.requires_grad_(False)
+        inertial_encoder.eval()
+
+    cost_dataset = PairCostTrainingDataset(train_dataset_spec, inertial_encoder)
     train_size = int(len(cost_dataset) * 0.75)
     train_set, test_set = torch.utils.data.dataset.random_split(
         cost_dataset, (train_size, len(cost_dataset) - train_size)

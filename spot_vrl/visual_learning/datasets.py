@@ -11,11 +11,14 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 import torch
+import torch.nn.functional as F
 import tqdm
 from loguru import logger
 from scipy.spatial.transform import Rotation
 from torch.utils.data import ConcatDataset, Dataset
 
+import spot_vrl.imu_learning.datasets
+import spot_vrl.imu_learning.network
 from spot_vrl.data.sensor_data import SpotSensorData
 from spot_vrl.data.image_data import BEVImageSequence
 from spot_vrl.utils.video_writer import VideoWriter
@@ -402,15 +405,22 @@ class TripletHoldoutDataset(BaseTripletDataset):
 
 
 class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]]):
-    def __init__(self, spec: Union[str, Path]) -> None:
+    def __init__(
+        self,
+        spec: Union[str, Path],
+        inertial_encoder: spot_vrl.imu_learning.network.BaseEmbeddingNet = None,
+    ) -> None:
+        """
+        spec: path to a json spec file
+        inertial_encoder: optional inertial encoder, mapped to cpu
+        """
         self.triplet_dataset = TripletTrainingDataset()
         self.orderings: Dict[Tuple[str, str], float] = {}
 
         self.triplet_dataset.init_from_json(spec)
 
+        seen_categories: Set[str] = set()
         with open(spec) as f:
-            seen_categories: Set[str] = set()
-
             # TODO: check for transitivity
             for order in json.load(f)["orderings"]:
                 first: str = order["first"]
@@ -447,8 +457,103 @@ class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]])
             for category in self.triplet_dataset._categories.keys():
                 self.orderings[(category, category)] = 0.0
 
-            if seen_categories != set(self.triplet_dataset._categories.keys()):
-                logger.error(f"({spec}): orderings do not contain all categories")
+        unseen_categories: Set[str] = set()
+        for category in self.triplet_dataset._categories.keys():
+            if category not in seen_categories:
+                unseen_categories.add(category)
+
+        """
+        Use the inertial encoder to find similarities in the inertial
+        representation space between terrains with unknown preferences and
+        terrains with known preferences as follows:
+
+        Calculate the centroid of each terrain in the inertial representation
+        space.
+
+        Calculate some measure of spread within each terrain cluster. Since
+        embeddings are normalized on an n-sphere, angular distance makes more
+        sense here than euclidean distance. The mean angular distance of
+        embeddings relative to the centroid is used as the measure of spread.
+
+        We make an argument here that using angular distance is generally sound
+        even if TripletMarginLoss uses euclidean distance. For a unit
+        n-sphere and distances <= 1, the difference between the two metrics is
+        relatively small (the angular distance corresponding to a euclidean
+        distance of 'd' is arccos(1 - d^2 / 2) )
+
+        Calculate the angular distances between centroids to find the closest
+        terrain cluster with a known preference to terrain clusters with unknown
+        preferences. If the angular distance is less than the margin (TODO: or
+        some other hyperparameter?) (TODO: and has low enough spread, another
+        hyperparameter?), then it is considered to be equally preferable to the
+        terrain with known preference.
+
+        TODO: refactor this code
+        """
+        if len(unseen_categories) != 0 and inertial_encoder is not None:
+            from torch.utils.data.dataloader import DataLoader
+
+            # TODO: should this be the holdout dataset? or does it not matter?
+            inertial_dataset = (
+                spot_vrl.imu_learning.datasets.TripletTrainingDataset().init_from_json(
+                    spec
+                )
+            )
+            category_means: Dict[str, torch.Tensor] = {}
+            # in-cluster average angular distance to cluster mean
+            category_clusterSpread: Dict[str, torch.Tensor] = {}
+
+            for (
+                category,
+                single_category_dataset,
+            ) in inertial_dataset._categories.items():
+                loader = DataLoader(single_category_dataset, batch_size=128)
+                embeddings = []
+                for tensor in loader:
+                    embeddings.append(inertial_encoder(tensor))
+                embeddings = torch.vstack(embeddings)
+                category_means[category] = torch.mean(embeddings, dim=0)
+                category_clusterSpread[category] = torch.mean(
+                    torch.acos(
+                        F.cosine_similarity(category_means[category], embeddings)
+                    )
+                )
+
+            category_list = []  # ordered list, order seen before unseen
+            category_list.extend(sorted(seen_categories))
+
+            logger.info(f"Known Categories: {category_list}")
+
+            for category in (*sorted(seen_categories), *sorted(unseen_categories)):
+                logger.info(f"Category: {category}")
+                logger.debug(f"in-cluster spread: {category_clusterSpread[category]}")
+                angular_distances = []
+                for category2 in category_list:
+                    angular_distances.append(
+                        torch.acos(
+                            F.cosine_similarity(
+                                category_means[category],
+                                category_means[category2],
+                                dim=0,
+                            )
+                        ).item()
+                    )
+                # numpy has prettier printing
+                angular_distances = np.array(angular_distances)
+                logger.debug(f"cross-cluster angular distances: {angular_distances}")
+
+                if category in unseen_categories:
+                    argmin = np.argmin(angular_distances)
+                    logger.debug(
+                        f"closest category: {category_list[argmin]} @ {angular_distances[argmin]}"
+                    )
+                    if angular_distances[argmin] < 0.5:
+                        logger.info(f"Assigning {category} == {category_list[argmin]}")
+                        self.orderings[(category, category_list[argmin])] = 0.0
+                        seen_categories.add(category)
+
+        if seen_categories != set(self.triplet_dataset._categories.keys()):
+            logger.warning(f"({spec}): orderings do not contain all categories")
 
     def __len__(self) -> int:
         return len(self.triplet_dataset)
