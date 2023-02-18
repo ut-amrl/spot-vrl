@@ -89,13 +89,14 @@ def fit(
     model: FullPairCostNet,
     loss_fn: MarginRankingLoss,
     optimizer: torch.optim.Optimizer,
+    start_epoch: int,
     n_epochs: int,
     device: torch.device,
     save_dir: Path,
     tb_writer: SummaryWriter,
     embedder: Optional[EmbeddingGenerator] = None,
 ) -> None:
-    pbar = tqdm.tqdm(range(n_epochs), desc="Training")
+    pbar = tqdm.tqdm(range(start_epoch, start_epoch + n_epochs), desc="Training")
     for epoch in pbar:
         train_loss = train_epoch(
             train_loader,
@@ -120,6 +121,10 @@ def fit(
 
         pbar.clear()
         print(message)
+
+    # evaluation-only case
+    if n_epochs == 0 and embedder is not None:
+        embedder.write(model, start_epoch)
 
 
 def train_epoch(

@@ -35,6 +35,7 @@ def main() -> None:
         help="Path to saved encoder model.",
     )
     parser.add_argument("--dataset-dir", type=Path, required=True)
+    parser.add_argument("--continue-from", type=Path)
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--margin", type=float, default=1)
     parser.add_argument("--lr", type=float, default=1e-3)
@@ -46,6 +47,8 @@ def main() -> None:
     embedding_dim: int = args.embedding_dim
     encoder_path: Path = args.encoder_model
     dataset_dir: Path = args.dataset_dir
+    continue_from: Path = args.continue_from
+    start_epoch: int = 0
     epochs: int = args.epochs
     margin: float = args.margin
     lr: float = args.lr
@@ -90,6 +93,11 @@ def main() -> None:
     cost_net = CostNet(embedding_dim)
 
     model = FullPairCostNet(embedding_net, cost_net)
+
+    if continue_from is not None and os.path.exists(continue_from):
+        model = torch.jit.load(continue_from, map_location=device)  # type: ignore
+        start_epoch = int(continue_from.stem.split("_")[-1]) + 1
+
     model = model.to(device)
 
     loss_fn = MarginRankingLoss(margin)
@@ -124,6 +132,7 @@ def main() -> None:
         model,
         loss_fn,
         optimizer,
+        start_epoch,
         epochs,
         device,
         save_dir,
