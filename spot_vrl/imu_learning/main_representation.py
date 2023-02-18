@@ -28,7 +28,7 @@ from spot_vrl.imu_learning.trainer import EmbeddingGenerator, fit
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--embedding-dim", type=int, required=True)
-    parser.add_argument("--model", type=str, required=True, choices=("mlp", "lstm"))
+    parser.add_argument("--model", type=str, choices=("mlp", "lstm"), default="mlp")
     parser.add_argument("--dataset-dir", type=Path, required=True)
     parser.add_argument("--continue-from", type=Path)
     parser.add_argument("--epochs", type=int, default=40)
