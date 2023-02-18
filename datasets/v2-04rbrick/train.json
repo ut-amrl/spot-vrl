@@ -56,11 +56,9 @@
             "first": "concrete",
             "second": "pebble_pvmt",
             "label": 0
-        },
-        {
-            "first": "concrete",
-            "second": "brick_red",
-            "label": 0
         }
+    ],
+    "__orderings_to_infer": [
+        "brick_red == (concrete | pebble_pvmt)"
     ]
 }

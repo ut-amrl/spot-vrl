@@ -44,11 +44,9 @@
             "first": "grass",
             "second": "marble_rock",
             "label": -1
-        },
-        {
-            "first": "concrete",
-            "second": "pebble_pvmt",
-            "label": 0
         }
+    ],
+    "__orderings_to_infer": [
+        "pebble_pvmt == concrete"
     ]
 }
