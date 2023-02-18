@@ -59,7 +59,8 @@ class EmbeddingGenerator:
         labels = list(dataset.keys())
         positions = np.arange(0, len(labels))
 
-        ax.boxplot(data, positions=positions, vert=False, showfliers=True)
+        # ax.boxplot(data, positions=positions, vert=False, showfliers=True)
+        ax.violinplot(data, positions=positions, vert=False, showmedians=True)
         ax.set_yticks(positions, labels)
         ax.set_xlabel("Cost")
 
