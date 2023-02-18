@@ -93,18 +93,20 @@ def fit(
             optimizer,
             device,
         )
-        torch.save(
-            model.state_dict(),
-            os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
-        )
 
         val_loss = test_epoch(val_loader, model, loss_fn, device)
 
         tb_writer.add_scalar("train/loss", train_loss, epoch)  # type: ignore
         tb_writer.add_scalar("valid/loss", val_loss, epoch)  # type: ignore
 
-        if embedder is not None and (epoch + 1) % 10 == 0:
-            embedder.write(model, epoch)
+        if (epoch + 1) % 10 == 0:
+            torch.save(
+                model.state_dict(),
+                os.path.join(save_dir, "trained_epoch_{}.pth".format(epoch)),
+            )
+
+            if embedder is not None:
+                embedder.write(model, epoch)
 
         pbar.clear()
         scheduler.step(val_loss)
