@@ -468,7 +468,10 @@ class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]])
         terrains with known preferences as follows:
 
         Calculate the centroid of each terrain in the inertial representation
-        space.
+        space. Maybe the geometric median is the correct thing to be calculating
+        here since it minimizes total distances, but there's no closed form
+        method. For large enough sample sizes the centroids are probably close
+        enough for what we're trying to do anyway.
 
         Calculate some measure of spread within each terrain cluster. Since
         embeddings are normalized on an n-sphere, angular distance makes more
@@ -476,10 +479,10 @@ class PairCostTrainingDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, float]])
         embeddings relative to the centroid is used as the measure of spread.
 
         We make an argument here that using angular distance is generally sound
-        even if TripletMarginLoss uses euclidean distance. For a unit
-        n-sphere and distances <= 1, the difference between the two metrics is
-        relatively small (the angular distance corresponding to a euclidean
-        distance of 'd' is arccos(1 - d^2 / 2) )
+        even if TripletMarginLoss uses euclidean distance. For a unit n-sphere
+        and distances <= 1, the difference between the two metrics is relatively
+        small (the angular distance corresponding to a euclidean distance of 'd'
+        is arccos(1 - d^2 / 2) )
 
         Calculate the angular distances between centroids to find the closest
         terrain cluster with a known preference to terrain clusters with unknown
