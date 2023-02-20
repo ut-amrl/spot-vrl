@@ -1,0 +1,71 @@
+{
+    "_comment": "Dataset for training initial model.",
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-12-13/2022-12-13-07-39-25.bag",
+                "start": 1670938776,
+                "end": 1670939035
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-12-13/2022-12-13-08-03-54.bag",
+                "start": 1670940245,
+                "end": 1670940529
+            }
+        ],
+        "marble_rock": [
+            {
+                "path": "data/2022-12-14/2022-12-14-08-43-22.bag",
+                "start": 1671029013,
+                "end": 1671029149
+            },
+            {
+                "path": "data/2022-12-14/2022-12-14-08-49-07.bag",
+                "start": 1671029358,
+                "end": 1671029493
+            }
+        ],
+        "grass_winter": [
+            {
+                "path": "data/2023-01-18/2023-01-18-13-54-41.bag",
+                "start": 1674071693,
+                "end": 1674071982
+            },
+            {
+                "path": "data/2023-01-25/2023-01-25-15-54-21.bag",
+                "start": 1674683672,
+                "end": 1674683798
+            }
+        ],
+        "bush_winter": [
+            {
+                "path": "data/2023-02-19/2023-02-19-17-00-06.bag",
+                "start": 1676847612,
+                "end": 1676847642
+            },
+            {
+                "path": "data/2023-02-19/2023-02-19-17-03-19.bag",
+                "start": 1676847804,
+                "end": 1676847834
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "grass",
+            "second": "marble_rock",
+            "label": -1
+        }
+    ],
+    "__orderings_to_infer": [
+        "grass_winter == grass",
+        "bush == maybe(grass | marble_rock)?, but definitely != (concrete)"
+    ]
+}

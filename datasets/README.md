@@ -138,3 +138,25 @@ Test:
 * pebble pavement
 + red brick
 + yellow brick
+
+## 06winter
+
+Derived from 00initial.
+
+TODO: this should really be reordered to index 01 and extended by other datasets.
+
+Adds winter foliage for bush and grass terrains.
+
+Train:
+* concrete
+* grass
+* marble rocks
++ grass_winter      (as separate terrain category)
++ bush_winter       (as separate terrain category)
+
+Test:
+* concrete
+* grass
+* marble rocks
++ grass_winter      (as separate terrain category)
++ bush_winter       (as separate terrain category)
