@@ -196,3 +196,48 @@ Test:
 + grass_winter      (as separate terrain category)
 + bush_winter       (as separate terrain category)
 + concrete_shadow   (gen2; as separate terrain category)
+
+## 98night
+
+Meta dataset derived from the union of some versions (possibly outdated) of the
+gen1 01pebble, 06winter, and 05rybrick datasets. This dataset contains the
+terrains contained in the parent datasets in lighting conditions after sunset.
+
+This dataset should be split into appropriate gen 2 or gen 3 datasets for
+specific deployment situations.
+
+Train:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
+* red brick
+* yellow brick
+* grass_winter        (as separate terrain category)
+* bush_winter         (as separate terrain category)
+
++ concrete_night      (as separate terrain category)
++ grass_night         (as separate terrain category)
++ pebble_pvmt_night   (as separate terrain category)
++ marble_rocks_night  (as separate terrain category)
++ red brick night     (as separate terrain category)
++ yellow brick night  (as separate terrain category)
++ bush_night          (as separate terrain category)
+
+Test:
+* concrete
+* grass
+* marble rocks
+* pebble pavement
+* red brick
+* yellow brick
+* grass_winter        (as separate terrain category)
+* bush_winter         (as separate terrain category)
+
++ concrete_night      (as separate terrain category)
++ grass_night         (as separate terrain category)
++ pebble_pvmt_night   (as separate terrain category)
++ marble_rocks_night  (as separate terrain category)
++ red brick night     (as separate terrain category)
++ yellow brick night  (as separate terrain category)
++ bush_night          (as separate terrain category)

@@ -1,0 +1,154 @@
+{
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-12-13/2022-12-13-07-39-25.bag",
+                "start": 1670938776,
+                "end": 1670939035
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-12-13/2022-12-13-08-03-54.bag",
+                "start": 1670940245,
+                "end": 1670940529
+            }
+        ],
+        "marble_rock": [
+            {
+                "path": "data/2022-12-14/2022-12-14-08-43-22.bag",
+                "start": 1671029013,
+                "end": 1671029149
+            },
+            {
+                "path": "data/2022-12-14/2022-12-14-08-49-07.bag",
+                "start": 1671029358,
+                "end": 1671029493
+            }
+        ],
+        "pebble_pvmt": [
+            {
+                "path": "data/2022-12-13/2022-12-13-07-51-51.bag",
+                "start": 1670939523,
+                "end": 1670939807
+            },
+            {
+                "path": "data/2023-01-25/2023-01-25-16-20-21.bag",
+                "start": 1674685232,
+                "end": 1674685366
+            }
+        ],
+        "brick_red": [
+            {
+                "path": "data/2022-12-14/2022-12-14-08-58-04.bag",
+                "start": 1671029896,
+                "end": 1671030173
+            }
+        ],
+        "brick_yellow": [
+            {
+                "path": "data/2022-12-14/2022-12-14-08-05-26.bag",
+                "start": 1671026737,
+                "end": 1671027021
+            }
+        ],
+        "grass_winter": [
+            {
+                "path": "data/2023-01-18/2023-01-18-13-54-41.bag",
+                "start": 1674071693,
+                "end": 1674071982
+            },
+            {
+                "path": "data/2023-01-25/2023-01-25-15-54-21.bag",
+                "start": 1674683672,
+                "end": 1674683798
+            }
+        ],
+        "bush_winter": [
+            {
+                "path": "data/2023-02-19/2023-02-19-17-00-06.bag",
+                "start": 1676847612,
+                "end": 1676847642
+            },
+            {
+                "path": "data/2023-02-19/2023-02-19-17-03-19.bag",
+                "start": 1676847804,
+                "end": 1676847834
+            }
+        ],
+        "concrete_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-18-36-29.bag",
+                "start": 1676335000,
+                "end": 1676335284
+            }
+        ],
+        "grass_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-18-53-44.bag",
+                "start": 1676336035,
+                "end": 1676336321
+            }
+        ],
+        "pebble_pvmt_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-19-16-26.bag",
+                "start": 1676337397,
+                "end": 1676337682
+            }
+        ],
+        "marble_rock_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-19-53-35.bag",
+                "start": 1676339626,
+                "end": 1676339909
+            }
+        ],
+        "brick_red_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-20-08-08.bag",
+                "start": 1676340500,
+                "end": 1676340783
+            }
+        ],
+        "brick_yellow_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-19-39-10.bag",
+                "start": 1676338762,
+                "end": 1676339050
+            }
+        ],
+        "bush_night": [
+            {
+                "path": "data/2023-02-19/2023-02-19-18-45-28.bag",
+                "start": 1676853934,
+                "end": 1676853964
+            },
+            {
+                "path": "data/2023-02-19/2023-02-19-18-47-30.bag",
+                "start": 1676854055,
+                "end": 1676854089
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "grass",
+            "second": "marble_rock",
+            "label": -1
+        }
+    ],
+    "__orderings_to_infer": [
+        "pebble_pvmt == concrete",
+        "grass_winter == grass",
+        "bush == maybe(grass | marble_rock)?, but definitely != (concrete)",
+        "brick_red == concrete",
+        "brick_yellow == concrete",
+        "night stuff == day stuff"
+    ]
+}
