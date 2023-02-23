@@ -43,6 +43,15 @@ Test:
 * marble rocks
 + pebble pavement
 
+The inclusion of the 2023-01-25 rosbags in the pebble pavement category add
+shadows into the dataset. It may have been appropriate to introduce them in a
+separate training generation, but due to color variations in Kinect images of
+pebble pavement, it was kept as part of the training data for generation 1.
+
+2023-01-25 dataset metadata:
+- pebble on 24th street sidewalk
+- bright + shadows
+
 ## 02shadows
 
 Derived from 01pebble
