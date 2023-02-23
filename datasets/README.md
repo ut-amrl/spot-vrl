@@ -54,6 +54,8 @@ pebble pavement, it was kept as part of the training data for generation 1.
 
 ## 02shadows
 
+Note: never used for February 2023 experiments
+
 Derived from 01pebble
 
 The rosbags in 01pebble were mainly taken on overcast days. This dataset
@@ -86,6 +88,8 @@ Test:
 
 ## 03ybrick
 
+Note: never used for February 2023 experiments, see 05rybrick instead.
+
 Derived from 01pebble
 
 Adds yellow brick (brick_yellow) as a terrain category.
@@ -105,6 +109,8 @@ Test:
 + yellow brick
 
 ## 04rbrick
+
+Note: never used for February 2023 experiments, see 05rybrick instead.
 
 Derived from 01pebble
 
