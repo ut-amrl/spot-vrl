@@ -7,11 +7,30 @@
                 "end": 1670939035
             }
         ],
+        "concrete_shadow": [
+            {
+                "path": "data/2023-01-18/2023-01-18-14-05-57.bag",
+                "start": 1674072368,
+                "end": 1674072615
+            }
+        ],
         "grass": [
             {
                 "path": "data/2022-12-13/2022-12-13-08-03-54.bag",
                 "start": 1670940245,
                 "end": 1670940529
+            }
+        ],
+        "grass_winter": [
+            {
+                "path": "data/2023-01-18/2023-01-18-13-54-41.bag",
+                "start": 1674071693,
+                "end": 1674071982
+            },
+            {
+                "path": "data/2023-01-25/2023-01-25-15-54-21.bag",
+                "start": 1674683672,
+                "end": 1674683798
             }
         ],
         "marble_rock": [
@@ -45,6 +64,16 @@
                 "path": "data/2022-12-14/2022-12-14-08-05-26.bag",
                 "start": 1671026737,
                 "end": 1671027021
+            },
+            {
+                "path": "data/2022-12-16/2022-12-16-10-37-26.bag",
+                "start": 1671208657,
+                "end": 1671208946
+            },
+            {
+                "path": "data/2023-01-18/2023-01-18-14-34-22.bag",
+                "start": 1674074073,
+                "end": 1674074254
             }
         ]
     },
@@ -58,15 +87,11 @@
             "first": "grass",
             "second": "marble_rock",
             "label": -1
-        },
-        {
-            "first": "concrete",
-            "second": "pebble_pvmt",
-            "label": 0
         }
     ],
     "__orderings_to_infer": [
-        "brick_red == (concrete | pebble_pvmt)",
-        "brick_yellow == (concrete | pebble_pvmt)"
+        "pebble_pvmt == concrete",
+        "brick_red == concrete",
+        "brick_yellow == concrete"
     ]
 }

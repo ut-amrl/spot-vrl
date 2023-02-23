@@ -130,9 +130,13 @@ Test:
 * pebble pavement
 + red brick
 
-# 05rybrick
+## 05rybrick
 
-Derived from 01pebble
+The dependency tree gets messy here:
+
+- Originally derived from 01pebble
+- Partially derived from 02shadow (concrete_shadow) and 06winter (grass_winter)
+  to add robustness to afternoon shadows and winter grass in the GDC area.
 
 Adds red and yellow bricks (brick_{red,yellow}) as a terrain categories at the
 same time instead of incrementally. The same rosbags are added as in 03ybrick and
@@ -145,6 +149,8 @@ Train:
 * pebble pavement
 + red brick
 + yellow brick
++ concrete_shadow   (as separate terrain category)
++ grass_winter      (as separate terrain category)
 
 Test:
 * concrete
@@ -153,6 +159,13 @@ Test:
 * pebble pavement
 + red brick
 + yellow brick
++ concrete_shadow   (as separate terrain category)
++ grass_winter      (as separate terrain category)
+
+The inclusion of the 2022-12-16 and 2023-01-18 rosbags in the brick_yellow
+category add shadows into the dataset. It may have been appropriate to
+introduce them in a separate training generation, but they were kept as part of
+the training data for generation 1.
 
 ## 06winter
 
