@@ -169,9 +169,15 @@ the training data for generation 1.
 
 ## 06winter
 
-Derived from 00initial.
+The dependency tree is messy here
 
-TODO: this should really be reordered to index 01 and extended by other datasets.
+- Originally derived from 00initial.
+- Partially derived from 02shadows (concrete_shadow). This was used to train a
+  gen2 model, but it was not given a new dataset index and label. The gen1 model
+  was trained without the concrete_shadow rosbag in the data.
+
+Note: this should really be reordered to index 01 and extended by other
+datasets, including the current 01pebble dataset.
 
 Adds winter foliage for bush and grass terrains.
 
@@ -181,6 +187,7 @@ Train:
 * marble rocks
 + grass_winter      (as separate terrain category)
 + bush_winter       (as separate terrain category)
++ concrete_shadow   (gen2; as separate terrain category)
 
 Test:
 * concrete
@@ -188,3 +195,4 @@ Test:
 * marble rocks
 + grass_winter      (as separate terrain category)
 + bush_winter       (as separate terrain category)
++ concrete_shadow   (gen2; as separate terrain category)
