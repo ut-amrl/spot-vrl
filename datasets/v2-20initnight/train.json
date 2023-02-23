@@ -1,0 +1,78 @@
+{
+    "categories": {
+        "concrete": [
+            {
+                "path": "data/2022-12-13/2022-12-13-07-39-25.bag",
+                "start": 1670938776,
+                "end": 1670939035
+            }
+        ],
+        "grass": [
+            {
+                "path": "data/2022-12-13/2022-12-13-08-03-54.bag",
+                "start": 1670940245,
+                "end": 1670940529
+            }
+        ],
+        "marble_rock": [
+            {
+                "path": "data/2022-12-14/2022-12-14-08-43-22.bag",
+                "start": 1671029013,
+                "end": 1671029149
+            },
+            {
+                "path": "data/2022-12-14/2022-12-14-08-49-07.bag",
+                "start": 1671029358,
+                "end": 1671029493
+            }
+        ],
+        "concrete_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-18-36-29.bag",
+                "start": 1676335000,
+                "end": 1676335284
+            },
+            {
+                "path": "data/2023-02-20/2023-02-20-20-22-50.bag",
+                "start": 1676946181,
+                "end": 1676946200
+            }
+        ],
+        "grass_night": [
+            {
+                "path": "data/2023-02-13/2023-02-13-18-53-44.bag",
+                "start": 1676336035,
+                "end": 1676336321
+            }
+        ],
+        "bush_night": [
+            {
+                "path": "data/2023-02-19/2023-02-19-18-45-28.bag",
+                "start": 1676853934,
+                "end": 1676853964
+            },
+            {
+                "path": "data/2023-02-19/2023-02-19-18-47-30.bag",
+                "start": 1676854055,
+                "end": 1676854089
+            }
+        ]
+    },
+    "orderings": [
+        {
+            "first": "concrete",
+            "second": "grass",
+            "label": -1
+        },
+        {
+            "first": "grass",
+            "second": "marble_rock",
+            "label": -1
+        }
+    ],
+    "__orderings_to_infer": [
+        "pebble_pvmt == concrete",
+        "bush == maybe(grass | marble_rock)?, but definitely != (concrete)",
+        "night stuff == day stuff"
+    ]
+}

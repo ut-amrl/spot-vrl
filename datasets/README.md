@@ -197,6 +197,58 @@ Test:
 + bush_winter       (as separate terrain category)
 + concrete_shadow   (gen2; as separate terrain category)
 
+## 20initnight
+
+Derived from 00initial
+
+Adds night versions of concrete, grass, and bush.
+
+Train:
+* concrete
+* grass
+* marble rocks
++ concrete_night      (as separate terrain category)
++ grass_night         (as separate terrain category)
++ bush_night          (as separate terrain category)
+
+Test:
+* concrete
+* grass
+* marble rocks
++ concrete_night      (as separate terrain category)
++ grass_night         (as separate terrain category)
++ bush_night          (as separate terrain category)
+
+## 21pebbnight
+
+Derived from 01pebble and 20initnight
+
+Adds night versions of pebble pavement and marble rock.
+
+grass_night was accidentally omitted for the February 2023 experiments. The
+agent was not able to assign higher costs to grass at night, which caused it to
+occasionally overshoot the goal.
+
+Train:
+* concrete
+* grass
+* marble rocks
+* concrete_night      (as separate terrain category)
+- grass_night
+- bush_night
++ marble_rocks_night  (as separate terrain category)
++ pebble_pvmt_night   (as separate terrain category)
+
+Test:
+* concrete
+* grass
+* marble rocks
+* concrete_night      (as separate terrain category)
+- grass_night
+- bush_night
++ marble_rocks_night  (as separate terrain category)
++ pebble_pvmt_night   (as separate terrain category)
+
 ## 98night
 
 Meta dataset derived from the union of some versions (possibly outdated) of the
