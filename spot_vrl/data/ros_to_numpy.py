@@ -75,17 +75,17 @@ def body_tform_frames(
 
 class TimeSyncedMessages:
     topic_types: Dict[str, Type[Any]] = {
-        "/joint_states": sensor_msgs.msg.JointState,
+        # "/joint_states": sensor_msgs.msg.JointState,
         "/odometry/filtered": nav_msgs.msg.Odometry,
-        "/jackal_velocity_controller/cmd_vel": geometry_msgs.msg.Twist,
+        # "/jackal_velocity_controller/cmd_vel": geometry_msgs.msg.Twist,
         "/tf": tf2_msgs.msg.TFMessage,
     }
 
     def __init__(self) -> None:
         # These MUST be the named using suffix/basename of the corresponding topic names
-        self.joint_states: sensor_msgs.msg.JointState = None
+        # self.joint_states: sensor_msgs.msg.JointState = None
         self.filtered: nav_msgs.msg.Odometry = None
-        self.cmd_vel: geometry_msgs.msg.Twist = None
+        # self.cmd_vel: geometry_msgs.msg.Twist = None
         self.tf: tf2_msgs.msg.TFMessage = None
 
     def set(self, topic: str, msg: Any) -> None:
@@ -108,8 +108,8 @@ class TimeSyncedMessages:
 
     def valid(self) -> bool:
         return (
-            self.joint_states is not None
-            and self.filtered is not None
-            and self.cmd_vel is not None
+            # self.joint_states is not None
+            self.filtered is not None
+            # and self.cmd_vel is not None
             and self.tf is not None
         )

@@ -325,7 +325,7 @@ class BaseTripletDataset(Dataset[Triplet], ABC):
                     task_args.append((category, path, start, end))
 
         task_results = parallel.fork_join(
-            BaseTripletDataset._pll_load_or_create, task_args, n_proc=1
+            BaseTripletDataset._pll_load_or_create, task_args, n_proc=8
         )
 
         for category, dataset in task_results:

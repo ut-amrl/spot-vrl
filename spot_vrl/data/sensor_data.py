@@ -114,7 +114,7 @@ class SpotMetrics:
         #     self.joint_vel[joint_idx] = msgs.joint_states.velocity[i]
         #     self.joint_load[joint_idx] = msgs.joint_states.effort[i]
 
-        odom_vel = msgs.cmd_vel
+        odom_vel = msgs.filtered.twist.twist
         self.linear_vel[:] = (
             odom_vel.linear.x,
             odom_vel.linear.y,

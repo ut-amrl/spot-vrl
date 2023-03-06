@@ -599,9 +599,9 @@ class KinectDefaults:
         ),
         "jackal": np.array(
             [
-                [983.322571, 0, 1021.098450],
-                [0, 983.123108, 775.020630],
-                [0, 0, 1],
+                [622.90532, 0.0, 639.44796],
+                [0.0, 620.84752, 368.20234],
+                [0.0, 0.0, 1.0],
             ],
             dtype=np.float64,
         ),
@@ -615,7 +615,7 @@ class KinectDefaults:
     }
 
     BODY_ROT_KINECT_FALLBACK: ClassVar[npt.NDArray[np.float64]] = Rotation.from_euler(
-        "XYZ", (0, 20, 0), degrees=True
+        "XYZ", (0, 23, 0), degrees=True
     ).as_matrix()
 
     @staticmethod

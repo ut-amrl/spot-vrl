@@ -1,0 +1,41 @@
+{
+    "_comment": "Dataset for training satnav model on eerlawn",
+    "categories": {
+        "grass": [
+            {
+                "path": "data/eer/2023-03-02-16-28-57.bag",
+                "start": 1677792538,
+                "end": 1677792668
+            },
+            {
+                "path": "data/eer/2023-03-02-16-35-47.bag",
+                "start": 1677792948,
+                "end": 1677792985
+            }
+        ],
+        "concrete": [
+            {
+                "path": "data/eer/2023-03-02-16-32-48.bag",
+                "start": 1677792769,
+                "end": 1677792804
+            }
+        ],
+        "shrubbery": [
+            {
+                "path": "data/eer/_2023-03-03-16-42-49.bag",
+                "start": 1677879770,
+                "end": 1677879793
+            },
+            {
+                "path": "data/eer/_2023-03-03-16-44-24.bag",
+                "start": 1677879865,
+                "end": 1677879890
+            },
+            {
+                "path": "data/eer/_2023-03-03-16-45-44.bag",
+                "start": 1677879944,
+                "end": 1677879992
+            }
+        ]
+    }
+}
