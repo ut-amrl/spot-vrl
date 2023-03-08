@@ -11,6 +11,26 @@
                 "path": "data/eer/2023-03-02-16-35-47.bag",
                 "start": 1677792948,
                 "end": 1677792985
+            },
+            {
+                "path": "/robodata/rahul/vl/eer/_2023-03-07-15-52-11.bag",
+                "start": 1678222332,
+                "end": 1678222372
+            },
+            {
+                "path": "/robodata/rahul/vl/eer/_2023-03-07-15-53-07.bag",
+                "start": 1678222388,
+                "end": 1678222440
+            },
+            {
+                "path": "/robodata/rahul/vl/eer/_2023-03-07-15-54-38.bag",
+                "start": 1678222479,
+                "end": 1678222504
+            },
+            {
+                "path": "/robodata/rahul/vl/eer/_2023-03-07-15-55-38.bag",
+                "start": 1678222539,
+                "end": 1678222559
             }
         ],
         "concrete": [
@@ -25,9 +45,14 @@
                 "end": 1677792884
             },
             {
-                "path": "data/eer/2023-03-02-16-34-53.bag",
-                "start": 1677792895,
-                "end": 1677792932
+                "path": "/robodata/rahul/vl/eer/_2023-03-07-15-49-54.bag",
+                "start": 1678222195,
+                "end": 1678222235
+            },
+            {
+                "path": "/robodata/rahul/vl/eer/_2023-03-07-15-51-21.bag",
+                "start": 1678222282,
+                "end": 1678222323
             }
         ],
         "shrubbery": [
